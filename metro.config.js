@@ -2,6 +2,7 @@ const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 
 const config = getDefaultConfig(__dirname);
+const defaultResolveRequest = config.resolver.resolveRequest;
 
 // Exclude build directories from watching to fix ENOSPC error
 config.resolver.blockList = [
@@ -18,6 +19,20 @@ config.resolver.extraNodeModules = {
 
 // Enable package exports resolution (needed for axios 1.x)
 config.resolver.unstable_enablePackageExports = true;
+
+// Hard alias axios to its commonjs entry to satisfy Metro
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === 'axios') {
+    return {
+      type: 'sourceFile',
+      filePath: path.resolve(__dirname, 'node_modules/axios/index.js'),
+    };
+  }
+  if (defaultResolveRequest) {
+    return defaultResolveRequest(context, moduleName, platform);
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
 
 // Use minimal workers
 config.maxWorkers = 2;
