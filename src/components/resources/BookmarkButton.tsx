@@ -16,11 +16,16 @@ const BookmarkButton: React.FC<BookmarkButtonProps> = ({
   disabled = false,
 }) => {
   return (
-    <TouchableOpacity style={styles.button} onPress={onPress} disabled={disabled} hitSlop={10}>
+    <TouchableOpacity
+      style={[styles.button, isBookmarked && styles.buttonActive]}
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={10}
+    >
       <Icon
         name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
         size={20}
-        color={isBookmarked ? colors.warning : colors.text.tertiary}
+        color={isBookmarked ? colors.accent[500] : colors.text.tertiary}
       />
     </TouchableOpacity>
   );
@@ -28,10 +33,14 @@ const BookmarkButton: React.FC<BookmarkButtonProps> = ({
 
 const styles = StyleSheet.create({
   button: {
-    minWidth: 30,
-    minHeight: 30,
+    minWidth: 32,
+    minHeight: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  buttonActive: {
+    backgroundColor: `${colors.accent[500]}20`,
   },
 });
 

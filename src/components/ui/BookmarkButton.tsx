@@ -19,7 +19,7 @@ export const BookmarkButton: React.FC<BookmarkButtonProps> = ({
   resourceId,
   size = 24,
   color = colors.text.secondary,
-  activeColor = colors.primary[500],
+  activeColor = colors.accent[500],
   onToggle,
 }) => {
   const { isBookmarked, toggleBookmark } = useBookmarks();

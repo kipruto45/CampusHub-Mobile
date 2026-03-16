@@ -19,6 +19,7 @@ interface Resource {
   description: string;
   resource_type: string;
   status: ResourceStatus;
+  is_pinned?: boolean;
   file_size: number;
   download_count: number;
   view_count: number;
@@ -152,6 +153,18 @@ const ResourcesScreen: React.FC = () => {
     );
   };
 
+  const handlePinResource = async (resourceId: string, currentPinned: boolean) => {
+    try {
+      await adminManagementAPI.pinResource(resourceId, !currentPinned);
+      setResources(prev => prev.map(r => 
+        r.id === resourceId ? { ...r, is_pinned: !currentPinned } : r
+      ));
+      Alert.alert('Success', `Resource ${!currentPinned ? 'pinned' : 'unpinned'} successfully`);
+    } catch (err: any) {
+      Alert.alert('Error', 'Failed to update pin status');
+    }
+  };
+
   const getStatusColor = (status: ResourceStatus) => {
     switch (status) {
       case 'approved':
@@ -209,34 +222,32 @@ const ResourcesScreen: React.FC = () => {
               {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
             </Text>
           </View>
+          {item.is_pinned && (
+            <View style={[styles.statusBadge, { backgroundColor: colors.primary[500] + '20' }]}>
+              <Icon name="pin" size={10} color={colors.primary[500]} />
+              <Text style={[styles.statusText, { color: colors.primary[500], marginLeft: 2 }]}>Pinned</Text>
+            </View>
+          )}
           <Text style={styles.downloadCount}>
             <Icon name="download" size={12} color={colors.text.tertiary} /> {item.download_count}
           </Text>
         </View>
       </View>
       
-      {item.status === 'pending' && (
-        <View style={styles.actionButtons}>
+      {item.status === 'approved' && (
           <TouchableOpacity 
-            style={[styles.actionBtn, { backgroundColor: colors.success + '20' }]}
-            onPress={() => handleUpdateStatus(item.id, 'approved')}
+            style={[styles.actionBtn, { backgroundColor: item.is_pinned ? colors.primary[500] + '20' : colors.background.secondary }]}
+            onPress={() => handlePinResource(item.id, !!item.is_pinned)}
           >
-            <Icon name="checkmark" size={18} color={colors.success} />
+            <Icon name="pin" size={18} color={item.is_pinned ? colors.primary[500] : colors.text.tertiary} />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.actionBtn, { backgroundColor: colors.error + '20' }]}
-            onPress={() => handleUpdateStatus(item.id, 'rejected')}
-          >
-            <Icon name="close" size={18} color={colors.error} />
-          </TouchableOpacity>
-          </View>
         )}
     </TouchableOpacity>
   );
 
   const filters: { key: ResourceStatus | 'all'; label: string }[] = [
     { key: 'all', label: 'All' },
-    { key: 'pending', label: 'Pending' },
+    { key: 'flagged', label: 'Flagged' },
     { key: 'approved', label: 'Approved' },
     { key: 'rejected', label: 'Rejected' },
   ];
@@ -264,18 +275,14 @@ const ResourcesScreen: React.FC = () => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color={colors.text.inverse} />
-        </TouchableOpacity>
         <Text style={styles.title}>Resources Management</Text>
-        <View style={styles.headerSpacer} />
       </View>
 
       {/* Stats Summary */}
       <View style={styles.statsContainer}>
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>{resources.filter(r => r.status === 'pending').length}</Text>
-          <Text style={styles.statLabel}>Pending</Text>
+          <Text style={styles.statNumber}>{resources.filter(r => r.status === 'flagged').length}</Text>
+          <Text style={styles.statLabel}>Flagged</Text>
         </View>
         <View style={styles.statBox}>
           <Text style={[styles.statNumber, { color: colors.success }]}>{resources.filter(r => r.status === 'approved').length}</Text>
@@ -340,21 +347,15 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     padding: spacing[4],
     paddingTop: spacing[8],
     backgroundColor: colors.primary[500],
-  },
-  backButton: {
-    padding: spacing[1],
   },
   title: {
     fontSize: 20,
     fontWeight: '700',
     color: colors.text.inverse,
-  },
-  headerSpacer: {
-    width: 32,
   },
   statsContainer: {
     flexDirection: 'row',

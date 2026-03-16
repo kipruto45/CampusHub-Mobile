@@ -8,6 +8,7 @@ import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import { authAPI } from '../../services/api';
 import Button from '../../components/ui/Button';
+import Icon from '../../components/ui/Icon';
 
 const ForgotPasswordScreen: React.FC = () => {
   const router = useRouter();
@@ -37,12 +38,12 @@ const ForgotPasswordScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.backIcon}>←</Text>
+        <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
 
       <View style={styles.content}>
         <View style={styles.iconContainer}>
-          <Text style={styles.icon}>🔑</Text>
+        <Icon name="key" size={40} color={colors.primary[500]} />
         </View>
         <Text style={styles.title}>Forgot Password?</Text>
         <Text style={styles.subtitle}>Enter your email address and we'll send you a link to reset your password.</Text>

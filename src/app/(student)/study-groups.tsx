@@ -32,15 +32,19 @@ const StudyGroupsScreen: React.FC = () => {
 
   const fetchGroups = useCallback(async () => {
     try {
-      const response = await studyGroupsAPI.list();
-      setGroups(response.data.results || response.data);
+      const response = await studyGroupsAPI.list({
+        scope: selectedFilter,
+        search: searchQuery || undefined,
+      });
+      const payload = response.data.data;
+      setGroups(payload?.results || payload || []);
     } catch (err) {
       console.error('Failed to fetch groups:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [searchQuery, selectedFilter]);
 
   useEffect(() => {
     fetchGroups();
@@ -50,14 +54,6 @@ const StudyGroupsScreen: React.FC = () => {
     setRefreshing(true);
     fetchGroups();
   };
-
-  const filteredGroups = groups.filter(group => {
-    if (searchQuery) {
-      return group.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-             group.description.toLowerCase().includes(searchQuery.toLowerCase());
-    }
-    return true;
-  });
 
   const handleGroupPress = (groupId: string) => {
     router.push(`/(student)/study-group/${groupId}` as any);
@@ -124,8 +120,8 @@ const StudyGroupsScreen: React.FC = () => {
         contentContainerStyle={styles.content}
       >
         {/* Groups List */}
-        {filteredGroups.length > 0 ? (
-          filteredGroups.map((group) => (
+        {groups.length > 0 ? (
+          groups.map((group) => (
             <TouchableOpacity
               key={group.id}
               style={styles.groupCard}

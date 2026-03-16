@@ -2,20 +2,39 @@
 // User notifications with read/unread states and actions
 // Backend-driven - no mock data
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  RefreshControl,
+  Alert,
+  ActivityIndicator,
+  Linking,
+  Modal,
+  ScrollView,
+} from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
 import ErrorState from '../../components/ui/ErrorState';
 import { notificationsAPI } from '../../services/api';
+import { resolveStudentNotificationTarget } from '../../utils/notification-targets';
+import { useToast } from '../../components/ui/Toast';
+import {
+  getDefaultNotificationUndoMs,
+  getNotificationUndoMs,
+} from '../../services/app-settings';
 
 // Notification Types - matches backend response
 interface Notification {
   id: string;
   type: string;
+  notification_type_display?: string;
   title: string;
   message: string;
   is_read: boolean;
@@ -26,15 +45,92 @@ interface Notification {
 
 const NotificationsScreen: React.FC = () => {
   const router = useRouter();
+  const { showToast } = useToast();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
+  const [undoTimeoutMs, setUndoTimeoutMs] = useState(getDefaultNotificationUndoMs());
+
+  type PendingAction =
+    | {
+        type: 'single';
+        notification: Notification;
+        index: number;
+        timer: ReturnType<typeof setTimeout>;
+      }
+    | {
+        type: 'bulk';
+        notifications: Notification[];
+        timer: ReturnType<typeof setTimeout>;
+      };
+  const pendingActionRef = useRef<PendingAction | null>(null);
+
+  const commitPendingAction = useCallback(async (pending: PendingAction) => {
+    try {
+      if (pending.type === 'single') {
+        await notificationsAPI.markAsRead(pending.notification.id);
+      } else {
+        await notificationsAPI.markAllAsRead();
+      }
+    } catch (err) {
+      console.error('Failed to finalize notification delete:', err);
+    }
+  }, []);
+
+  const flushPendingAction = useCallback(
+    (commit: boolean = true) => {
+      const pending = pendingActionRef.current;
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      pendingActionRef.current = null;
+      if (commit) {
+        void commitPendingAction(pending);
+      }
+    },
+    [commitPendingAction]
+  );
+
+  const undoPendingAction = useCallback(() => {
+    const pending = pendingActionRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingActionRef.current = null;
+
+    if (pending.type === 'single') {
+      setNotifications((prev) => {
+        const next = [...prev];
+        const insertAt = Math.min(Math.max(pending.index, 0), next.length);
+        next.splice(insertAt, 0, pending.notification);
+        return next;
+      });
+      showToast('success', 'Notification restored.');
+    } else {
+      setNotifications(pending.notifications);
+      showToast('success', 'Notifications restored.');
+    }
+  }, [showToast]);
+
+  const schedulePendingAction = useCallback(
+    (pending: Omit<PendingAction, 'timer'>) => {
+      const timer = setTimeout(() => {
+        const current = pendingActionRef.current;
+        if (!current || current.timer !== timer) return;
+        pendingActionRef.current = null;
+        void commitPendingAction(current);
+      }, undoTimeoutMs);
+
+      pendingActionRef.current = { ...pending, timer };
+    },
+    [commitPendingAction, undoTimeoutMs]
+  );
 
   const fetchNotifications = useCallback(async () => {
     try {
       setError(null);
+      flushPendingAction();
       const response = await notificationsAPI.list();
       const data = response.data.data;
       
@@ -48,11 +144,27 @@ const NotificationsScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [flushPendingAction]);
 
   useEffect(() => {
     fetchNotifications();
   }, [fetchNotifications]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const loadUndoTimeout = async () => {
+        const value = await getNotificationUndoMs();
+        if (active) {
+          setUndoTimeoutMs(value);
+        }
+      };
+      loadUndoTimeout();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -65,30 +177,50 @@ const NotificationsScreen: React.FC = () => {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  const markAsRead = async (id: string) => {
-    try {
-      setSubmitting(true);
-      await notificationsAPI.markAsRead(id);
-      setNotifications(prev => 
-        prev.map(n => n.id === id ? { ...n, is_read: true } : n)
-      );
-    } catch (err: any) {
-      console.error('Failed to mark as read:', err);
-      // Still update local state even if API fails
-      setNotifications(prev => 
-        prev.map(n => n.id === id ? { ...n, is_read: true } : n)
-      );
-    } finally {
-      setSubmitting(false);
-    }
+  const markAsRead = (notification: Notification) => {
+    if (!notification) return;
+    setSubmitting(true);
+    flushPendingAction();
+    const index = notifications.findIndex((item) => item.id === notification.id);
+    setNotifications((prev) => prev.filter((item) => item.id !== notification.id));
+
+    schedulePendingAction({
+      type: 'single',
+      notification,
+      index: index < 0 ? 0 : index,
+    });
+
+    showToast('info', 'Notification removed.', {
+      actionLabel: 'Restore',
+      onAction: undoPendingAction,
+      duration: undoTimeoutMs,
+    });
+    setSubmitting(false);
   };
 
   const markAllAsRead = async () => {
     try {
       setSubmitting(true);
-      await notificationsAPI.markAllAsRead();
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-      Alert.alert('Success', 'All notifications marked as read');
+      if (notifications.length === 0) {
+        setSubmitting(false);
+        return;
+      }
+
+      flushPendingAction();
+      const snapshot = notifications;
+      setNotifications([]);
+      setSelectedNotification(null);
+
+      schedulePendingAction({
+        type: 'bulk',
+        notifications: snapshot,
+      });
+
+      showToast('info', 'All notifications cleared.', {
+        actionLabel: 'Restore',
+        onAction: undoPendingAction,
+        duration: undoTimeoutMs,
+      });
     } catch (err: any) {
       console.error('Failed to mark all as read:', err);
       Alert.alert('Error', 'Failed to mark all as read');
@@ -97,22 +229,53 @@ const NotificationsScreen: React.FC = () => {
     }
   };
 
-  const handleNotificationPress = (notification: Notification) => {
-    if (!notification.is_read) {
-      markAsRead(notification.id);
-    }
-    
-    // Navigate based on notification link
-    if (notification.resource_id) {
-      router.push(`/(student)/resource/${notification.resource_id}`);
-    } else if (notification.link) {
-      router.push(notification.link as any);
+  const closeNotificationModal = () => {
+    setSelectedNotification(null);
+  };
+
+  const handleOpenNotificationTarget = async (notification: Notification) => {
+    try {
+      const target = resolveStudentNotificationTarget({
+        link: notification.link,
+        resourceId: notification.resource_id,
+      });
+
+      if (!target) {
+        Alert.alert('Unable to open', 'This notification does not have a supported destination.');
+        return;
+      }
+
+      closeNotificationModal();
+
+      if (target.kind === 'external') {
+        await Linking.openURL(target.value);
+        return;
+      }
+
+      router.push(target.value as any);
+    } catch (err) {
+      console.error('Failed to open notification target:', err);
+      Alert.alert('Unable to open', 'The linked notification item could not be opened right now.');
     }
   };
+
+  const handleNotificationPress = (notification: Notification) => {
+    setSelectedNotification(notification);
+    if (!notification.is_read) {
+      markAsRead(notification);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      flushPendingAction(true);
+    };
+  }, [flushPendingAction]);
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case 'resource':
+      case 'new_resource':
       case 'resource_approved':
       case 'resource_rejected':
         return 'book';
@@ -138,6 +301,7 @@ const NotificationsScreen: React.FC = () => {
   const getIconColor = (type: string) => {
     switch (type) {
       case 'resource':
+      case 'new_resource':
       case 'resource_approved':
         return colors.primary[500];
       case 'resource_rejected':
@@ -161,7 +325,7 @@ const NotificationsScreen: React.FC = () => {
     }
   };
 
-  const formatDate = (dateString: string) => {
+  const formatRelativeDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
     const diff = now.getTime() - date.getTime();
@@ -174,7 +338,51 @@ const NotificationsScreen: React.FC = () => {
     return date.toLocaleDateString();
   };
 
+  const formatAbsoluteDateTime = (dateString: string) => {
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      return 'Unknown date';
+    }
+    return date.toLocaleString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const formatDateOnly = (dateString: string) => {
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      return 'Unknown';
+    }
+    return date.toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  };
+
+  const formatTimeOnly = (dateString: string) => {
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      return 'Unknown';
+    }
+    return date.toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
   const unreadCount = notifications.filter(n => !n.is_read).length;
+  const selectedNotificationTarget = selectedNotification
+    ? resolveStudentNotificationTarget({
+        link: selectedNotification.link,
+        resourceId: selectedNotification.resource_id,
+      })
+    : null;
+  const selectedNotificationHasTarget = Boolean(selectedNotificationTarget);
 
   const renderItem = ({ item }: { item: Notification }) => (
     <TouchableOpacity 
@@ -191,7 +399,8 @@ const NotificationsScreen: React.FC = () => {
         </Text>
         <Text style={styles.cardDesc} numberOfLines={2}>{item.message}</Text>
         <View style={styles.cardFooter}>
-          <Text style={styles.cardTime}>{formatDate(item.created_at)}</Text>
+          <Text style={styles.cardTime}>{formatRelativeDate(item.created_at)}</Text>
+          <Text style={styles.cardDate}>{formatAbsoluteDateTime(item.created_at)}</Text>
         </View>
       </View>
       {!item.is_read && <View style={styles.unreadDot} />}
@@ -283,6 +492,110 @@ const NotificationsScreen: React.FC = () => {
           />
         }
       />
+
+      <Modal
+        visible={Boolean(selectedNotification)}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeNotificationModal}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity style={styles.closeButton} onPress={closeNotificationModal}>
+              <Icon name="close" size={24} color={colors.text.primary} />
+            </TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>Notification</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          {selectedNotification && (
+            <ScrollView
+              style={styles.modalContent}
+              contentContainerStyle={styles.modalContentContainer}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.modalCard}>
+                <View style={styles.modalBadgeRow}>
+                  <View
+                    style={[
+                      styles.modalTypeBadge,
+                      { backgroundColor: getIconColor(selectedNotification.type) + '20' },
+                    ]}
+                  >
+                    <Icon
+                      name={getNotificationIcon(selectedNotification.type) as any}
+                      size={16}
+                      color={getIconColor(selectedNotification.type)}
+                    />
+                    <Text
+                      style={[
+                        styles.modalTypeText,
+                        { color: getIconColor(selectedNotification.type) },
+                      ]}
+                    >
+                      {selectedNotification.notification_type_display || 'Notification'}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.readBadge,
+                      selectedNotification.is_read && styles.readBadgeActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.readBadgeText,
+                        selectedNotification.is_read && styles.readBadgeTextActive,
+                      ]}
+                    >
+                      {selectedNotification.is_read ? 'Read' : 'Unread'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.modalTitle}>{selectedNotification.title}</Text>
+
+                <View style={styles.modalMetaRow}>
+                  <View style={styles.modalMetaItem}>
+                    <Text style={styles.modalMetaLabel}>Date</Text>
+                    <Text style={styles.modalMetaValue}>
+                      {formatDateOnly(selectedNotification.created_at)}
+                    </Text>
+                  </View>
+                  <View style={styles.modalMetaItem}>
+                    <Text style={styles.modalMetaLabel}>Time</Text>
+                    <Text style={styles.modalMetaValue}>
+                      {formatTimeOnly(selectedNotification.created_at)}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.modalSectionLabel}>Summary</Text>
+                <Text style={styles.modalSummary}>{selectedNotification.message}</Text>
+
+                <Text style={styles.modalTimestamp}>
+                  Received {formatRelativeDate(selectedNotification.created_at)}
+                </Text>
+              </View>
+
+              <View style={styles.modalActions}>
+                {selectedNotificationHasTarget && (
+                  <TouchableOpacity
+                    style={styles.primaryAction}
+                    onPress={() => void handleOpenNotificationTarget(selectedNotification)}
+                  >
+                    <Icon name="arrow-forward" size={18} color={colors.text.inverse} />
+                    <Text style={styles.primaryActionText}>Open related item</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={styles.secondaryAction} onPress={closeNotificationModal}>
+                  <Text style={styles.secondaryActionText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -397,11 +710,14 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    gap: 2,
   },
   cardTime: { 
     fontSize: 11, 
+    color: colors.text.tertiary,
+  },
+  cardDate: {
+    fontSize: 11,
     color: colors.text.tertiary,
   },
   unreadDot: { 
@@ -435,6 +751,167 @@ const styles = StyleSheet.create({
   emptyText: { 
     fontSize: 14, 
     color: colors.text.secondary 
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: colors.background.secondary,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[12],
+    paddingBottom: spacing[4],
+    backgroundColor: colors.card.light,
+    ...shadows.sm,
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background.secondary,
+  },
+  modalHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  placeholder: {
+    width: 40,
+    height: 40,
+  },
+  modalContent: {
+    flex: 1,
+  },
+  modalContentContainer: {
+    padding: spacing[4],
+    paddingBottom: spacing[8],
+  },
+  modalCard: {
+    backgroundColor: colors.card.light,
+    borderRadius: 20,
+    padding: spacing[5],
+    ...shadows.sm,
+  },
+  modalBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing[4],
+    gap: spacing[2],
+  },
+  modalTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    borderRadius: 999,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    flexShrink: 1,
+  },
+  modalTypeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  readBadge: {
+    borderRadius: 999,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    backgroundColor: colors.gray[100],
+  },
+  readBadgeActive: {
+    backgroundColor: colors.success + '15',
+  },
+  readBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  readBadgeTextActive: {
+    color: colors.success,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.text.primary,
+    lineHeight: 30,
+    marginBottom: spacing[4],
+  },
+  modalMetaRow: {
+    flexDirection: 'row',
+    gap: spacing[3],
+    marginBottom: spacing[4],
+  },
+  modalMetaItem: {
+    flex: 1,
+    backgroundColor: colors.gray[50],
+    borderRadius: 16,
+    padding: spacing[3],
+    borderWidth: 1,
+    borderColor: colors.gray[200],
+  },
+  modalMetaLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.tertiary,
+    marginBottom: spacing[1],
+  },
+  modalMetaValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  modalSectionLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.secondary,
+    marginBottom: spacing[2],
+    textTransform: 'uppercase',
+  },
+  modalSummary: {
+    fontSize: 15,
+    color: colors.text.secondary,
+    lineHeight: 24,
+  },
+  modalTimestamp: {
+    fontSize: 12,
+    color: colors.text.tertiary,
+    marginTop: spacing[4],
+  },
+  modalActions: {
+    gap: spacing[3],
+    marginTop: spacing[4],
+  },
+  primaryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[2],
+    backgroundColor: colors.primary[500],
+    borderRadius: 16,
+    paddingVertical: spacing[4],
+  },
+  primaryActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.inverse,
+  },
+  secondaryAction: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    paddingVertical: spacing[4],
+    backgroundColor: colors.card.light,
+    borderWidth: 1,
+    borderColor: colors.gray[200],
+  },
+  secondaryActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.secondary,
   },
 });
 

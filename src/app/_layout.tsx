@@ -1,24 +1,40 @@
 // Root Layout for CampusHub
 // Main app entry point with notification initialization
 
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet, AppState, AppStateStatus } from 'react-native';
+import { View, StyleSheet, AppState, AppStateStatus, Alert } from 'react-native';
 import { useEffect, useRef } from 'react';
-import { colors } from '../theme/colors';
+import { lightColors } from '../theme/colors';
 import { mobileAutomationService } from '../services/mobileAutomation.service';
 import { notificationService } from '../services/notifications';
+import { ensureApiBaseUrl } from '../services/api';
 import { useAuthStore } from '../store/auth.store';
 import { ToastProvider } from '../components/ui/Toast';
 import { OfflineBanner } from '../components/OfflineBanner';
 
 export default function RootLayout() {
+  const router = useRouter();
   const appState = useRef(AppState.currentState);
-  const { isAuthenticated, initializeAuth } = useAuthStore();
+  const { isAuthenticated, initializeAuth, user } = useAuthStore();
+  // Always use light mode - dark mode disabled
+  const themeColors = lightColors;
 
   useEffect(() => {
-    // Initialize notifications when app starts
+    let isMounted = true;
+
     const initializeAppServices = async () => {
+      try {
+        await ensureApiBaseUrl();
+      } catch (error) {
+        console.warn('Failed to resolve API base URL:', error);
+      }
+
+      if (!isMounted) return;
+
+      // Initialize auth on app start
+      initializeAuth();
+
       try {
         await Promise.all([
           notificationService.initialize(),
@@ -34,6 +50,8 @@ export default function RootLayout() {
 
     // Handle app state changes
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      notificationService.handleAppStateChange(nextAppState);
+
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         // App has come to foreground
         console.log('App has come to foreground');
@@ -46,10 +64,42 @@ export default function RootLayout() {
     });
 
     return () => {
+      isMounted = false;
       subscription.remove();
       notificationService.removeNotificationListeners();
     };
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = notificationService.subscribeToRealtimeNotifications((notification) => {
+      if (!isAuthenticated || appState.current !== 'active') {
+        return;
+      }
+
+      if (notification.notification_type !== 'new_resource') {
+        return;
+      }
+
+      const alertButtons =
+        user?.role === 'student'
+          ? [
+              { text: 'Dismiss', style: 'cancel' as const },
+              {
+                text: 'View',
+                onPress: () => router.push('/(student)/tabs/resources'),
+              },
+            ]
+          : [{ text: 'OK' }];
+
+      Alert.alert(
+        notification.title || 'New Resource Available',
+        notification.message || 'A new resource has been uploaded.',
+        alertButtons
+      );
+    });
+
+    return unsubscribe;
+  }, [isAuthenticated, router, user?.role]);
 
   // Register for push notifications when user logs in
   useEffect(() => {
@@ -59,14 +109,14 @@ export default function RootLayout() {
   }, [isAuthenticated]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: themeColors.background.secondary }]}>
+      <StatusBar style="dark" />
+      <OfflineBanner />
       <ToastProvider>
-        <OfflineBanner />
-        <StatusBar style="dark" />
         <Stack
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: colors.background.secondary },
+            contentStyle: { backgroundColor: themeColors.background.secondary },
             animation: 'slide_from_right',
           }}
         >
@@ -90,6 +140,5 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.secondary,
   },
 });

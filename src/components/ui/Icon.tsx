@@ -30,6 +30,7 @@ type IconName =
   // Files & Folders
   | 'folder'
   | 'folder-outline'
+  | 'folder-open'
   | 'document'
   | 'document-text'
   | 'image'
@@ -328,6 +329,7 @@ const getIconName = (name: string): string => {
     // Files
     'folder': 'folder',
     'folder-outline': 'folder-outline',
+    'folder-open': 'folder',
     'document': 'document',
     'document-text': 'document-text',
     'image': 'image',
@@ -478,6 +480,9 @@ const getIconLibrary = (name: string): 'Ionicons' | 'MaterialCommunityIcons' | '
   // Use MaterialCommunityIcons for logos and specific icons
   if (name.startsWith('logo-')) {
     return 'Ionicons';
+  }
+  if (name === 'pin' || name === 'pin-outline') {
+    return 'MaterialCommunityIcons';
   }
   if (name.includes('heart') || name.includes('star') || name.includes('bookmark')) {
     return 'Ionicons';

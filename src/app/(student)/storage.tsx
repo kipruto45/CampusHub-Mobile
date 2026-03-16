@@ -354,7 +354,10 @@ const StorageScreen: React.FC = () => {
         </View>
 
         {/* Upgrade Banner */}
-        <TouchableOpacity style={styles.upgradeBanner}>
+        <TouchableOpacity
+          style={styles.upgradeBanner}
+          onPress={() => router.push('/(student)/billing' as any)}
+        >
           <View style={styles.upgradeContent}>
             <View style={styles.upgradeIconContainer}>
               <Icon name="diamond" size={24} color={colors.text.inverse} />

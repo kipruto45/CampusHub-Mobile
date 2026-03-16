@@ -1,14 +1,16 @@
 // Resource Detail Screen for CampusHub
 // Resource details with comments and ratings - Backend-driven
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { colors } from '../../../theme/colors';
 import { spacing, borderRadius } from '../../../theme/spacing';
 import { shadows } from '../../../theme/shadows';
 import Icon from '../../../components/ui/Icon';
-import { resourcesAPI } from '../../../services/api';
+import Avatar from '../../../components/ui/Avatar';
+import { courseProgressAPI, resourcesAPI } from '../../../services/api';
+import { localDownloadsService } from '../../../services/local-downloads.service';
 import ShareResourceButton from '../../../components/resources/ShareResourceButton';
 import ResourceShareSheet from '../../../components/modals/ResourceShareSheet';
 import { useResourceShare } from '../../../hooks/useResourceShare';
@@ -47,6 +49,7 @@ interface Resource {
   download_count: number;
   view_count: number;
   file_size: number;
+  file_url?: string;
   file_format: string;
   uploader: {
     id: string;
@@ -73,6 +76,8 @@ const ResourceDetailScreen: React.FC = () => {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const trackedProgressKeyRef = useRef<string | null>(null);
   const share = useResourceShare(
     resource
       ? {
@@ -83,22 +88,44 @@ const ResourceDetailScreen: React.FC = () => {
       : null
   );
 
+  const syncCourseProgress = useCallback(
+    async (courseId?: string, resourceId?: string, action: 'view' | 'completed' = 'view') => {
+      if (!courseId || !resourceId) {
+        return;
+      }
+
+      try {
+        await courseProgressAPI.updateProgress(courseId, resourceId, action);
+      } catch (progressError) {
+        console.error('Failed to sync course progress:', progressError);
+      }
+    },
+    []
+  );
+
   const fetchData = useCallback(async () => {
     try {
       setError(null);
       const response = await resourcesAPI.get(id || '');
       const data = response.data?.data || response.data;
       setResource(data);
+      const progressKey = data?.course?.id && data?.id ? `${data.course.id}:${data.id}` : null;
+      if (progressKey && trackedProgressKeyRef.current !== progressKey) {
+        trackedProgressKeyRef.current = progressKey;
+        void syncCourseProgress(String(data.course.id), String(data.id), 'view');
+      }
       
-      // Get comments (would need a comments endpoint - using activity for now)
-      // In production, this would be: commentsAPI.getByResource(id)
+      // Get comments
+      const commentsResponse = await resourcesAPI.getComments(id || '');
+      const commentsData = commentsResponse.data?.data || [];
+      setComments(commentsData);
     } catch (err: any) {
       console.error('Error fetching resource:', err);
       setError(err.response?.data?.message || 'Failed to load resource');
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, syncCourseProgress]);
 
   useEffect(() => {
     if (id) {
@@ -151,17 +178,61 @@ const ResourceDetailScreen: React.FC = () => {
     }
   };
 
-  const handleDownload = async () => {
+  const handleDownload = useCallback(async () => {
     if (!resource) return;
-    
+
+    setDownloading(true);
     try {
       const response = await resourcesAPI.download(resource.id);
-      // In production, this would trigger a download using FileSystem or Linking
-      Alert.alert('Download Started', 'Your download will begin shortly.');
+      const payload = response.data?.data || response.data || {};
+      const fileUrl = payload?.file_url || resource.file_url;
+
+      if (!fileUrl) {
+        throw new Error('File URL is unavailable for this resource.');
+      }
+
+      const downloadKey = `resource:${resource.id}`;
+      await localDownloadsService.ensureLocalFile({
+        key: downloadKey,
+        remoteUrl: fileUrl,
+        fileName: payload?.file_name,
+        title: resource.title,
+        fileType: resource.file_format,
+      });
+
+      let detailMessage = 'Saved inside CampusHub for offline access.';
+      try {
+        const copyResult = await localDownloadsService.saveCopyToDevice(downloadKey);
+        if (copyResult.status === 'saved') {
+          detailMessage = 'Saved inside CampusHub and copied to your phone storage.';
+        } else if (copyResult.status === 'already_saved') {
+          detailMessage = 'Saved inside CampusHub. A phone-storage copy already exists.';
+        } else if (copyResult.status === 'shared') {
+          detailMessage = 'Saved inside CampusHub. Use the share sheet to save a copy to Files.';
+        }
+      } catch {
+        detailMessage = 'Saved inside CampusHub. You can export a copy again from My Downloads.';
+      }
+
+      Alert.alert('Download Complete', detailMessage, [
+        {
+          text: 'Open File',
+          onPress: () => {
+            void localDownloadsService.openLocalFile(downloadKey);
+          },
+        },
+        { text: 'OK', style: 'cancel' },
+      ]);
+      void syncCourseProgress(resource.course?.id, resource.id, 'completed');
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to download');
+      Alert.alert(
+        'Error',
+        err?.response?.data?.message || err?.message || 'Failed to download'
+      );
+    } finally {
+      setDownloading(false);
     }
-  };
+  }, [resource, syncCourseProgress]);
 
   const handleSave = async () => {
     if (!resource) return;
@@ -223,9 +294,13 @@ const ResourceDetailScreen: React.FC = () => {
     
     setSubmitting(true);
     try {
-      // Would need a comments API endpoint
+      await resourcesAPI.addComment(id, { text: comment, rating });
       Alert.alert('Success', 'Comment added successfully!');
       setComment('');
+      // Refresh comments
+      const commentsResponse = await resourcesAPI.getComments(id);
+      const commentsData = commentsResponse.data?.data || [];
+      setComments(commentsData);
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to add comment');
     } finally {
@@ -371,20 +446,20 @@ const ResourceDetailScreen: React.FC = () => {
           {/* Actions */}
           <View style={styles.actions}>
             <TouchableOpacity 
-              style={[styles.actionBtn, resource.is_bookmarked && styles.actionBtnActive]} 
+              style={[styles.actionBtn, resource.is_bookmarked && styles.actionBtnBookmarked]} 
               onPress={handleSave}
             >
               <Icon 
                 name={resource.is_bookmarked ? 'bookmark' : 'bookmark-outline'} 
                 size={20} 
-                color={resource.is_bookmarked ? colors.primary[500] : colors.text.secondary} 
+                color={resource.is_bookmarked ? colors.accent[500] : colors.text.secondary} 
               />
-              <Text style={[styles.actionLabel, resource.is_bookmarked && styles.actionLabelActive]}>
+              <Text style={[styles.actionLabel, resource.is_bookmarked && styles.actionLabelBookmarked]}>
                 {resource.is_bookmarked ? 'Saved' : 'Save'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.actionBtn, resource.is_favorited && styles.actionBtnActive]} 
+              style={[styles.actionBtn, resource.is_favorited && styles.actionBtnFavorited]} 
               onPress={handleFavorite}
             >
               <Icon 
@@ -425,9 +500,12 @@ const ResourceDetailScreen: React.FC = () => {
               <View key={c.id} style={styles.commentCard}>
                 <View style={styles.commentHeader}>
                   <View style={styles.commentAvatar}>
-                    <Text style={styles.commentInitial}>
-                      {getInitials(c.user?.first_name, c.user?.last_name)}
-                    </Text>
+                    <Avatar
+                      source={c.user?.avatar}
+                      name={`${c.user?.first_name || ''} ${c.user?.last_name || ''}`.trim()}
+                      sizePx={32}
+                      cacheKey={`comment-${c.user?.id || 'unknown'}`}
+                    />
                   </View>
                   <View style={styles.commentInfo}>
                     <Text style={styles.commentUser}>
@@ -477,9 +555,21 @@ const ResourceDetailScreen: React.FC = () => {
 
       {/* Download Button */}
       <View style={styles.downloadBar}>
-        <TouchableOpacity style={styles.downloadBtn} onPress={handleDownload}>
-          <Icon name="download" size={20} color={colors.text.inverse} />
-          <Text style={styles.downloadText}>Download ({formatFileSize(resource.file_size)})</Text>
+        <TouchableOpacity
+          style={[styles.downloadBtn, downloading && styles.downloadBtnDisabled]}
+          onPress={handleDownload}
+          disabled={downloading}
+        >
+          {downloading ? (
+            <ActivityIndicator size="small" color={colors.text.inverse} />
+          ) : (
+            <Icon name="download" size={20} color={colors.text.inverse} />
+          )}
+          <Text style={styles.downloadText}>
+            {downloading
+              ? 'Preparing File...'
+              : `Download (${formatFileSize(resource.file_size)})`}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -581,9 +671,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[3], 
     gap: spacing[2] 
   },
-  actionBtnActive: { backgroundColor: colors.primary[50] },
+  actionBtnBookmarked: { backgroundColor: `${colors.accent[500]}18` },
+  actionBtnFavorited: { backgroundColor: `${colors.error}18` },
   actionLabel: { fontSize: 13, fontWeight: '500', color: colors.text.secondary },
-  actionLabelActive: { color: colors.primary[600] },
+  actionLabelBookmarked: { color: colors.accent[500] },
   actionLabelFavorite: { color: colors.error },
   ratingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing[6], gap: spacing[1] },
   ratingText: { marginLeft: spacing[3], fontSize: 14, color: colors.text.secondary },
@@ -602,15 +693,8 @@ const styles = StyleSheet.create({
   commentCard: { backgroundColor: colors.card.light, borderRadius: 16, padding: spacing[4], marginBottom: spacing[3] },
   commentHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing[2] },
   commentAvatar: { 
-    width: 32, 
-    height: 32, 
-    borderRadius: 16, 
-    backgroundColor: colors.gray[300], 
-    justifyContent: 'center', 
-    alignItems: 'center', 
     marginRight: spacing[2] 
   },
-  commentInitial: { fontSize: 12, fontWeight: '600', color: colors.text.secondary },
   commentInfo: { flex: 1 },
   commentUser: { fontSize: 14, fontWeight: '500', color: colors.text.primary },
   commentTime: { fontSize: 11, color: colors.text.tertiary },
@@ -668,6 +752,9 @@ const styles = StyleSheet.create({
     borderRadius: 16, 
     paddingVertical: spacing[4], 
     gap: spacing[2] 
+  },
+  downloadBtnDisabled: {
+    opacity: 0.75,
   },
   downloadIcon: { fontSize: 20 },
   downloadText: { fontSize: 16, fontWeight: '600', color: colors.text.inverse },

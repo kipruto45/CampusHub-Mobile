@@ -6,6 +6,8 @@ export type ShareMethod =
   | 'whatsapp'
   | 'telegram'
   | 'email'
+  | 'send_to_student'
+  | 'share_to_group'
   | 'other';
 
 export interface ResourceSharePayload {
@@ -24,6 +26,35 @@ export interface ResourceShareRecordResult {
   success: boolean;
   message: string;
   share_count: number;
+}
+
+export interface ShareToStudentResult {
+  success: boolean;
+  message: string;
+  resource_id: string;
+  shared_with: string[];
+}
+
+export interface ShareToGroupResult {
+  success: boolean;
+  message: string;
+  resource_id: string;
+  shared_with: string[];
+}
+
+export interface StudentSearchResult {
+  id: number;
+  username: string;
+  full_name: string;
+  email: string;
+  avatar?: string;
+}
+
+export interface StudyGroupInfo {
+  id: number;
+  name: string;
+  member_count: number;
+  course_name?: string;
 }
 
 const unwrap = <T>(response: any): T => {
@@ -48,6 +79,34 @@ export const resourcesService = {
   ): Promise<ResourceShareRecordResult> {
     const response = await resourcesAPI.recordShare(resourceId, method);
     return unwrap<ResourceShareRecordResult>(response);
+  },
+
+  async shareToStudent(
+    resourceId: string,
+    studentId: number,
+    message?: string
+  ): Promise<ShareToStudentResult> {
+    const response = await resourcesAPI.shareToStudent(resourceId, studentId, message);
+    return unwrap<ShareToStudentResult>(response);
+  },
+
+  async shareToGroup(
+    resourceId: string,
+    groupId: number,
+    message?: string
+  ): Promise<ShareToGroupResult> {
+    const response = await resourcesAPI.shareToGroup(resourceId, groupId, message);
+    return unwrap<ShareToGroupResult>(response);
+  },
+
+  async searchStudents(query: string): Promise<StudentSearchResult[]> {
+    const response = await resourcesAPI.searchStudents(query);
+    return unwrap<StudentSearchResult[]>(response);
+  },
+
+  async getUserStudyGroups(): Promise<StudyGroupInfo[]> {
+    const response = await resourcesAPI.getUserStudyGroups();
+    return unwrap<StudyGroupInfo[]>(response);
   },
 };
 

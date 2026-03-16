@@ -60,7 +60,7 @@ export const FileCard: React.FC<FileCardProps> = ({
             {file.title}
           </Text>
           {file.is_favorite && (
-            <Icon name="star" size={14} color={colors.warning} />
+            <Icon name="heart" size={14} color={colors.error} />
           )}
         </View>
         <View style={styles.metaRow as ViewStyle}>

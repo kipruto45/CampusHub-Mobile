@@ -23,6 +23,8 @@ import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
 import { useAuthStore } from '../../store/auth.store';
 import { authAPI } from '../../services/api';
+import { exchangeNativeTokens } from '../../services/socialAuth';
+import { canUseNativeProvider, signInWithNativeProvider } from '../../services/nativeSocialAuth';
 
 const RegisterScreen: React.FC = () => {
   const router = useRouter();
@@ -74,7 +76,7 @@ const RegisterScreen: React.FC = () => {
       
       Alert.alert(
         'Registration Successful',
-        'Please check your email to verify your account before logging in.',
+        'Your account has been created successfully. Please log in to continue.',
         [
           {
             text: 'OK',
@@ -83,15 +85,52 @@ const RegisterScreen: React.FC = () => {
         ]
       );
     } catch (error: any) {
+      console.log('Registration error:', error);
       const message = error?.response?.data?.message || 
-                     error?.response?.data?.error?.message || 
+                     error?.response?.data?.error?.message ||
+                     error?.response?.data?.error?.details ||
                      'Registration failed. Please try again.';
-      Alert.alert('Registration Failed', message);
+      Alert.alert('Registration Failed', typeof message === 'object' ? JSON.stringify(message) : message);
     }
   };
 
   const handleSocialSignup = async (provider: 'Google' | 'Microsoft') => {
     try {
+      const providerKey = provider === 'Google' ? 'google' : 'microsoft';
+      if (canUseNativeProvider(providerKey)) {
+        const nativeResult = await signInWithNativeProvider(providerKey);
+        if (nativeResult.success && nativeResult.tokens) {
+          const exchange = await exchangeNativeTokens(providerKey, {
+            idToken: nativeResult.tokens.idToken,
+            accessToken: nativeResult.tokens.accessToken,
+          });
+
+          if (!exchange.success || !exchange.tokens?.accessToken) {
+            throw new Error(exchange.error || 'Failed to exchange native tokens');
+          }
+
+          const nextRoute = await useAuthStore.getState().socialLogin(providerKey, {
+            accessToken: exchange.tokens.accessToken,
+            refreshToken: exchange.tokens.refreshToken,
+          });
+
+          if (nextRoute) {
+            router.replace(nextRoute as any);
+          } else {
+            router.replace('/(student)/tabs/home');
+          }
+          return;
+        }
+
+        if (!nativeResult.fallbackToWeb) {
+          Alert.alert(
+            'Authentication Error',
+            nativeResult.error || `Failed to sign up with ${provider}.`
+          );
+          return;
+        }
+      }
+
       const response =
         provider === 'Google'
           ? await authAPI.getGoogleOAuthUrl()
@@ -196,7 +235,7 @@ const RegisterScreen: React.FC = () => {
               onPress={() => setAgreeTerms(!agreeTerms)}
             >
               <View style={[styles.checkbox, agreeTerms && styles.checkboxChecked]}>
-                {agreeTerms && <Text style={styles.checkmark}>✓</Text>}
+                {agreeTerms && <Icon name="checkmark" size={14} color="#FFFFFF" />}
               </View>
               <Text style={styles.termsText}>
                 I agree to the{' '}

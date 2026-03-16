@@ -3,7 +3,9 @@
 
 import { ViewStyle } from 'react-native';
 
-export const shadows: Record<string, ViewStyle> = {
+export type ShadowStyle = Pick<ViewStyle, 'shadowColor' | 'shadowOffset' | 'shadowOpacity' | 'shadowRadius' | 'elevation'>;
+
+export const shadows: Record<string, ShadowStyle> = {
   none: {},
   xs: {
     shadowColor: '#000',

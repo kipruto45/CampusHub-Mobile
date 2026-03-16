@@ -32,8 +32,7 @@ export default function AdminLayout() {
         // Authenticated but not admin - redirect to student home
         router.replace(STUDENT_HOME_ROUTE);
       } else if (user && isAdminRole(user.role)) {
-        // Authenticated as admin - check if trying to access login page
-        // Allow access to admin routes
+        // Authenticated as admin - allow access to admin routes
       }
     }
   }, [initialized, isLoading, isAuthenticated, accessToken, user, router]);
@@ -71,9 +70,7 @@ export default function AdminLayout() {
         headerShown: false,
         animation: 'slide_from_right',
       }}
-    >
-      {/* Routes are auto-discovered from the file system */}
-    </Stack>
+    />
   );
 }
 

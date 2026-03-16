@@ -320,20 +320,27 @@ export const libraryService = {
     folder?: string;
     description?: string;
   }): Promise<LibraryFile> {
-    const formData = new FormData();
-    
-    if (data.file) {
+    const existingParts = (data.file as any)?._parts;
+    const formData =
+      Array.isArray(existingParts) ? data.file : new FormData();
+
+    if (!Array.isArray(existingParts) && data.file) {
       formData.append('file', data.file as any);
     }
-    if (data.title) {
-      formData.append('title', data.title);
-    }
-    if (data.folder) {
-      formData.append('folder', data.folder);
-    }
-    if (data.description) {
-      formData.append('description', data.description);
-    }
+
+    const appendIfMissing = (key: string, value?: string) => {
+      if (!value) return;
+      const hasKey = Array.isArray((formData as any)?._parts)
+        ? (formData as any)._parts.some((part: any) => Array.isArray(part) && part[0] === key)
+        : false;
+      if (!hasKey) {
+        formData.append(key, value);
+      }
+    };
+
+    appendIfMissing('title', data.title);
+    appendIfMissing('folder', data.folder);
+    appendIfMissing('description', data.description);
 
     const response = await api.post('/library/files/', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

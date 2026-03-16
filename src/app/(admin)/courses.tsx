@@ -9,22 +9,29 @@ import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
 import ErrorState from '../../components/ui/ErrorState';
-import api from '../../services/api';
+import { adminAPI } from '../../services/api';
+
+interface Department {
+  id: string;
+  name: string;
+  faculty_id?: string;
+  faculty_name?: string;
+}
 
 interface Course {
   id: string;
   name: string;
   code: string;
   description?: string;
+  department_id?: string;
+  department_name?: string;
   department?: {
     id: string;
     name: string;
   };
-  faculty?: {
-    id: string;
-    name: string;
-  };
+  duration_years?: number | null;
   duration?: string;
+  unit_count?: number;
   is_active: boolean;
   created_at: string;
 }
@@ -36,7 +43,7 @@ const CoursesScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [faculties, setFaculties] = useState<any[]>([]);
-  const [departments, setDepartments] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,32 +59,39 @@ const CoursesScreen: React.FC = () => {
   const fetchData = useCallback(async (isRefresh: boolean = false) => {
     try {
       if (isRefresh) setError(null);
-      
-      const params: any = {};
-      if (searchQuery) params.search = searchQuery;
-      if (selectedFaculty) params.faculty = selectedFaculty;
 
       const [coursesRes, facultiesRes, deptsRes] = await Promise.all([
-        api.get('/faculties/courses/', { params }),
-        api.get('/faculties/'),
-        api.get('/faculties/departments/'),
+        adminAPI.getCourses({ page_size: 200 }),
+        adminAPI.getFaculties({ page_size: 200 }),
+        adminAPI.getDepartments({
+          page_size: 200,
+          ...(selectedFaculty ? { faculty: selectedFaculty } : {}),
+        }),
       ]);
-      
-      setCourses(coursesRes.data?.results || coursesRes.data || []);
-      setFaculties(facultiesRes.data?.results || facultiesRes.data || []);
-      setDepartments(deptsRes.data?.results || deptsRes.data || []);
+
+      const coursesData = coursesRes?.data?.data?.results || [];
+      const facultiesData = facultiesRes?.data?.data?.results || [];
+      const departmentsData = deptsRes?.data?.data?.results || [];
+
+      setCourses(coursesData);
+      setFaculties(facultiesData);
+      setDepartments(departmentsData);
     } catch (err: any) {
       console.error('Failed to fetch courses:', err);
-      setError(err.response?.data?.message || 'Failed to load courses');
+      setError(
+        err.response?.data?.message ||
+          err.response?.data?.error?.message ||
+          'Failed to load courses'
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [searchQuery, selectedFaculty]);
+  }, [selectedFaculty]);
 
   useEffect(() => {
     fetchData(true);
-  }, [searchQuery, selectedFaculty]);
+  }, [fetchData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -103,19 +117,36 @@ const CoursesScreen: React.FC = () => {
   };
 
   const handleSave = async () => {
+    if (!formData.name.trim() || !formData.code.trim() || !formData.department) {
+      Alert.alert('Validation Error', 'Please fill in name, code, and select a department');
+      return;
+    }
+
     try {
-      const payload = { ...formData, department: formData.department || undefined };
+      const durationYears = Number.parseInt(formData.duration, 10);
+      const payload = {
+        name: formData.name.trim(),
+        code: formData.code.trim(),
+        description: formData.description.trim(),
+        department: formData.department,
+        ...(Number.isFinite(durationYears) ? { duration_years: durationYears } : {}),
+      };
       if (editingCourse) {
-        await api.patch(`/faculties/courses/${editingCourse.id}/`, payload);
+        await adminAPI.updateCourse(editingCourse.id, payload);
         Alert.alert('Success', 'Course updated successfully');
       } else {
-        await api.post('/faculties/courses/', payload);
+        await adminAPI.createCourse(payload);
         Alert.alert('Success', 'Course created successfully');
       }
       setModalVisible(false);
       fetchData(true);
     } catch (err: any) {
-      Alert.alert('Error', 'Failed to save course');
+      Alert.alert(
+        'Error',
+        err.response?.data?.message ||
+          err.response?.data?.error?.message ||
+          'Failed to save course'
+      );
     }
   };
 
@@ -130,7 +161,7 @@ const CoursesScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.delete(`/faculties/courses/${id}/`);
+              await adminAPI.deleteCourse(id);
               Alert.alert('Success', 'Course deleted');
               fetchData(true);
             } catch (err: any) {
@@ -142,18 +173,33 @@ const CoursesScreen: React.FC = () => {
     );
   };
 
-  const filteredCourses = courses;
+  const availableDepartmentIds = new Set(departments.map((department) => department.id));
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const filteredCourses = courses.filter((course) => {
+    const matchesSearch =
+      !normalizedSearchQuery ||
+      [course.name, course.code, course.department_name]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedSearchQuery));
+    const matchesFaculty =
+      !selectedFaculty ||
+      (course.department_id ? availableDepartmentIds.has(course.department_id) : false);
+    return matchesSearch && matchesFaculty;
+  });
 
   const renderCourseItem = ({ item }: { item: Course }) => (
     <View style={styles.courseCard}>
       <View style={styles.courseInfo}>
         <Text style={styles.courseName}>{item.name}</Text>
         <Text style={styles.courseCode}>{item.code}</Text>
-        {item.department && (
-          <Text style={styles.courseMeta}>{item.department.name}</Text>
+        {item.department_name && (
+          <Text style={styles.courseMeta}>{item.department_name}</Text>
         )}
         {item.duration && (
           <Text style={styles.courseMeta}>Duration: {item.duration}</Text>
+        )}
+        {typeof item.unit_count === 'number' && (
+          <Text style={styles.courseMeta}>{item.unit_count} units</Text>
         )}
       </View>
       <View style={styles.courseActions}>
@@ -291,11 +337,41 @@ const CoursesScreen: React.FC = () => {
               />
               <TextInput
                 style={styles.input}
-                placeholder="Duration (e.g., 4 years)"
+                placeholder="Duration in years (e.g., 4)"
                 placeholderTextColor={colors.text.tertiary}
                 value={formData.duration}
                 onChangeText={(text) => setFormData({ ...formData, duration: text })}
+                keyboardType="numeric"
               />
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Department *</Text>
+                {departments.length > 0 ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                    {departments.map((department) => (
+                      <TouchableOpacity
+                        key={department.id}
+                        style={[
+                          styles.selectionChip,
+                          formData.department === department.id && styles.selectionChipActive,
+                        ]}
+                        onPress={() => setFormData({ ...formData, department: department.id })}
+                      >
+                        <Text
+                          style={[
+                            styles.selectionChipText,
+                            formData.department === department.id && styles.selectionChipTextActive,
+                          ]}
+                        >
+                          {department.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <Text style={styles.helperText}>No departments available for the selected faculty.</Text>
+                )}
+              </View>
 
               <View style={styles.modalActions}>
                 <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setModalVisible(false)}>
@@ -340,6 +416,8 @@ const styles = StyleSheet.create({
   statsRow: { padding: spacing[4], paddingTop: spacing[2] },
   statsText: { fontSize: 14, color: colors.text.secondary },
   listContent: { padding: spacing[4], paddingTop: 0 },
+  field: { marginBottom: spacing[3] },
+  label: { fontSize: 14, fontWeight: '600', color: colors.text.secondary, marginBottom: spacing[2] },
   courseCard: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card.light,
     borderRadius: borderRadius.xl, padding: spacing[4], marginBottom: spacing[3], ...shadows.sm,
@@ -364,6 +442,18 @@ const styles = StyleSheet.create({
     padding: spacing[4], fontSize: 16, color: colors.text.primary, marginBottom: spacing[3],
   },
   textArea: { height: 80, textAlignVertical: 'top' },
+  chips: { paddingRight: spacing[2] },
+  selectionChip: {
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.background.secondary,
+    marginRight: spacing[2],
+  },
+  selectionChipActive: { backgroundColor: colors.primary[500] },
+  selectionChipText: { fontSize: 14, color: colors.text.secondary },
+  selectionChipTextActive: { color: colors.text.inverse },
+  helperText: { fontSize: 13, color: colors.text.tertiary },
   modalActions: { flexDirection: 'row', gap: spacing[3], marginTop: spacing[4] },
   modalButton: { flex: 1, paddingVertical: spacing[3], borderRadius: borderRadius.lg, alignItems: 'center' },
   cancelButton: { backgroundColor: colors.background.secondary },

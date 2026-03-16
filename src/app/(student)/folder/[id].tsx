@@ -108,8 +108,8 @@ export default function FolderDetailScreen() {
         formData.append('folder', folderId);
 
         await uploadFile({ file: formData });
-        Alert.alert('Success', 'File uploaded successfully');
-        refreshStorage();
+        await handleRefresh();
+        Alert.alert('Success', 'File added to your library');
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to upload file');

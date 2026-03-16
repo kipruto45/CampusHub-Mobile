@@ -15,6 +15,7 @@ const ProfileScreen: React.FC = () => {
   const router = useRouter();
   const { logout } = useAuthStore();
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [formData, setFormData] = useState({ full_name: '', phone_number: '', bio: '' });
@@ -23,27 +24,61 @@ const ProfileScreen: React.FC = () => {
     const fetchProfile = async () => {
       try {
         const response = await adminAPI.getCurrentProfile();
+        console.log('PROFILE_RESPONSE:', JSON.stringify(response));
         const profile = response.data.data;
+        console.log('PROFILE_DATA:', JSON.stringify(profile));
         setUser(profile);
         setFormData({
           full_name: profile.full_name || '',
           phone_number: profile.phone || '',
           bio: profile.bio || '',
         });
-      } catch (err) { console.error('Failed to fetch profile'); }
-      finally { setLoading(false); }
+      } catch (err: any) {
+        console.error('Failed to fetch profile:', err);
+        console.error('Profile error response:', err.response?.data);
+      } finally { setLoading(false); }
     };
     fetchProfile();
   }, []);
 
   const handleSave = async () => {
+    // Only include fields that have values
+    const dataToUpdate: any = {};
+    if (formData.full_name?.trim()) {
+      dataToUpdate.full_name = formData.full_name.trim();
+    }
+    if (formData.phone_number?.trim()) {
+      dataToUpdate.phone_number = formData.phone_number.trim();
+    }
+    if (formData.bio?.trim()) {
+      dataToUpdate.bio = formData.bio.trim();
+    }
+    
+    // Check if there's anything to update
+    if (Object.keys(dataToUpdate).length === 0) {
+      Alert.alert('Error', 'Please fill in at least one field to update');
+      return;
+    }
+    
     try {
-      const response = await adminAPI.updateCurrentProfile(formData);
+      setSaving(true);
+      const response = await adminAPI.updateCurrentProfile(dataToUpdate);
       const profile = response.data.data;
       setUser(profile);
+      setFormData({
+        full_name: profile.full_name || '',
+        phone_number: profile.phone || '',
+        bio: profile.bio || '',
+      });
       setEditing(false);
       Alert.alert('Success', 'Profile updated');
-    } catch (err) { Alert.alert('Error', 'Failed to update'); }
+    } catch (err: any) {
+      console.error('Profile update error:', err);
+      const errorMessage = err?.response?.data?.message || err?.response?.data?.detail || 'Failed to update profile';
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleLogout = () => {
@@ -91,7 +126,9 @@ const ProfileScreen: React.FC = () => {
               <TextInput style={styles.input} placeholder="Full Name" placeholderTextColor={colors.text.tertiary} value={formData.full_name} onChangeText={(t) => setFormData({ ...formData, full_name: t })} />
               <TextInput style={styles.input} placeholder="Phone Number" placeholderTextColor={colors.text.tertiary} value={formData.phone_number} onChangeText={(t) => setFormData({ ...formData, phone_number: t })} keyboardType="phone-pad" />
               <TextInput style={styles.input} placeholder="Bio" placeholderTextColor={colors.text.tertiary} value={formData.bio} onChangeText={(t) => setFormData({ ...formData, bio: t })} multiline />
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSave}><Text style={styles.saveBtnText}>Save Changes</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
+                {saving ? <ActivityIndicator size="small" color={colors.text.inverse} /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
+              </TouchableOpacity>
             </>
           ) : (
             <>

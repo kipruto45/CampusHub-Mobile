@@ -21,10 +21,13 @@ const MoreScreen: React.FC = () => {
   const router = useRouter();
 
   const tools: Tool[] = [
+    // Academic - moved here from dashboard quick menu
+    { id: '0', title: 'Academic Mgmt', icon: 'library', route: '/(admin)/academic-management', color: colors.info },
     { id: '1', title: 'Faculties', icon: 'school', route: '/(admin)/faculties', color: colors.primary[500] },
     { id: '2', title: 'Departments', icon: 'folder', route: '/(admin)/departments', color: colors.accent[500] },
     { id: '3', title: 'Courses', icon: 'book', route: '/(admin)/courses', color: colors.info },
     { id: '4', title: 'Units', icon: 'bookmark', route: '/(admin)/units', color: colors.warning },
+    // Platform Management
     { id: '5', title: 'Announcements', icon: 'megaphone', route: '/(admin)/announcements', color: colors.success },
     { id: '6', title: 'Analytics', icon: 'stats-chart', route: '/(admin)/analytics', color: colors.primary[500] },
     { id: '7', title: 'Search', icon: 'search', route: '/(admin)/search', color: colors.accent[500] },
@@ -32,13 +35,32 @@ const MoreScreen: React.FC = () => {
     { id: '9', title: 'Activity Log', icon: 'list', route: '/(admin)/activity-log', color: colors.info },
     { id: '10', title: 'Storage', icon: 'cloud', route: '/(admin)/storage', color: colors.success },
     { id: '11', title: 'Backup & System', icon: 'archive', route: '/(admin)/backup', color: colors.primary[600] },
+    // Engagement & Analytics
+    { id: '14', title: 'Gamification', icon: 'trophy', route: '/(admin)/gamification', color: colors.warning },
+    { id: '15', title: 'Email Campaigns', icon: 'mail', route: '/(admin)/email-campaigns', color: colors.info },
+    { id: '16', title: 'API Usage', icon: 'code-slash', route: '/(admin)/api-usage', color: colors.accent[500] },
+    // NEW: Advanced Admin Features
+    { id: '17', title: 'Admin Notifications', icon: 'notifications-unread', route: '/(admin)/admin-notifications', color: colors.error },
+    { id: '18', title: 'AI Moderation', icon: 'shield-checkmark', route: '/(admin)/ai-moderation', color: colors.primary[500] },
+    { id: '19', title: 'Predictive Analytics', icon: 'trending-up', route: '/(admin)/predictive-analytics', color: colors.success },
+    { id: '20', title: 'Dashboard Builder', icon: 'grid', route: '/(admin)/dashboard-builder', color: colors.info },
+    { id: '21', title: 'Reports & Export', icon: 'download', route: '/(admin)/reports-export', color: colors.accent[500] },
+    { id: '22', title: 'Audit Log', icon: 'document-text', route: '/(admin)/audit-log', color: colors.warning },
+    // NEW: Modern Admin Features
+    { id: '23', title: 'Content Calendar', icon: 'calendar', route: '/(admin)/content-calendar', color: colors.primary[400] },
+    { id: '24', title: 'Funnel Analytics', icon: 'funnel', route: '/(admin)/funnel-analytics', color: colors.success },
+    { id: '25', title: 'Incidents', icon: 'alert-circle', route: '/(admin)/incidents', color: colors.error },
+    { id: '26', title: 'API Keys', icon: 'key', route: '/(admin)/api-keys', color: colors.accent[600] },
+    { id: '27', title: 'Webhooks', icon: 'link', route: '/(admin)/webhooks', color: colors.info },
+    { id: '28', title: 'Workflows', icon: 'git-branch', route: '/(admin)/workflows', color: colors.warning },
+    // Account
     { id: '12', title: 'Settings', icon: 'settings', route: '/(admin)/settings', color: colors.text.secondary },
     { id: '13', title: 'Profile', icon: 'person', route: '/(admin)/profile', color: colors.primary[500] },
   ];
 
-  const academicTools = tools.filter((tool) => ['1', '2', '3', '4'].includes(tool.id));
+  const academicTools = tools.filter((tool) => ['0', '1', '2', '3', '4'].includes(tool.id));
   const platformTools = tools.filter((tool) =>
-    ['5', '6', '7', '8', '9', '10', '11'].includes(tool.id)
+    ['5', '6', '7', '8', '9', '10', '11', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28'].includes(tool.id)
   );
   const accountTools = tools.filter((tool) => ['12', '13'].includes(tool.id));
 

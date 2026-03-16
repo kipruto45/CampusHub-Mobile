@@ -7,10 +7,90 @@ import axios, {
   AxiosResponse,
   InternalAxiosRequestConfig,
 } from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 type Primitive = string | number | boolean | null | undefined;
+
+const IN_MEMORY_CACHE_DISABLED_TTL = 0;
+const ACADEMIC_REFERENCE_CACHE_TTL_MS = 5 * 60 * 1000;
+const STUDY_GROUPS_CACHE_TTL_MS = 30 * 1000;
+
+const stableSerialize = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableSerialize).join(',')}]`;
+  }
+
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableSerialize((value as Record<string, unknown>)[key])}`)
+      .join(',')}}`;
+  }
+
+  return JSON.stringify(value);
+};
+
+type MemoryResponseCacheEntry = {
+  expiresAt: number;
+  response: AxiosResponse<any>;
+};
+
+const memoryGetResponseCache = new Map<string, MemoryResponseCacheEntry>();
+const inFlightGetRequests = new Map<string, Promise<AxiosResponse<any>>>();
+
+const buildMemoryGetCacheKey = (
+  scope: string,
+  params?: Record<string, unknown>
+): string => `${scope}:${stableSerialize(params || {})}`;
+
+const getMemoryCachedGet = (
+  cacheKey: string
+): AxiosResponse<any> | null => {
+  const cached = memoryGetResponseCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    memoryGetResponseCache.delete(cacheKey);
+    return null;
+  }
+  return cached.response;
+};
+
+const withMemoryGetCache = (
+  cacheKey: string,
+  ttlMs: number,
+  fetcher: () => Promise<AxiosResponse<any>>
+): Promise<AxiosResponse<any>> => {
+  if (ttlMs <= IN_MEMORY_CACHE_DISABLED_TTL) {
+    return fetcher();
+  }
+
+  const cached = getMemoryCachedGet(cacheKey);
+  if (cached) {
+    return Promise.resolve(cached);
+  }
+
+  const inFlight = inFlightGetRequests.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const request = fetcher()
+    .then((response) => {
+      memoryGetResponseCache.set(cacheKey, {
+        expiresAt: Date.now() + ttlMs,
+        response,
+      });
+      return response;
+    })
+    .finally(() => {
+      inFlightGetRequests.delete(cacheKey);
+    });
+
+  inFlightGetRequests.set(cacheKey, request);
+  return request;
+};
 
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
 
@@ -20,6 +100,15 @@ const ensureApiSuffix = (value: string): string => {
 };
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '10.0.2.2']);
+const DEV_TUNNEL_HOST_PATTERNS = [
+  /\.loca\.lt$/i,
+  /\.ngrok(?:-free)?\.app$/i,
+  /\.ngrok\.io$/i,
+  /\.trycloudflare\.com$/i,
+];
+
+const isIpAddress = (value: string): boolean =>
+  /^(?:\d{1,3}\.){3}\d{1,3}$/.test(value) || value.includes(':');
 
 const getExpoHost = (): string | null => {
   const hostUri =
@@ -75,19 +164,162 @@ const resolveApiBaseUrl = (): string => {
   return normalizeLoopbackApiUrlForMobile(fromEnv);
 };
 
-const API_BASE_URL = ensureApiSuffix(resolveApiBaseUrl());
+const API_BASE_URL_STORAGE_KEY = 'campushub.apiBaseUrl';
+
+const normalizeApiBaseUrl = (value: string): string =>
+  ensureApiSuffix(normalizeLoopbackApiUrlForMobile(value));
+
+const parseApiBaseUrlList = (value?: string): string[] => {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map(normalizeApiBaseUrl);
+};
+
+const DEFAULT_API_BASE_URL = normalizeApiBaseUrl(resolveApiBaseUrl());
+
+const FALLBACK_API_BASE_URLS = parseApiBaseUrlList(
+  process.env.EXPO_PUBLIC_API_URL_FALLBACKS
+);
+
+const IMPLICIT_API_BASE_URLS = parseApiBaseUrlList(
+  [
+    process.env.EXPO_PUBLIC_WEB_URL,
+    process.env.EXPO_PUBLIC_RESOURCE_SHARE_URL,
+    process.env.EXPO_PUBLIC_SHARE_BASE_URL,
+  ]
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean)
+    .map((entry) => ensureApiSuffix(entry))
+    .join(',')
+);
+
+let apiBaseUrl = DEFAULT_API_BASE_URL;
+
+export const getApiBaseUrl = (): string => apiBaseUrl;
+
+const getDevFallbackApiBaseUrl = (): string | null => {
+  const expoHost = getExpoHost();
+  if (!expoHost) return null;
+  const normalizedHost = expoHost.trim().toLowerCase();
+  if (!LOOPBACK_HOSTS.has(normalizedHost) && !isIpAddress(normalizedHost)) {
+    return null;
+  }
+  return ensureApiSuffix(`http://${expoHost}:8000`);
+};
+
+const isDevFallbackEligibleHost = (host: string): boolean =>
+  DEV_TUNNEL_HOST_PATTERNS.some((pattern) => pattern.test(host)) ||
+  (!LOOPBACK_HOSTS.has(host) && !isIpAddress(host));
 
 const getOAuthCallbackUrl = (provider: 'google' | 'microsoft'): string =>
-  `${API_BASE_URL}/auth/${provider}/callback/`;
+  `${getApiBaseUrl()}/auth/${provider}/callback/`;
 
 const api: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: apiBaseUrl,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
   },
 });
+
+export const setApiBaseUrl = (value: string) => {
+  const normalized = normalizeApiBaseUrl(value);
+  apiBaseUrl = normalized;
+  api.defaults.baseURL = normalized;
+};
+
+const getApiHealthUrl = (baseUrl: string): string => {
+  const normalized = trimTrailingSlash(baseUrl);
+  const root = /\/api$/i.test(normalized) ? normalized.replace(/\/api$/i, '') : normalized;
+  return `${root}/health/`;
+};
+
+const checkApiHealth = async (baseUrl: string, timeoutMs = 3500): Promise<boolean> => {
+  try {
+    const response = await axios.get(getApiHealthUrl(baseUrl), {
+      timeout: timeoutMs,
+      headers: { Accept: 'application/json' },
+      validateStatus: (status) => status >= 200 && status < 300,
+    });
+    return response.status >= 200 && response.status < 300;
+  } catch {
+    return false;
+  }
+};
+
+const uniqueApiBaseUrls = (values: string[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  values.forEach((value) => {
+    const normalized = normalizeApiBaseUrl(value);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    result.push(normalized);
+  });
+  return result;
+};
+
+let apiBaseUrlProbe: Promise<string | null> | null = null;
+
+const readPersistedApiBaseUrl = async (): Promise<string> => {
+  try {
+    return (await AsyncStorage.getItem(API_BASE_URL_STORAGE_KEY)) || '';
+  } catch {
+    return '';
+  }
+};
+
+const persistApiBaseUrl = async (value: string) => {
+  try {
+    await AsyncStorage.setItem(API_BASE_URL_STORAGE_KEY, value);
+  } catch {
+    // Ignore persistence errors.
+  }
+};
+
+export const ensureApiBaseUrl = async (
+  options: { forceRefresh?: boolean } = {}
+): Promise<string> => {
+  if (apiBaseUrlProbe) {
+    const resolved = await apiBaseUrlProbe;
+    return resolved || getApiBaseUrl();
+  }
+
+  apiBaseUrlProbe = (async () => {
+    const persisted = options.forceRefresh ? '' : await readPersistedApiBaseUrl();
+    const candidates = uniqueApiBaseUrls([
+      persisted,
+      getApiBaseUrl(),
+      DEFAULT_API_BASE_URL,
+      ...FALLBACK_API_BASE_URLS,
+      ...IMPLICIT_API_BASE_URLS,
+    ]).filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (await checkApiHealth(candidate)) {
+        if (candidate !== getApiBaseUrl()) {
+          setApiBaseUrl(candidate);
+        }
+        await persistApiBaseUrl(candidate);
+        return candidate;
+      }
+    }
+
+    if (!options.forceRefresh && persisted && persisted !== getApiBaseUrl()) {
+      setApiBaseUrl(persisted);
+    }
+    return null;
+  })().finally(() => {
+    apiBaseUrlProbe = null;
+  });
+
+  const resolved = await apiBaseUrlProbe;
+  return resolved || getApiBaseUrl();
+};
 
 let authToken: string | null = null;
 let refreshToken: string | null = null;
@@ -197,8 +429,16 @@ const asArray = <T = any>(value: any): T[] => {
   return [];
 };
 
+const normalizeNameValue = (value: any): string => {
+  const cleaned = String(value ?? '').trim();
+  if (!cleaned) return '';
+  const lowered = cleaned.toLowerCase();
+  if (['null', 'undefined', 'none', 'nil'].includes(lowered)) return '';
+  return cleaned;
+};
+
 const parseFullName = (fullName?: string | null): { firstName: string; lastName: string } => {
-  const cleaned = String(fullName || '').trim();
+  const cleaned = normalizeNameValue(fullName);
   if (!cleaned) return { firstName: '', lastName: '' };
   const parts = cleaned.split(/\s+/);
   return {
@@ -207,19 +447,25 @@ const parseFullName = (fullName?: string | null): { firstName: string; lastName:
   };
 };
 
+const normalizeAvatarUrl = (value: any): string | undefined => {
+  const normalized = normalizeAbsoluteAppUrl(value);
+  return normalized || undefined;
+};
+
 const normalizeUser = (raw: any) => {
   const { firstName, lastName } = parseFullName(raw?.full_name);
-  const first = raw?.first_name || firstName;
-  const last = raw?.last_name || lastName;
+  const first = normalizeNameValue(raw?.first_name) || firstName;
+  const last = normalizeNameValue(raw?.last_name) || lastName;
+  const rawFullName = normalizeNameValue(raw?.full_name);
   return {
     id: String(raw?.id || ''),
     email: raw?.email || '',
-    full_name: raw?.full_name || `${first} ${last}`.trim(),
+    full_name: rawFullName || `${first} ${last}`.trim(),
     first_name: first,
     last_name: last,
     registration_number: raw?.registration_number || '',
-    avatar: raw?.avatar || raw?.profile_image_url || raw?.profile_image || '',
-    profile_image: raw?.profile_image_url || raw?.profile_image || '',
+    avatar: normalizeAvatarUrl(raw?.avatar || raw?.profile_image_url || raw?.profile_image),
+    profile_image: normalizeAbsoluteAppUrl(raw?.profile_image_url || raw?.profile_image),
     role: String(raw?.role || 'STUDENT').toLowerCase(),
     faculty: raw?.faculty_name || raw?.faculty || '',
     department: raw?.department_name || raw?.department || '',
@@ -272,6 +518,17 @@ const normalizeResource = (raw: any) => {
   const unitCode = raw?.unit?.code || raw?.unit_code || raw?.unit_details?.code || '';
   const unitId = raw?.unit?.id || raw?.unit || raw?.unit_id || '';
 
+  const autoRatingRaw =
+    raw?.auto_rating ??
+    raw?.autoRating ??
+    raw?.autoRatingValue ??
+    null;
+  const averageRatingRaw = Number(raw?.average_rating || 0);
+  const normalizedAverageRating =
+    autoRatingRaw !== null && autoRatingRaw !== undefined
+      ? Number(autoRatingRaw)
+      : averageRatingRaw;
+
   const mapped = {
     id: String(raw?.id || ''),
     slug: raw?.slug || '',
@@ -303,7 +560,11 @@ const normalizeResource = (raw: any) => {
     year: raw?.year || String(raw?.year_of_study || ''),
     year_of_study: raw?.year_of_study || null,
     semester: raw?.semester || null,
-    average_rating: Number(raw?.average_rating || 0),
+    average_rating: normalizedAverageRating,
+    auto_rating:
+      autoRatingRaw !== null && autoRatingRaw !== undefined
+        ? Number(autoRatingRaw)
+        : null,
     rating_count: Number(raw?.rating_count || raw?.ratings_count || 0),
     ratings_count: Number(raw?.ratings_count || raw?.rating_count || 0),
     download_count: Number(raw?.download_count || 0),
@@ -333,7 +594,7 @@ const normalizeResource = (raw: any) => {
       last_name:
         raw?.uploader?.last_name || uploadedByObject?.last_name || uploaderParts.lastName,
       email: raw?.uploader?.email || uploadedByObject?.email || '',
-      avatar: raw?.uploader?.avatar || uploadedByObject?.avatar || '',
+      avatar: normalizeAvatarUrl(raw?.uploader?.avatar || uploadedByObject?.avatar) || '',
     },
     uploaded_by: uploaderName,
   };
@@ -342,7 +603,46 @@ const normalizeResource = (raw: any) => {
 };
 
 const normalizeAnnouncement = (raw: any) => {
+  const formatAttachmentSize = (value: number): string => {
+    if (!value) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const index = Math.min(
+      Math.floor(Math.log(value) / Math.log(1024)),
+      units.length - 1
+    );
+    const normalized = value / Math.pow(1024, index);
+    return `${parseFloat(normalized.toFixed(index === 0 ? 0 : 1))} ${units[index]}`;
+  };
+
+  const normalizeAttachment = (attachment: any) => ({
+    id: String(attachment?.id || ''),
+    file_url: normalizeAbsoluteAppUrl(attachment?.file_url || attachment?.url),
+    filename: String(attachment?.filename || attachment?.name || 'Attachment'),
+    file_type: String(attachment?.file_type || attachment?.type || ''),
+    file_size: Number(attachment?.file_size || 0),
+    formatted_file_size:
+      String(attachment?.formatted_file_size || '').trim() ||
+      formatAttachmentSize(Number(attachment?.file_size || 0)),
+    created_at: String(attachment?.created_at || ''),
+  });
+
   const category = raw?.announcement_type_display || raw?.announcement_type || 'General';
+  const attachmentsSource = asArray(raw?.attachments);
+  const attachments = attachmentsSource.length
+    ? attachmentsSource.map(normalizeAttachment)
+    : raw?.attachment_url
+      ? [
+          normalizeAttachment({
+            id: raw?.id || raw?.slug || 'attachment',
+            file_url: raw?.attachment_url,
+            filename: raw?.attachment_name,
+            file_type: raw?.attachment_type,
+            formatted_file_size: raw?.attachment_size,
+          }),
+        ]
+      : [];
+  const primaryAttachment = attachments[0];
+
   return {
     id: String(raw?.slug || raw?.id || ''),
     uuid: raw?.id ? String(raw.id) : '',
@@ -351,27 +651,39 @@ const normalizeAnnouncement = (raw: any) => {
     content: raw?.content || '',
     author_name: raw?.created_by_name || 'CampusHub',
     created_at: raw?.published_at || raw?.created_at || '',
+    published_at: raw?.published_at || raw?.created_at || '',
     priority: raw?.is_pinned ? 'high' : 'medium',
     is_read: Boolean(raw?.is_read),
     is_pinned: Boolean(raw?.is_pinned),
+    is_saved: false,
     category,
-    attachment_url: raw?.attachment_url || '',
-    attachment_name: raw?.attachment_name || '',
-    attachment_type: raw?.attachment_type || '',
-    attachment_size: raw?.attachment_size || '',
+    attachments,
+    attachment_count: Number(raw?.attachment_count || attachments.length),
+    attachment_url: primaryAttachment?.file_url || raw?.attachment_url || '',
+    attachment_name: primaryAttachment?.filename || raw?.attachment_name || '',
+    attachment_type: primaryAttachment?.file_type || raw?.attachment_type || '',
+    attachment_size:
+      primaryAttachment?.formatted_file_size || raw?.attachment_size || '',
   };
 };
 
-const normalizeNotification = (raw: any) => ({
-  id: String(raw?.id || ''),
-  type: raw?.type || raw?.notification_type || 'system',
-  title: raw?.title || '',
-  message: raw?.message || '',
-  is_read: Boolean(raw?.is_read),
-  link: raw?.link || '',
-  resource_id: raw?.resource_id || raw?.target_resource || '',
-  created_at: raw?.created_at || '',
-});
+const normalizeNotification = (raw: any) => {
+  const type = String(raw?.type || raw?.notification_type || 'system');
+  const notificationTypeDisplay = String(raw?.notification_type_display || '')
+    .trim() || type.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
+  return {
+    id: String(raw?.id || ''),
+    type,
+    notification_type_display: notificationTypeDisplay,
+    title: raw?.title || '',
+    message: raw?.message || '',
+    is_read: Boolean(raw?.is_read),
+    link: raw?.link || '',
+    resource_id: raw?.resource_id || raw?.target_resource ? String(raw?.resource_id || raw?.target_resource) : '',
+    created_at: raw?.created_at || '',
+  };
+};
 
 const normalizeActivity = (raw: any) => {
   const activityType = String(raw?.activity_type || raw?.type || '').toLowerCase();
@@ -426,6 +738,38 @@ const normalizeLibraryFile = (raw: any) => ({
   updated_at: raw?.updated_at || '',
 });
 
+export const normalizeAbsoluteAppUrl = (value: any): string => {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return '';
+  const normalizedLower = rawValue.toLowerCase();
+  if (['null', 'undefined', 'none', 'nil'].includes(normalizedLower)) {
+    return '';
+  }
+  if (/\/(null|undefined|none|nil)$/i.test(normalizedLower)) {
+    return '';
+  }
+  if (/^(file|content|data|blob):/i.test(rawValue)) {
+    return rawValue;
+  }
+  if (/^https?:\/\//i.test(rawValue)) {
+    return normalizeLoopbackApiUrlForMobile(rawValue);
+  }
+  const baseUrl = getResourceShareBaseUrl();
+  return `${baseUrl}${rawValue.startsWith('/') ? '' : '/'}${rawValue}`;
+};
+
+const normalizeDownloadHistoryItem = (raw: any) => ({
+  id: String(raw?.id || ''),
+  download_type: raw?.download_type || 'resource',
+  title: raw?.download_title || raw?.resource_title || raw?.personal_file_name || 'Download',
+  resource_id: raw?.resource ? String(raw.resource) : '',
+  personal_file_id: raw?.personal_file ? String(raw.personal_file) : '',
+  resource_type: raw?.resource_type || '',
+  file_type: raw?.file_type || '',
+  file_url: normalizeAbsoluteAppUrl(raw?.file_url),
+  created_at: raw?.created_at || '',
+});
+
 const normalizeAdminUser = (raw: any) => {
   const user = normalizeUser(raw);
   const profile = raw?.profile || {};
@@ -433,7 +777,7 @@ const normalizeAdminUser = (raw: any) => {
     ...user,
     profile: {
       ...profile,
-      avatar: raw?.profile_image_url || raw?.profile_image || '',
+      avatar: normalizeAvatarUrl(raw?.profile_image_url || raw?.profile_image),
       faculty: raw?.faculty_name || user.faculty || '',
       department: raw?.department_name || user.department || '',
       course: raw?.course_name || user.course || '',
@@ -495,54 +839,238 @@ const normalizeAdminReport = (raw: any) => {
   };
 };
 
-const normalizeAdminSystemStats = (raw: any) => ({
-  users: {
-    total: Number(raw?.users?.total || 0),
-    active: Number(raw?.users?.active || 0),
-    verified: Number(raw?.users?.verified || 0),
-  },
-  resources: {
-    total: Number(raw?.resources?.total || 0),
-    approved: Number(raw?.resources?.approved || 0),
-    pending: Number(raw?.resources?.pending || 0),
-    rejected: Number(raw?.resources?.rejected || 0),
-  },
-  academic: {
-    faculties: Number(raw?.academic?.faculties || 0),
-    departments: Number(raw?.academic?.departments || 0),
-    courses: Number(raw?.academic?.courses || 0),
-  },
-  storage: {
-    total_bytes: Number(raw?.storage?.total_bytes || 0),
-    total_mb: Number(raw?.storage?.total_mb || 0),
-    total_gb: Number(raw?.storage?.total_gb || 0),
-  },
-  activity: {
-    activities_today: Number(raw?.activity?.activities_today || 0),
-  },
-  summary: {
-    total_users: Number(raw?.users?.total || 0),
-    active_users: Number(raw?.users?.active || 0),
-    verified_users: Number(raw?.users?.verified || 0),
-    total_resources: Number(raw?.resources?.total || 0),
-    approved_resources: Number(raw?.resources?.approved || 0),
-    pending_resources: Number(raw?.resources?.pending || 0),
-    rejected_resources: Number(raw?.resources?.rejected || 0),
-    total_storage_used_gb: Number(raw?.storage?.total_gb || 0),
-    activities_today: Number(raw?.activity?.activities_today || 0),
-  },
+const normalizeAdminSystemStats = (raw: any) => {
+  const payload = extractData<any>(raw);
+  const summary = payload?.summary || {};
+  const users = payload?.users || {};
+  const resources = payload?.resources || {};
+  const studyGroups = payload?.study_groups || payload?.social || {};
+  const announcements = payload?.announcements || {};
+  const news = payload?.news || {};
+  const academic = payload?.academic || {};
+  const storage = payload?.storage || {};
+  const activity = payload?.activity || {};
+
+  return {
+    users: {
+      total: Number(summary?.total_users ?? users?.total ?? users?.total_users ?? 0),
+      total_users: Number(summary?.total_users ?? users?.total ?? users?.total_users ?? 0),
+      total_students: Number(summary?.total_students ?? users?.students ?? users?.total_students ?? 0),
+      total_admins: Number(summary?.total_admins ?? users?.admins ?? users?.total_admins ?? 0),
+      active: Number(summary?.active_users ?? users?.active ?? 0),
+      active_users_today: Number(summary?.active_users_today ?? users?.active_today ?? activity?.active_users_today ?? 0),
+      new_users_today: Number(summary?.new_users_today ?? users?.new_today ?? activity?.new_users_today ?? 0),
+      active_users_week: Number(summary?.active_users_week ?? users?.active_week ?? activity?.active_users_week ?? 0),
+      suspended_users: Number(summary?.suspended_users ?? users?.suspended ?? 0),
+      verified: Number(summary?.verified_users ?? users?.verified ?? 0),
+    },
+    resources: {
+      total: Number(summary?.total_resources ?? resources?.total ?? resources?.total_resources ?? 0),
+      total_resources: Number(summary?.total_resources ?? resources?.total ?? resources?.total_resources ?? 0),
+      approved: Number(summary?.approved_resources ?? resources?.approved ?? resources?.approved_resources ?? 0),
+      approved_resources: Number(summary?.approved_resources ?? resources?.approved ?? resources?.approved_resources ?? 0),
+      pending: Number(summary?.pending_resources ?? resources?.pending ?? resources?.pending_resources ?? 0),
+      pending_resources: Number(summary?.pending_resources ?? resources?.pending ?? resources?.pending_resources ?? 0),
+      rejected: Number(summary?.rejected_resources ?? resources?.rejected ?? resources?.rejected_resources ?? 0),
+      rejected_resources: Number(summary?.rejected_resources ?? resources?.rejected ?? resources?.rejected_resources ?? 0),
+      reported_resources: Number(summary?.reported_resources ?? resources?.reported ?? resources?.reported_resources ?? payload?.reports?.total ?? 0),
+      total_downloads: Number(summary?.total_downloads ?? resources?.downloads ?? resources?.total_downloads ?? activity?.total_downloads ?? 0),
+      total_shares: Number(summary?.total_shares ?? resources?.shares ?? resources?.total_shares ?? activity?.total_shares ?? 0),
+    },
+    study_groups: {
+      total: Number(summary?.total_study_groups ?? studyGroups?.total ?? studyGroups?.study_groups ?? 0),
+      total_study_groups: Number(summary?.total_study_groups ?? studyGroups?.total ?? studyGroups?.study_groups ?? 0),
+    },
+    announcements: {
+      total: Number(summary?.total_announcements ?? announcements?.total ?? news?.total ?? 0),
+      total_announcements: Number(summary?.total_announcements ?? announcements?.total ?? 0),
+      total_news: Number(summary?.total_news ?? news?.total ?? 0),
+    },
+    academic: {
+      faculties: Number(academic?.faculties ?? 0),
+      departments: Number(academic?.departments ?? 0),
+      courses: Number(academic?.courses ?? 0),
+    },
+    storage: {
+      total_bytes: Number(storage?.total_bytes ?? 0),
+      total_mb: Number(storage?.total_mb ?? 0),
+      total_gb: Number(storage?.total_gb ?? 0),
+    },
+    activity: {
+      activities_today: Number(summary?.activities_today ?? activity?.activities_today ?? 0),
+    },
+    summary: {
+      total_users: Number(summary?.total_users ?? users?.total ?? users?.total_users ?? 0),
+      total_students: Number(summary?.total_students ?? users?.students ?? users?.total_students ?? 0),
+      total_admins: Number(summary?.total_admins ?? users?.admins ?? users?.total_admins ?? 0),
+      active_users: Number(summary?.active_users ?? users?.active ?? 0),
+      active_users_today: Number(summary?.active_users_today ?? users?.active_today ?? activity?.active_users_today ?? 0),
+      new_users_today: Number(summary?.new_users_today ?? users?.new_today ?? activity?.new_users_today ?? 0),
+      active_users_week: Number(summary?.active_users_week ?? users?.active_week ?? activity?.active_users_week ?? 0),
+      suspended_users: Number(summary?.suspended_users ?? users?.suspended ?? 0),
+      verified_users: Number(summary?.verified_users ?? users?.verified ?? 0),
+      total_resources: Number(summary?.total_resources ?? resources?.total ?? resources?.total_resources ?? 0),
+      approved_resources: Number(summary?.approved_resources ?? resources?.approved ?? resources?.approved_resources ?? 0),
+      pending_resources: Number(summary?.pending_resources ?? resources?.pending ?? resources?.pending_resources ?? 0),
+      rejected_resources: Number(summary?.rejected_resources ?? resources?.rejected ?? resources?.rejected_resources ?? 0),
+      reported_resources: Number(summary?.reported_resources ?? resources?.reported ?? resources?.reported_resources ?? payload?.reports?.total ?? 0),
+      total_downloads: Number(summary?.total_downloads ?? resources?.downloads ?? resources?.total_downloads ?? activity?.total_downloads ?? 0),
+      total_shares: Number(summary?.total_shares ?? resources?.shares ?? resources?.total_shares ?? activity?.total_shares ?? 0),
+      total_study_groups: Number(summary?.total_study_groups ?? studyGroups?.total ?? studyGroups?.study_groups ?? 0),
+      total_announcements: Number(summary?.total_announcements ?? announcements?.total ?? 0),
+      total_news: Number(summary?.total_news ?? news?.total ?? 0),
+      total_storage_used_gb: Number(summary?.total_storage_used_gb ?? storage?.total_gb ?? 0),
+      activities_today: Number(summary?.activities_today ?? activity?.activities_today ?? 0),
+    },
+  };
+};
+
+const normalizeAdminDepartment = (raw: any) => ({
+  id: String(raw?.id || ''),
+  name: raw?.name || '',
+  code: raw?.code || '',
+  description: raw?.description || '',
+  faculty_id: raw?.faculty ? String(raw.faculty) : '',
+  faculty_name: raw?.faculty_name || '',
+  course_count: Number(raw?.course_count || 0),
+  is_active: raw?.is_active ?? true,
+  created_at: raw?.created_at || '',
+  updated_at: raw?.updated_at || '',
 });
+
+const normalizeAdminFaculty = (raw: any) => ({
+  id: String(raw?.id || ''),
+  name: raw?.name || '',
+  code: raw?.code || '',
+  description: raw?.description || '',
+  department_count: Number(raw?.department_count || 0),
+  is_active: raw?.is_active ?? true,
+  created_at: raw?.created_at || '',
+  updated_at: raw?.updated_at || '',
+});
+
+const normalizeAdminCourse = (raw: any) => ({
+  id: String(raw?.id || ''),
+  name: raw?.name || '',
+  code: raw?.code || '',
+  description: raw?.description || '',
+  department_id: raw?.department ? String(raw.department) : '',
+  department_name: raw?.department_name || '',
+  department: raw?.department
+    ? {
+        id: String(raw.department),
+        name: raw?.department_name || '',
+      }
+    : undefined,
+  duration_years:
+    raw?.duration_years === null || raw?.duration_years === undefined
+      ? null
+      : Number(raw.duration_years),
+  duration:
+    raw?.duration_years === null || raw?.duration_years === undefined
+      ? ''
+      : `${Number(raw.duration_years)} years`,
+  unit_count: Number(raw?.unit_count || 0),
+  is_active: raw?.is_active ?? true,
+  created_at: raw?.created_at || '',
+  updated_at: raw?.updated_at || '',
+});
+
+const normalizeAdminUnit = (raw: any) => ({
+  id: String(raw?.id || ''),
+  name: raw?.name || '',
+  code: raw?.code || '',
+  description: raw?.description || '',
+  course_id: raw?.course ? String(raw.course) : '',
+  course_name: raw?.course_name || '',
+  course: raw?.course
+    ? {
+        id: String(raw.course),
+        name: raw?.course_name || '',
+      }
+    : undefined,
+  semester:
+    raw?.semester === null || raw?.semester === undefined || raw?.semester === ''
+      ? undefined
+      : Number(raw.semester),
+  year_of_study:
+    raw?.year_of_study === null || raw?.year_of_study === undefined || raw?.year_of_study === ''
+      ? undefined
+      : Number(raw.year_of_study),
+  is_active: raw?.is_active ?? true,
+  created_at: raw?.created_at || '',
+  updated_at: raw?.updated_at || '',
+});
+
+const normalizeAdminStudyGroup = (raw: any) => ({
+  id: String(raw?.id || ''),
+  name: raw?.name || '',
+  description: raw?.description || '',
+  course_id: raw?.course ? String(raw.course) : '',
+  course_name: raw?.course_name || '',
+  faculty_id: raw?.faculty ? String(raw.faculty) : '',
+  faculty_name: raw?.faculty_name || '',
+  department_id: raw?.department ? String(raw.department) : '',
+  department_name: raw?.department_name || '',
+  year_of_study:
+    raw?.year_of_study === null || raw?.year_of_study === undefined || raw?.year_of_study === ''
+      ? null
+      : Number(raw.year_of_study),
+  privacy: raw?.privacy || (raw?.is_public ? 'public' : 'private'),
+  is_public: raw?.is_public ?? true,
+  allow_member_invites: raw?.allow_member_invites ?? true,
+  max_members: Number(raw?.max_members || 0),
+  member_count: Number(raw?.member_count || 0),
+  status: raw?.status || 'active',
+  created_by_name: raw?.created_by_name || '',
+  created_by_email: raw?.created_by_email || '',
+  created_at: raw?.created_at || '',
+  updated_at: raw?.updated_at || '',
+});
+
+const collectPaginatedResults = async <T>(
+  fetchPage: (page: number) => Promise<AxiosResponse<any, any>>,
+  normalize: (raw: any) => T
+) => {
+  const aggregated: T[] = [];
+  let page = 1;
+  let totalCount = 0;
+  let next: string | null = null;
+
+  while (true) {
+    const response = await fetchPage(page);
+    const raw = response.data || {};
+    const pageResults = asArray(raw?.results || raw).map(normalize);
+    aggregated.push(...pageResults);
+    totalCount = Number(raw?.count || aggregated.length);
+    next = raw?.next || null;
+    if (!next || pageResults.length === 0) {
+      break;
+    }
+    page += 1;
+  }
+
+  return {
+    results: aggregated,
+    count: totalCount || aggregated.length,
+    next: null,
+    previous: null,
+  };
+};
 
 const normalizeBackupMetadata = (raw: any) => {
   const payload = raw?.backup || raw || {};
   return {
-    backup_id: String(payload?.timestamp || payload?.backup_id || ''),
+    backup_id: String(payload?.backup_id || payload?.timestamp || ''),
     created_at: payload?.timestamp || payload?.created_at || '',
     size_bytes: Number(payload?.total_storage_bytes || payload?.size_bytes || 0),
     size_mb: Number(payload?.total_storage_mb || payload?.size_mb || 0),
     resources_count: Number(payload?.resources_count || 0),
     users_count: Number(payload?.users_count || 0),
-    includes: ['users', 'resources', 'media'],
+    study_groups_count: Number(payload?.study_groups_count || 0),
+    announcements_count: Number(payload?.announcements_count || 0),
+    includes: asArray(payload?.includes).length ? asArray(payload?.includes) : ['users', 'resources', 'media'],
+    download_url: payload?.download_url || '',
     message: raw?.message || '',
   };
 };
@@ -551,10 +1079,18 @@ const normalizeExportMetadata = (raw: any) => {
   const payload = raw?.data || raw || {};
   return {
     export_date: payload?.export_date || '',
+    generated_at: payload?.generated_at || '',
     exported_by: payload?.exported_by || '',
-    faculties_count: asArray(payload?.faculties).length,
-    departments_count: asArray(payload?.departments).length,
-    courses_count: asArray(payload?.courses).length,
+    faculties_count: Number(payload?.faculties_count ?? asArray(payload?.faculties).length),
+    departments_count: Number(payload?.departments_count ?? asArray(payload?.departments).length),
+    courses_count: Number(payload?.courses_count ?? asArray(payload?.courses).length),
+    units_count: Number(payload?.units_count || 0),
+    users_count: Number(payload?.users_count || 0),
+    resources_count: Number(payload?.resources_count || 0),
+    study_groups_count: Number(payload?.study_groups_count || 0),
+    announcements_count: Number(payload?.announcements_count || 0),
+    available_formats: asArray(payload?.available_formats),
+    download_urls: payload?.download_urls || {},
     message: raw?.message || '',
     data: payload,
   };
@@ -624,17 +1160,151 @@ const normalizeResourceListPayload = (rawPayload: any) => {
   };
 };
 
+const getResourceShareBaseUrl = (): string => {
+  const explicit = String(
+    process.env.EXPO_PUBLIC_RESOURCE_SHARE_URL ||
+      process.env.EXPO_PUBLIC_WEB_URL ||
+      process.env.EXPO_PUBLIC_SHARE_BASE_URL ||
+      ''
+  ).trim();
+
+  if (explicit) {
+    return trimTrailingSlash(explicit);
+  }
+
+  return trimTrailingSlash(getApiBaseUrl().replace(/\/api$/i, ''));
+};
+
+const normalizeResourceSharePayload = (rawPayload: any) => {
+  const slug = String(rawPayload?.slug || '').trim();
+  const providedShareUrl = String(rawPayload?.share_url || '').trim();
+  const fallbackShareUrl = slug ? `${getResourceShareBaseUrl()}/resources/${slug}` : '';
+  const shareUrl =
+    providedShareUrl && /^https?:\/\//i.test(providedShareUrl)
+      ? providedShareUrl
+      : fallbackShareUrl;
+
+  let shareMessage = String(rawPayload?.share_message || '').trim();
+  if (providedShareUrl && shareUrl && shareUrl !== providedShareUrl && shareMessage) {
+    shareMessage = shareMessage.replace(providedShareUrl, shareUrl);
+  }
+  if (shareUrl && shareMessage && !shareMessage.includes(shareUrl)) {
+    shareMessage = `${shareMessage}\n\nOpen here:\n${shareUrl}`;
+  }
+  if (!shareMessage) {
+    shareMessage = shareUrl
+      ? `Check out this resource on CampusHub:\n\n${rawPayload?.title || 'Resource'}\n\nOpen here:\n${shareUrl}`
+      : String(rawPayload?.title || 'Resource');
+  }
+
+  return {
+    resource_id: String(rawPayload?.resource_id || rawPayload?.id || ''),
+    title: String(rawPayload?.title || ''),
+    slug,
+    share_url: shareUrl,
+    deep_link_url: String(
+      rawPayload?.deep_link_url || (slug ? `campushub://resources/${slug}` : '')
+    ),
+    share_message: shareMessage,
+    metadata_summary: String(rawPayload?.metadata_summary || ''),
+    can_share: Boolean(rawPayload?.can_share),
+    reason: String(rawPayload?.reason || ''),
+  };
+};
+
 const isFallbackStatus = (error: any, statuses: number[]) =>
   axios.isAxiosError(error) && statuses.includes(error.response?.status || 0);
 
+const humanizeFieldName = (value: string): string =>
+  value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .trim();
+
+const extractFirstError = (value: any): string => {
+  if (!value) return '';
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const message = extractFirstError(entry);
+      if (message) return message;
+    }
+    return '';
+  }
+  if (typeof value === 'object') {
+    const direct = String(value?.message || value?.detail || '').trim();
+    if (direct) return direct;
+    for (const entry of Object.values(value)) {
+      const message = extractFirstError(entry);
+      if (message) return message;
+    }
+  }
+  return '';
+};
+
 const extractErrorMessage = (payload: any): string => {
   if (!payload || typeof payload !== 'object') return '';
-  return String(
+
+  const direct = String(
     payload?.error?.message ||
       payload?.message ||
       payload?.detail ||
       ''
   ).trim();
+
+  if (direct) return direct;
+
+  const errorPayload = payload?.errors || payload;
+  if (!errorPayload || typeof errorPayload !== 'object') return '';
+
+  for (const [field, value] of Object.entries(errorPayload)) {
+    const message = extractFirstError(value);
+    if (!message) continue;
+    if (field === 'non_field_errors') return message;
+    const label = humanizeFieldName(field);
+    return label ? `${label}: ${message}` : message;
+  }
+
+  return '';
+};
+
+const getDevRetryBaseUrl = (
+  error: AxiosError,
+  requestConfig?: InternalAxiosRequestConfig & { _devBaseUrlRetried?: boolean }
+): string | null => {
+  if (Platform.OS === 'web') return null;
+  if (!(typeof __DEV__ !== 'undefined' && __DEV__)) return null;
+  if (!requestConfig || requestConfig._devBaseUrlRetried) return null;
+
+  const fallbackBaseUrl = getDevFallbackApiBaseUrl();
+  if (!fallbackBaseUrl) return null;
+
+  const statusCode = error.response?.status ?? 0;
+  const isRetryableStatus = statusCode === 502 || statusCode === 503 || statusCode === 504;
+  const isNetworkFailure =
+    !error.response &&
+    /network error|timeout|timed out|abort/i.test(String(error.message || ''));
+
+  if (!isRetryableStatus && !isNetworkFailure) {
+    return null;
+  }
+
+  try {
+    const currentBaseUrl = String(
+      requestConfig.baseURL || api.defaults.baseURL || getApiBaseUrl()
+    );
+    const currentHost = new URL(currentBaseUrl).hostname.toLowerCase();
+    const fallbackHost = new URL(fallbackBaseUrl).hostname.toLowerCase();
+    if (currentHost === fallbackHost) {
+      return null;
+    }
+    if (!isDevFallbackEligibleHost(currentHost)) {
+      return null;
+    }
+    return fallbackBaseUrl;
+  } catch {
+    return null;
+  }
 };
 
 api.interceptors.request.use(
@@ -658,12 +1328,45 @@ api.interceptors.response.use(
       }
     }
 
-    if (axios.isAxiosError(error) && !error.response && /network error/i.test(error.message || '')) {
-      const hint = `Network Error: cannot reach API at ${API_BASE_URL}.`;
-      return Promise.reject(Object.assign(error, { message: hint }));
+    const originalRequest = error.config as InternalAxiosRequestConfig & {
+      _retry?: boolean;
+      _devBaseUrlRetried?: boolean;
+      _autoBaseUrlRetried?: boolean;
+    };
+
+    const devRetryBaseUrl = getDevRetryBaseUrl(error, originalRequest);
+    if (devRetryBaseUrl) {
+      originalRequest._devBaseUrlRetried = true;
+      originalRequest.baseURL = devRetryBaseUrl;
+      console.log(
+        `API request retrying against local dev backend: ${devRetryBaseUrl}`
+      );
+      return api(originalRequest);
     }
 
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+    const statusCode = error.response?.status ?? 0;
+    const isRetryableStatus = statusCode === 502 || statusCode === 503 || statusCode === 504;
+    const isNetworkFailure =
+      !error.response &&
+      /network error|timeout|timed out|abort/i.test(String(error.message || ''));
+
+    if (!originalRequest._devBaseUrlRetried && !originalRequest._autoBaseUrlRetried && (isRetryableStatus || isNetworkFailure)) {
+      const currentBaseUrl = String(
+        originalRequest.baseURL || api.defaults.baseURL || getApiBaseUrl()
+      );
+      const nextBaseUrl = await ensureApiBaseUrl({ forceRefresh: true });
+      if (nextBaseUrl && nextBaseUrl !== currentBaseUrl) {
+        originalRequest._autoBaseUrlRetried = true;
+        originalRequest.baseURL = nextBaseUrl;
+        console.log(`API request retrying against fallback backend: ${nextBaseUrl}`);
+        return api(originalRequest);
+      }
+    }
+
+    if (axios.isAxiosError(error) && !error.response && /network error/i.test(error.message || '')) {
+      const hint = `Network Error: cannot reach API at ${getApiBaseUrl()}.`;
+      return Promise.reject(Object.assign(error, { message: hint }));
+    }
 
     if (error.response?.status === 401 && !originalRequest?._retry) {
       if (isRefreshing) {
@@ -681,7 +1384,7 @@ api.interceptors.response.use(
       try {
         if (!refreshToken) throw new Error('No refresh token');
 
-        const response = await axios.post(`${API_BASE_URL}/mobile/refresh/`, {
+        const response = await axios.post(`${getApiBaseUrl()}/mobile/refresh/`, {
           refresh_token: refreshToken,
         });
 
@@ -715,12 +1418,19 @@ api.interceptors.response.use(
   }
 );
 
+export {
+  getDevFallbackApiBaseUrl,
+  getDevRetryBaseUrl,
+  getExpoHost,
+};
+
 export const authAPI = {
   login: (
     email: string,
     password: string,
     registration_number?: string,
-    remember_me?: boolean
+    remember_me?: boolean,
+    two_factor_code?: string
   ) =>
     api
       .post('/mobile/login/', {
@@ -728,6 +1438,7 @@ export const authAPI = {
         password,
         registration_number,
         ...(typeof remember_me === 'boolean' ? { remember_me } : {}),
+        ...(two_factor_code ? { two_factor_code } : {}),
       })
       .then((response) => {
         const payload = extractData<any>(response.data);
@@ -802,6 +1513,8 @@ export const authAPI = {
       code,
       redirect_uri: redirectUri || getOAuthCallbackUrl('google'),
     }),
+  googleOAuthNative: (payload: { id_token?: string; access_token?: string }) =>
+    api.post('/auth/google/native/', payload),
 
   getMicrosoftOAuthUrl: (redirectUri?: string) =>
     api.get('/auth/microsoft/url/', {
@@ -815,6 +1528,8 @@ export const authAPI = {
       code,
       redirect_uri: redirectUri || getOAuthCallbackUrl('microsoft'),
     }),
+  microsoftOAuthNative: (payload: { access_token: string; id_token?: string }) =>
+    api.post('/auth/microsoft/native/', payload),
 
   getCurrentUser: () =>
     api.get('/auth/profile/').then((response) => {
@@ -828,10 +1543,16 @@ export const resourcesAPI = {
     page?: number;
     search?: string;
     category?: string;
+    faculty?: string;
+    department?: string;
     course?: string;
+    unit?: string;
+    semester?: string | number;
+    year_of_study?: string | number;
     type?: string;
     sort?: string;
     limit?: number;
+    scope?: 'my' | 'all' | 'public';
   }) =>
     api
       .get('/mobile/resources/', {
@@ -839,9 +1560,15 @@ export const resourcesAPI = {
           page: params?.page,
           limit: params?.limit,
           search: params?.search,
+          faculty: params?.faculty,
+          department: params?.department,
           course: params?.course,
+          unit: params?.unit,
+          semester: params?.semester,
+          year_of_study: params?.year_of_study,
           type: params?.type || params?.category,
           sort: params?.sort,
+          scope: params?.scope,
         },
       })
       .then((response) => {
@@ -883,16 +1610,59 @@ export const resourcesAPI = {
 
   rate: (id: string, rating: number) => api.post(`/resources/${id}/rate/`, { value: rating }),
 
+  // Comments
+  getComments: (resourceId: string) =>
+    api.get(`/mobile/resources/${resourceId}/comments/`).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  addComment: (resourceId: string, data: { text: string; rating?: number }) =>
+    api.post(`/mobile/resources/${resourceId}/comments/`, data).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
   getShareLink: (id: string) =>
     api.get(`/resources/${id}/share-link/`).then((response) => {
       const payload = extractData<any>(response.data);
-      return toEnvelopeResponse(response, payload);
+      return toEnvelopeResponse(response, normalizeResourceSharePayload(payload));
     }),
 
   recordShare: (id: string, method: string = 'other') =>
     api.post(`/resources/${id}/share/`, { share_method: method }).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
+    }),
+
+  shareToStudent: (id: string, studentId: number, message?: string) =>
+    api.post(`/resources/${id}/share-to-student/`, { student_id: studentId, message }).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  shareToGroup: (id: string, groupId: number, message?: string) =>
+    api.post(`/resources/${id}/share-to-group/`, { group_id: groupId, message }).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  searchStudents: (query: string) =>
+    api.get('/accounts/users/search/', { params: { q: query } }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, results);
+    }),
+
+  getUserStudyGroups: () =>
+    withMemoryGetCache(
+      buildMemoryGetCacheKey('social-study-groups-my-groups'),
+      STUDY_GROUPS_CACHE_TTL_MS,
+      () => api.get('/social/study-groups/my-groups/')
+    ).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, results);
     }),
 };
 
@@ -905,7 +1675,7 @@ export const adminManagementAPI = {
     uploaded_by?: string;
     search?: string;
   }) =>
-    api.get('/admin-management/resources/', { params }).then((response) => {
+    api.get('admin-management/resources/', { params }).then((response) => {
       const raw = response.data || {};
       const results = asArray(raw?.results || raw).map(normalizeResource);
       return toEnvelopeResponse(response, {
@@ -917,17 +1687,17 @@ export const adminManagementAPI = {
     }),
 
   getResource: (id: string) =>
-    api.get(`/admin-management/resources/${id}/`).then((response) => {
+    api.get(`admin-management/resources/${id}/`).then((response) => {
       return toEnvelopeResponse(response, normalizeResource(response.data || {}));
     }),
 
   approveResource: (id: string, reason?: string) =>
-    api.post(`/admin-management/resources/${id}/approve/`, {
+    api.post(`admin-management/resources/${id}/approve/`, {
       ...(reason ? { reason } : {}),
     }),
 
   rejectResource: (id: string, reason: string) =>
-    api.post(`/admin-management/resources/${id}/reject/`, { reason }),
+    api.post(`admin-management/resources/${id}/reject/`, { reason }),
 
   flagResource: (id: string, reason?: string) =>
     api.post(`/moderation/resources/${id}/flag/`, {
@@ -939,7 +1709,10 @@ export const adminManagementAPI = {
       ...(reason ? { reason } : {}),
     }),
 
-  deleteResource: (id: string) => api.delete(`/admin-management/resources/${id}/`),
+  deleteResource: (id: string) => api.delete(`admin-management/resources/${id}/`),
+
+  pinResource: (id: string, isPinned: boolean) =>
+    api.post(`admin-management/resources/${id}/pin/`, { pin: isPinned }),
 };
 
 export const bookmarksAPI = {
@@ -1169,7 +1942,7 @@ export const notificationsAPI = {
 
   markAsRead: (id: string) => api.post(`/mobile/notifications/${id}/read/`),
 
-  markAllAsRead: () => api.post('/notifications/mark_all_read/'),
+  markAllAsRead: () => api.post('/mobile/notifications/read-all/'),
 
   registerDevice: (token: string, deviceType: string) =>
     api.post('/mobile/device/register/', {
@@ -1179,6 +1952,36 @@ export const notificationsAPI = {
 
   unregisterDevice: (_id: string) =>
     Promise.resolve(localEnvelopeResponse({ success: true }, { message: 'Device unregistration is handled server-side by token rotation.' })),
+};
+
+export const downloadsAPI = {
+  list: (params?: { page?: number; page_size?: number }) =>
+    api.get('/downloads/history/', {
+      params: {
+        page: params?.page,
+        page_size: params?.page_size,
+      },
+    }).then((response) => {
+      const payload = response.data || {};
+      const results = asArray(payload?.results || payload).map(normalizeDownloadHistoryItem);
+      return toEnvelopeResponse(response, {
+        downloads: results,
+        results,
+        count: Number(payload?.count || results.length),
+        next: payload?.next || null,
+        previous: payload?.previous || null,
+      });
+    }),
+
+  stats: () =>
+    api.get('/downloads/stats/').then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, {
+        total_downloads: Number(payload?.total_downloads || 0),
+        unique_resources: Number(payload?.unique_resources || 0),
+        recent_downloads: asArray(payload?.recent_downloads).map(normalizeDownloadHistoryItem),
+      });
+    }),
 };
 
 export const announcementsAPI = {
@@ -1301,9 +2104,9 @@ export const userAPI = {
     full_name?: string;
     phone_number?: string;
     registration_number?: string;
-    faculty?: number | null;
-    department?: number | null;
-    course?: number | null;
+    faculty?: number | string | null;
+    department?: number | string | null;
+    course?: number | string | null;
     year_of_study?: number | null;
     semester?: number | null;
     bio?: string;
@@ -1414,6 +2217,74 @@ export const userAPI = {
     }),
 };
 
+export const securityAPI = {
+  getTwoFactorStatus: () =>
+    api.get('/auth/2fa/status/').then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  setupTwoFactor: (method: 'totp' | 'email' = 'totp') =>
+    api.post('/auth/2fa/setup/', { method }).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  enableTwoFactor: (code: string) =>
+    api.post('/auth/2fa/enable/', { code }).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  disableTwoFactor: (password: string) =>
+    api.post('/auth/2fa/disable/', { password }).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  recoveryCodes: (password: string) =>
+    api.post('/auth/2fa/recovery-codes/', { password }).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  getSessions: () =>
+    api.get('/auth/sessions/').then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  revokeSession: (session_key?: string, revoke_all?: boolean) =>
+    api.post('/auth/sessions/revoke/', {
+      ...(session_key ? { session_key } : {}),
+      ...(revoke_all ? { revoke_all } : {}),
+    }),
+
+  deleteAccount: (password: string) =>
+    api.post('/auth/account/delete/', { password }),
+
+  linkGoogle: (payload: { id_token?: string; access_token?: string }) =>
+    api.post('/auth/google/link/', payload),
+
+  linkMicrosoft: (payload: { access_token: string; id_token?: string }) =>
+    api.post('/auth/microsoft/link/', payload),
+
+  unlinkAccount: (provider: 'google' | 'microsoft' | 'apple') =>
+    api.post('/auth/profile/linked-accounts/unlink/', { provider }),
+};
+
+export const billingAPI = {
+  requestStorageUpgrade: (payload: {
+    plan: string;
+    billing_cycle?: 'monthly' | 'yearly';
+    payment_method?: string;
+  }) =>
+    api.post('/storage/upgrade-requests/', payload).then((response) => {
+      const data = extractData<any>(response.data);
+      return toEnvelopeResponse(response, data);
+    }),
+};
+
 export const searchAPI = {
   search: (
     query: string,
@@ -1514,21 +2385,38 @@ export const analyticsAPI = {
         api.get('/analytics/resources/', { params: { limit: 10 } }),
       ]);
       const rawStats = dashboardResponse.data || {};
-      const topRaw = asArray(resourcesResponse.data?.results || resourcesResponse.data);
+      const overview = rawStats?.overview || {};
+      const nestedUsers = rawStats?.users || {};
+      const nestedResources = rawStats?.resources || {};
+      const nestedDownloads = rawStats?.downloads || {};
+      const topRaw = asArray(
+        rawStats?.top_resources?.length ? rawStats.top_resources : resourcesResponse.data?.results || resourcesResponse.data
+      );
       const topResources = topRaw.slice(0, 10).map((item: any) => ({
         id: String(item?.id || ''),
         title: item?.title || '',
         download_count: Number(item?.download_count || 0),
+        view_count: Number(item?.view_count || 0),
       }));
       return toEnvelopeResponse(dashboardResponse, {
         stats: {
-          total_users: Number(rawStats?.total_users || 0),
-          total_resources: Number(rawStats?.total_resources || 0),
-          total_downloads: Number(rawStats?.total_downloads || 0),
-          total_uploads: Number(rawStats?.total_uploads || 0),
-          pending_resources: Number(rawStats?.pending_resources || 0),
+          total_users: Number(overview?.total_users ?? nestedUsers?.total ?? rawStats?.total_users ?? 0),
+          total_resources: Number(
+            overview?.total_resources ?? nestedResources?.total ?? rawStats?.total_resources ?? 0
+          ),
+          total_downloads: Number(
+            overview?.total_downloads ?? nestedDownloads?.total ?? rawStats?.total_downloads ?? 0
+          ),
+          total_uploads: Number(
+            overview?.total_uploads ?? nestedResources?.new_last_30_days ?? rawStats?.total_uploads ?? 0
+          ),
+          pending_resources: Number(
+            nestedResources?.pending ?? rawStats?.pending_resources ?? 0
+          ),
           reported_resources: Number(rawStats?.reported_resources || 0),
-          active_users: Number(rawStats?.active_users || 0),
+          active_users: Number(
+            overview?.active_users ?? rawStats?.active_users ?? 0
+          ),
         },
         top_resources: topResources,
       });
@@ -1575,13 +2463,39 @@ export const coursesAPI = {
       });
     }),
 
-  getUnits: (courseId: string) =>
-    api.get(`/mobile/courses/${courseId}/units/`).then((response) => {
+  getUnits: (
+    courseId: string,
+    filters?: { semester?: string; yearOfStudy?: string | number }
+  ) =>
+    withMemoryGetCache(
+      buildMemoryGetCacheKey(`mobile-courses-units:${courseId}`, {
+        semester: filters?.semester,
+        year_of_study: filters?.yearOfStudy,
+      }),
+      ACADEMIC_REFERENCE_CACHE_TTL_MS,
+      () =>
+        api.get(`/mobile/courses/${courseId}/units/`, {
+          params: {
+            semester: filters?.semester,
+            year_of_study: filters?.yearOfStudy,
+          },
+        })
+    ).then((response) => {
       const payload = extractData<any>(response.data);
       const units = asArray(payload?.units).map((unit: any) => ({
         id: String(unit?.id || ''),
         name: unit?.name || '',
         code: unit?.code || '',
+        semester:
+          unit?.semester === null || unit?.semester === undefined || unit?.semester === ''
+            ? undefined
+            : Number(unit.semester),
+        year_of_study:
+          unit?.year_of_study === null ||
+          unit?.year_of_study === undefined ||
+          unit?.year_of_study === ''
+            ? undefined
+            : Number(unit.year_of_study),
       }));
       return toEnvelopeResponse(response, {
         units,
@@ -1608,7 +2522,11 @@ export const facultiesAPI = {
 // Public academic data API for registration (no auth required)
 export const publicAcademicAPI = {
   getFaculties: () =>
-    api.get('/public/faculties/').then((response) => {
+    withMemoryGetCache(
+      buildMemoryGetCacheKey('public-faculties', { api_base_url: getApiBaseUrl() }),
+      ACADEMIC_REFERENCE_CACHE_TTL_MS,
+      () => api.get('/public/faculties/')
+    ).then((response) => {
       const payload = extractData<any>(response.data);
       const faculties = asArray(payload?.faculties).map((faculty: any) => ({
         id: String(faculty?.id || ''),
@@ -1622,7 +2540,14 @@ export const publicAcademicAPI = {
     }),
 
   getDepartments: (facultyId: string) =>
-    api.get('/public/departments/', { params: { faculty_id: facultyId } }).then((response) => {
+    withMemoryGetCache(
+      buildMemoryGetCacheKey('public-departments', {
+        faculty_id: facultyId,
+        api_base_url: getApiBaseUrl(),
+      }),
+      ACADEMIC_REFERENCE_CACHE_TTL_MS,
+      () => api.get('/public/departments/', { params: { faculty_id: facultyId } })
+    ).then((response) => {
       const payload = extractData<any>(response.data);
       const departments = asArray(payload?.departments).map((dept: any) => ({
         id: String(dept?.id || ''),
@@ -1636,8 +2561,28 @@ export const publicAcademicAPI = {
       });
     }),
 
-  getCourses: (departmentId: string) =>
-    api.get('/public/courses/', { params: { department_id: departmentId } }).then((response) => {
+  getCourses: (
+    departmentIdOrFacultyId: string,
+    filters?: { semester?: string; yearOfStudy?: string | number },
+    isFaculty?: boolean
+  ) =>
+    withMemoryGetCache(
+      buildMemoryGetCacheKey('public-courses', {
+        [isFaculty ? 'faculty_id' : 'department_id']: departmentIdOrFacultyId,
+        api_base_url: getApiBaseUrl(),
+        semester: filters?.semester,
+        year_of_study: filters?.yearOfStudy,
+      }),
+      ACADEMIC_REFERENCE_CACHE_TTL_MS,
+      () =>
+        api.get('/public/courses/', {
+          params: {
+            [isFaculty ? 'faculty_id' : 'department_id']: departmentIdOrFacultyId,
+            semester: filters?.semester,
+            year_of_study: filters?.yearOfStudy,
+          },
+        })
+    ).then((response) => {
       const payload = extractData<any>(response.data);
       const courses = asArray(payload?.courses).map((course: any) => ({
         id: String(course?.id || ''),
@@ -1774,7 +2719,7 @@ export const gamificationAPI = {
     }),
 
   getLeaderboard: (period?: string) =>
-    api.get('/gamification/leaderboard/', { params: { period } }).then((response) => {
+    api.get('/mobile/leaderboard/', { params: { period } }).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
     }),
@@ -1789,25 +2734,61 @@ export const gamificationAPI = {
 // Admin Backup & System API
 export const adminAPI = {
   getSystemStats: () =>
-    api.get('/admin-management/system-stats/').then((response) => {
+    api.get('admin-management/system-stats/').then((response) => {
       return toEnvelopeResponse(response, normalizeAdminSystemStats(response.data || {}));
     }),
   createBackup: () =>
-    api.get('/admin-management/backup/').then((response) => {
+    api.get('admin-management/backup/').then((response) => {
       return toEnvelopeResponse(response, normalizeBackupMetadata(response.data || {}));
     }),
   exportData: () =>
-    api.get('/admin-management/export/').then((response) => {
+    api.get('admin-management/export/').then((response) => {
       return toEnvelopeResponse(response, normalizeExportMetadata(response.data || {}));
     }),
+  listStudyGroups: (params?: {
+    page?: number;
+    page_size?: number;
+    search?: string;
+    status?: string;
+    privacy?: 'public' | 'private';
+    year_of_study?: number;
+  }) =>
+    api.get('admin-management/study-groups/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw).map(normalizeAdminStudyGroup);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getStudyGroup: (id: string) =>
+    api.get(`admin-management/study-groups/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, normalizeAdminStudyGroup(response.data || {}));
+    }),
+  updateStudyGroup: (
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      is_public?: boolean;
+      allow_member_invites?: boolean;
+      max_members?: number;
+      status?: 'active' | 'archived' | 'completed';
+    }
+  ) =>
+    api.patch(`admin-management/study-groups/${id}/`, data).then((response) => {
+      return toEnvelopeResponse(response, normalizeAdminStudyGroup(response.data || {}));
+    }),
   getSystemHealth: () =>
-    api.get('/admin-management/system-health/').then((response) => {
+    api.get('admin-management/system-health/').then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
     }),
   search: (query: string, limit: number = 20) =>
     api
-      .get('/admin-management/search/', {
+      .get('admin-management/search/', {
         params: { query: query.trim(), limit },
       })
       .then((response) => {
@@ -1866,7 +2847,7 @@ export const adminAPI = {
     is_verified?: boolean;
     role?: string;
   }) =>
-    api.get('/admin-management/users/', { params }).then((response) => {
+    api.get('admin-management/users/', { params }).then((response) => {
       const raw = response.data || {};
       const results = asArray(raw?.results || raw).map(normalizeAdminUser);
       return toEnvelopeResponse(response, {
@@ -1877,11 +2858,11 @@ export const adminAPI = {
       });
     }),
   getUser: (id: string) =>
-    api.get(`/admin-management/users/${id}/`).then((response) => {
+    api.get(`admin-management/users/${id}/`).then((response) => {
       return toEnvelopeResponse(response, normalizeAdminUser(response.data || {}));
     }),
   getUserActivities: (id: string, params?: { page?: number; page_size?: number }) =>
-    api.get(`/admin-management/users/${id}/activities/`, { params }).then((response) => {
+    api.get(`admin-management/users/${id}/activities/`, { params }).then((response) => {
       const raw = response.data || {};
       const results = asArray(raw?.results || raw).map((item: any) => ({
         id: String(item?.id || ''),
@@ -1898,11 +2879,11 @@ export const adminAPI = {
       });
     }),
   updateUserStatus: (id: string, isActive: boolean) =>
-    api.patch(`/admin-management/users/${id}/status/`, { is_active: isActive }),
+    api.patch(`admin-management/users/${id}/status/`, { is_active: isActive }),
   updateUserRole: (id: string, role: string) =>
-    api.patch(`/admin-management/users/${id}/role/`, { role }),
+    api.patch(`admin-management/users/${id}/role/`, { role }),
   listReports: (params?: { status?: string; page?: number; page_size?: number }) =>
-    api.get('/admin-management/reports/', { params }).then((response) => {
+    api.get('admin-management/reports/', { params }).then((response) => {
       const raw = response.data || {};
       const results = asArray(raw?.results || raw).map(normalizeAdminReport);
       return toEnvelopeResponse(response, {
@@ -1913,22 +2894,22 @@ export const adminAPI = {
       });
     }),
   getReport: (id: string) =>
-    api.get(`/admin-management/reports/${id}/`).then((response) => {
+    api.get(`admin-management/reports/${id}/`).then((response) => {
       return toEnvelopeResponse(response, normalizeAdminReport(response.data || {}));
     }),
   updateReport: (id: string, data: { status?: string; resolution_note?: string }) =>
-    api.patch(`/admin-management/reports/${id}/`, data).then((response) => {
+    api.patch(`admin-management/reports/${id}/`, data).then((response) => {
       return toEnvelopeResponse(response, normalizeAdminReport(response.data || {}));
     }),
   resolveReport: (id: string, resolution_note?: string) =>
     api
-      .post(`/admin-management/reports/${id}/resolve/`, {
+      .post(`admin-management/reports/${id}/resolve/`, {
         ...(resolution_note ? { resolution_note } : {}),
       })
       .then((response) => toEnvelopeResponse(response, normalizeAdminReport(response.data || {}))),
   dismissReport: (id: string, resolution_note?: string) =>
     api
-      .post(`/admin-management/reports/${id}/dismiss/`, {
+      .post(`admin-management/reports/${id}/dismiss/`, {
         ...(resolution_note ? { resolution_note } : {}),
       })
       .then((response) => toEnvelopeResponse(response, normalizeAdminReport(response.data || {}))),
@@ -1961,11 +2942,209 @@ export const adminAPI = {
     language?: string;
     theme?: string;
   }) => userAPI.updatePreferences(data),
+
+  // Academic Management - Faculties
+  getFaculties: (params?: { page?: number; page_size?: number; search?: string; is_active?: boolean }) =>
+    api.get('admin-management/faculties/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw).map(normalizeAdminFaculty);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getFaculty: (id: string) =>
+    api.get(`admin-management/faculties/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, normalizeAdminFaculty(response.data || {}));
+    }),
+  createFaculty: (data: { name: string; code?: string; is_active?: boolean }) =>
+    api.post('admin-management/faculties/', data).then((response) => {
+      return toEnvelopeResponse(response, normalizeAdminFaculty(response.data || {}));
+    }),
+  updateFaculty: (id: string, data: { name?: string; code?: string; is_active?: boolean }) =>
+    api.patch(`admin-management/faculties/${id}/`, data).then((response) => {
+      return toEnvelopeResponse(response, normalizeAdminFaculty(response.data || {}));
+    }),
+  deleteFaculty: (id: string) =>
+    api.delete(`admin-management/faculties/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, { success: true });
+    }),
+  getDepartments: (params?: {
+    page?: number;
+    page_size?: number;
+    faculty?: string;
+    is_active?: boolean;
+  }) =>
+    api.get('admin-management/departments/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw).map(normalizeAdminDepartment);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+
+  // Academic Management - Courses
+  getCourses: (params?: {
+    page?: number;
+    page_size?: number;
+    search?: string;
+    department?: string;
+    is_active?: boolean;
+  }) =>
+    api.get('admin-management/courses/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw).map(normalizeAdminCourse);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getCourse: (id: string) =>
+    api.get(`admin-management/courses/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, normalizeAdminCourse(response.data || {}));
+    }),
+  createCourse: (data: {
+    name: string;
+    code: string;
+    description?: string;
+    department?: string;
+    department_id?: string;
+    duration_years?: number;
+    is_active?: boolean;
+  }) =>
+    api
+      .post('admin-management/courses/', {
+        ...data,
+        department: data.department || data.department_id,
+      })
+      .then((response) => {
+        return toEnvelopeResponse(response, normalizeAdminCourse(response.data || {}));
+      }),
+  updateCourse: (id: string, data: {
+    name?: string;
+    code?: string;
+    description?: string;
+    department?: string;
+    department_id?: string;
+    duration_years?: number;
+    is_active?: boolean;
+  }) =>
+    api
+      .patch(`admin-management/courses/${id}/`, {
+        ...data,
+        department: data.department || data.department_id,
+      })
+      .then((response) => {
+        return toEnvelopeResponse(response, normalizeAdminCourse(response.data || {}));
+      }),
+  deleteCourse: (id: string) =>
+    api.delete(`admin-management/courses/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, { success: true });
+    }),
+
+  // Academic Management - Units
+  getUnits: (params?: {
+    page?: number;
+    page_size?: number;
+    search?: string;
+    course?: string;
+    is_active?: boolean;
+  }) =>
+    api.get('admin-management/units/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw).map(normalizeAdminUnit);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getAllUnits: async (params?: {
+    search?: string;
+    course?: string;
+    is_active?: boolean;
+  }) => {
+    const data = await collectPaginatedResults(
+      (page) =>
+        api.get('admin-management/units/', {
+          params: {
+            ...params,
+            page,
+            page_size: 100,
+          },
+        }),
+      normalizeAdminUnit
+    );
+    return {
+      data: {
+        success: true,
+        data,
+      },
+    };
+  },
+  getUnit: (id: string) =>
+    api.get(`admin-management/units/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, normalizeAdminUnit(response.data || {}));
+    }),
+  createUnit: (data: {
+    name: string;
+    code: string;
+    description?: string;
+    course?: string;
+    course_id?: string;
+    semester?: number | string;
+    year_of_study?: number;
+    is_active?: boolean;
+  }) =>
+    api
+      .post('admin-management/units/', {
+        ...data,
+        course: data.course || data.course_id,
+      })
+      .then((response) => {
+        return toEnvelopeResponse(response, normalizeAdminUnit(response.data || {}));
+      }),
+  updateUnit: (id: string, data: {
+    name?: string;
+    code?: string;
+    description?: string;
+    course?: string;
+    course_id?: string;
+    semester?: number | string;
+    year_of_study?: number;
+    is_active?: boolean;
+  }) =>
+    api
+      .patch(`admin-management/units/${id}/`, {
+        ...data,
+        course: data.course || data.course_id,
+      })
+      .then((response) => {
+        return toEnvelopeResponse(response, normalizeAdminUnit(response.data || {}));
+      }),
+  deleteUnit: (id: string) =>
+    api.delete(`admin-management/units/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, { success: true });
+    }),
 };
 
 // Study Groups API
 export const studyGroupsAPI = {
-  list: (params?: { course_id?: string; year?: number; page?: number }) =>
+  list: (params?: {
+    course_id?: string;
+    year?: number;
+    page?: number;
+    search?: string;
+    scope?: 'all' | 'my' | 'public';
+  }) =>
     api.get('/social/study-groups/', { params }).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
@@ -1974,6 +3153,15 @@ export const studyGroupsAPI = {
     api.get(`/social/study-groups/${id}/`).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
+    }),
+  update: (id: string, data: { name?: string; description?: string; privacy?: string; allow_member_invites?: boolean }) =>
+    api.patch(`/social/study-groups/${id}/`, data).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+  delete: (id: string) =>
+    api.delete(`/social/study-groups/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, null);
     }),
   getGroup: (id: string) =>
     api.get(`/social/study-groups/${id}/`).then((response) => {
@@ -2010,6 +3198,15 @@ export const studyGroupsAPI = {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
     }),
+  removeMember: (groupId: string, userId: string) =>
+    api.delete(`/social/study-groups/${groupId}/members/${userId}/`).then((response) => {
+      return toEnvelopeResponse(response, null);
+    }),
+  updateMemberRole: (groupId: string, userId: string, data: { role: 'admin' | 'moderator' | 'member' }) =>
+    api.patch(`/social/study-groups/${groupId}/members/${userId}/`, data).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
   getPosts: (id: string, params?: { page?: number }) =>
     api.get(`/social/study-groups/${id}/posts/`, { params }).then((response) => {
       const payload = extractData<any>(response.data);
@@ -2023,8 +3220,63 @@ export const studyGroupsAPI = {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
     }),
+  likePost: (groupId: string, postId: string) =>
+    api.post(`/social/study-groups/${groupId}/posts/${postId}/like/`).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+  getPostComments: (groupId: string, postId: string) =>
+    api.get(`/social/study-groups/${groupId}/posts/${postId}/comments/`).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+  createPostComment: (groupId: string, postId: string, data: { content: string }) =>
+    api.post(`/social/study-groups/${groupId}/posts/${postId}/comments/`, data).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
   getResources: (id: string) =>
     api.get(`/social/study-groups/${id}/resources/`).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+  shareResource: (groupId: string, data: { resource_id: string; description?: string }) =>
+    api.post(`/social/study-groups/${groupId}/resources/`, data).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  // Invite Link Methods
+  createInviteLink: (groupId: string, data: {
+    expires_in_hours?: number;
+    allow_auto_join?: boolean;
+    max_uses?: number;
+    notes?: string;
+  }) =>
+    api.post(`/social/study-groups/${groupId}/invite-links/`, data).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  getInviteLinks: (groupId: string) =>
+    api.get(`/social/study-groups/${groupId}/invite-links/`).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  validateInviteLink: (token: string) =>
+    api.get(`/social/study-groups/invite-links/${token}/validate/`).then((response) => {
+      return toEnvelopeResponse(response, response.data);
+    }),
+
+  joinViaInvite: (token: string) =>
+    api.post(`/social/study-groups/invite-links/${token}/join/`).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  revokeInviteLink: (token: string) =>
+    api.post(`/social/study-groups/invite-links/${token}/revoke/`).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
     }),
@@ -2033,17 +3285,17 @@ export const studyGroupsAPI = {
 // Resource Requests API
 export const resourceRequestsAPI = {
   list: (params?: { status?: string; page?: number }) =>
-    api.get('/resources/requests/', { params }).then((response) => {
+    api.get('/mobile/resource-requests/', { params }).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
     }),
   create: (data: { title: string; description: string; course_id?: string; priority?: string }) =>
-    api.post('/resources/requests/', data).then((response) => {
+    api.post('/mobile/resource-requests/', data).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
     }),
   upvote: (id: string) =>
-    api.post(`/resources/requests/${id}/upvote/`).then((response) => {
+    api.post(`/mobile/resource-requests/${id}/upvote/`).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
     }),

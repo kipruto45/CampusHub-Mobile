@@ -16,7 +16,12 @@ const FavoriteButton: React.FC<FavoriteButtonProps> = ({
   disabled = false,
 }) => {
   return (
-    <TouchableOpacity style={styles.button} onPress={onPress} disabled={disabled} hitSlop={10}>
+    <TouchableOpacity
+      style={[styles.button, isFavorited && styles.buttonActive]}
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={10}
+    >
       <Icon
         name={isFavorited ? 'heart' : 'heart-outline'}
         size={20}
@@ -28,10 +33,14 @@ const FavoriteButton: React.FC<FavoriteButtonProps> = ({
 
 const styles = StyleSheet.create({
   button: {
-    minWidth: 30,
-    minHeight: 30,
+    minWidth: 32,
+    minHeight: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  buttonActive: {
+    backgroundColor: `${colors.error}18`,
   },
 });
 

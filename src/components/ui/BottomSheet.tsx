@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
+import Icon from './Icon';
 
 interface BottomSheetProps {
   visible: boolean;
@@ -104,7 +105,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
               <Text style={styles.title}>{title}</Text>
               {showCloseButton && (
                 <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                  <Text style={styles.closeIcon}>✕</Text>
+                  <Icon name="close" size={20} color={colors.text.secondary} />
                 </TouchableOpacity>
               )}
             </View>

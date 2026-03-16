@@ -9,6 +9,7 @@ import Loading from '../../components/ui/Loading';
 import { useFavorites } from '../../hooks/useFavorites';
 import { colors } from '../../theme/colors';
 import { borderRadius, spacing } from '../../theme/spacing';
+import Icon from '../../components/ui/Icon';
 
 const tabs = [
   { label: 'Resources', value: 'resources' as const },
@@ -52,7 +53,7 @@ const FavoritesScreen: React.FC = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backText}>‹</Text>
+          <Icon name="chevron-back" size={28} color={colors.text.primary} />
         </TouchableOpacity>
         <View>
           <Text style={styles.title}>Favorites</Text>

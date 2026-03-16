@@ -2,24 +2,15 @@
 // Admin-specific notifications
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
 import ErrorState from '../../components/ui/ErrorState';
-import api from '../../services/api';
-
-interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  type: 'info' | 'warning' | 'error' | 'success';
-  is_read: boolean;
-  created_at: string;
-  link?: string;
-}
+import { notificationsApi, Notification } from '../../services/notifications-api.service';
+import { resolveAdminNotificationTarget } from '../../utils/notification-targets';
 
 const NotificationsScreen: React.FC = () => {
   const router = useRouter();
@@ -32,13 +23,18 @@ const NotificationsScreen: React.FC = () => {
   const fetchNotifications = useCallback(async (isRefresh: boolean = false) => {
     try {
       if (isRefresh) setError(null);
-      const params: any = {};
-      if (showUnreadOnly) params.is_read = false;
-      const response = await api.get('/notifications/', { params });
-      setNotifications(response.data?.results || response.data || []);
+      const response = await notificationsApi.getNotifications(
+        showUnreadOnly ? { is_read: false } : undefined
+      );
+      setNotifications(response.results || []);
     } catch (err: any) {
       console.error('Failed to fetch notifications:', err);
-      setError(err.response?.data?.message || 'Failed to load notifications');
+      setError(
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to load notifications'
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -51,33 +47,84 @@ const NotificationsScreen: React.FC = () => {
 
   const markAsRead = async (id: string) => {
     try {
-      await api.patch(`/notifications/${id}/`, { is_read: true });
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-    } catch (err) { console.error('Failed to mark as read'); }
+      await notificationsApi.markAsRead(id);
+      setNotifications((prev) => (
+        showUnreadOnly
+          ? prev.filter((notification) => notification.id !== id)
+          : prev.map((notification) => (
+              notification.id === id
+                ? { ...notification, is_read: true }
+                : notification
+            ))
+      ));
+    } catch (err) {
+      console.error('Failed to mark as read:', err);
+    }
   };
 
   const markAllAsRead = async () => {
     try {
-      await api.post('/notifications/mark-all-read/', {});
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      await notificationsApi.markAllAsRead();
+      setNotifications((prev) => (
+        showUnreadOnly ? [] : prev.map((notification) => ({ ...notification, is_read: true }))
+      ));
       Alert.alert('Success', 'All notifications marked as read');
-    } catch (err) { Alert.alert('Error', 'Failed to mark all as read'); }
+    } catch (err) {
+      console.error('Failed to mark all as read:', err);
+      Alert.alert('Error', 'Failed to mark all as read');
+    }
   };
+
+  const handleOpenNotificationTarget = useCallback(
+    async (notification: Notification) => {
+      try {
+        const target = resolveAdminNotificationTarget({
+          link: notification.link,
+          resourceId: notification.target_resource ? String(notification.target_resource) : '',
+        });
+
+        if (!target) {
+          return;
+        }
+
+        if (target.kind === 'external') {
+          await Linking.openURL(target.value);
+          return;
+        }
+
+        router.push(target.value as any);
+      } catch (err) {
+        console.error('Failed to open admin notification target:', err);
+        Alert.alert('Unable to open', 'The linked notification item could not be opened right now.');
+      }
+    },
+    [router]
+  );
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case 'warning': return colors.warning;
-      case 'error': return colors.error;
-      case 'success': return colors.success;
+      case 'announcement': return colors.warning;
+      case 'resource_rejected': return colors.error;
+      case 'resource_approved': return colors.success;
       default: return colors.info;
     }
   };
 
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case 'warning': return 'alert-circle';
-      case 'error': return 'close-circle';
-      case 'success': return 'checkmark-circle';
+      case 'announcement': return 'megaphone';
+      case 'resource':
+      case 'new_resource':
+      case 'resource_approved':
+        return 'book';
+      case 'resource_rejected':
+        return 'close-circle';
+      case 'comment':
+      case 'reply':
+        return 'chatbubbles';
+      case 'like':
+      case 'heart':
+        return 'heart';
       default: return 'information-circle';
     }
   };
@@ -89,11 +136,15 @@ const NotificationsScreen: React.FC = () => {
       style={[styles.notificationCard, !item.is_read && styles.unreadCard]}
       onPress={() => {
         if (!item.is_read) markAsRead(item.id);
-        if (item.link) router.push(item.link as any);
+        void handleOpenNotificationTarget(item);
       }}
     >
-      <View style={[styles.iconContainer, { backgroundColor: getTypeColor(item.type) + '20' }]}>
-        <Icon name={getTypeIcon(item.type) as any} size={24} color={getTypeColor(item.type)} />
+      <View style={[styles.iconContainer, { backgroundColor: getTypeColor(item.notification_type) + '20' }]}>
+        <Icon
+          name={getTypeIcon(item.notification_type) as any}
+          size={24}
+          color={getTypeColor(item.notification_type)}
+        />
       </View>
       <View style={styles.content}>
         <View style={styles.headerRow}>

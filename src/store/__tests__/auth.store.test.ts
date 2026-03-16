@@ -49,9 +49,10 @@ const emptyState = {
 };
 
 describe('auth store', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
     refreshCallback = null;
+    await useAuthStore.getState().logout();
     useAuthStore.setState(emptyState);
   });
 
@@ -148,5 +149,89 @@ describe('auth store', () => {
 
     expect(authAPI.getCurrentUser).toHaveBeenCalled();
     expect(useAuthStore.getState()).toMatchObject(emptyState);
+  });
+
+  it('deduplicates repeated auth initialization while the profile request is in flight', async () => {
+    let resolveProfile!: (value: any) => void;
+    const profileRequest = new Promise((resolve) => {
+      resolveProfile = resolve;
+    });
+    (authAPI.getCurrentUser as any).mockReturnValue(profileRequest);
+
+    useAuthStore.setState({
+      user: {
+        id: 'user-1',
+        email: 'student@test.com',
+        first_name: 'Test',
+        last_name: 'Student',
+        registration_number: 'CS/2021/001',
+        role: 'student',
+      },
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      isAuthenticated: true,
+      isLoading: false,
+      error: null,
+    });
+
+    useAuthStore.getState().initializeAuth();
+    useAuthStore.getState().initializeAuth();
+
+    expect(authAPI.getCurrentUser).toHaveBeenCalledTimes(1);
+
+    resolveProfile({
+      data: {
+        data: {
+          id: 'user-1',
+          email: 'student@test.com',
+          first_name: 'Test',
+          last_name: 'Student',
+          registration_number: 'CS/2021/001',
+          role: 'student',
+        },
+      },
+    });
+
+    await profileRequest;
+  });
+
+  it('reuses the fresh profile after initialization instead of fetching again immediately', async () => {
+    (authAPI.getCurrentUser as any).mockResolvedValue({
+      data: {
+        data: {
+          id: 'user-1',
+          email: 'student@test.com',
+          first_name: 'Test',
+          last_name: 'Student',
+          registration_number: 'CS/2021/001',
+          role: 'student',
+        },
+      },
+    });
+
+    useAuthStore.setState({
+      user: {
+        id: 'user-1',
+        email: 'student@test.com',
+        first_name: 'Test',
+        last_name: 'Student',
+        registration_number: 'CS/2021/001',
+        role: 'student',
+      },
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      isAuthenticated: true,
+      isLoading: false,
+      error: null,
+    });
+
+    useAuthStore.getState().initializeAuth();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    useAuthStore.getState().initializeAuth();
+    await Promise.resolve();
+
+    expect(authAPI.getCurrentUser).toHaveBeenCalledTimes(1);
   });
 });

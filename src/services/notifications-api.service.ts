@@ -37,7 +37,7 @@ class NotificationsApiService {
     type?: string;
   }): Promise<NotificationListResponse> {
     const response = await api.get<NotificationListResponse>(
-      '/notifications/notifications/',
+      '/notifications/',
       { params }
     );
     return response.data;
@@ -46,7 +46,7 @@ class NotificationsApiService {
   // Get unread notifications
   async getUnreadNotifications(): Promise<Notification[]> {
     const response = await api.get<Notification[]>(
-      '/notifications/notifications/unread/'
+      '/notifications/unread/'
     );
     return response.data;
   }
@@ -54,7 +54,7 @@ class NotificationsApiService {
   // Get unread count
   async getUnreadCount(): Promise<UnreadCountResponse> {
     const response = await api.get<UnreadCountResponse>(
-      '/notifications/notifications/unread_count/'
+      '/notifications/unread_count/'
     );
     return response.data;
   }
@@ -62,7 +62,7 @@ class NotificationsApiService {
   // Get single notification by ID
   async getNotification(id: string): Promise<Notification> {
     const response = await api.get<Notification>(
-      `/notifications/notifications/${id}/`
+      `/notifications/${id}/`
     );
     return response.data;
   }
@@ -70,7 +70,7 @@ class NotificationsApiService {
   // Mark notification as read
   async markAsRead(id: string): Promise<Notification> {
     const response = await api.post<Notification>(
-      `/notifications/notifications/${id}/mark_read/`
+      `/notifications/${id}/mark_read/`
     );
     return response.data;
   }
@@ -78,7 +78,7 @@ class NotificationsApiService {
   // Mark all notifications as read
   async markAllAsRead(): Promise<{ message: string }> {
     const response = await api.post<{ message: string }>(
-      '/notifications/notifications/mark_all_read/'
+      '/notifications/mark_all_read/'
     );
     return response.data;
   }
@@ -86,7 +86,7 @@ class NotificationsApiService {
   // Mark multiple notifications as read
   async markMultipleAsRead(notificationIds?: string[]): Promise<{ message: string }> {
     const response = await api.post<{ message: string }>(
-      '/notifications/notifications/mark_multiple_read/',
+      '/notifications/mark_multiple_read/',
       { notification_ids: notificationIds }
     );
     return response.data;

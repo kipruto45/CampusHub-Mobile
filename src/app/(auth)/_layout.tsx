@@ -1,15 +1,18 @@
 // Auth Layout for CampusHub
 
 import React, { useEffect } from 'react';
-import { Stack } from 'expo-router';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter, usePathname } from 'expo-router';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { colors } from '../../theme/colors';
 import { useAuthStore } from '../../store/auth.store';
 import { resolveHomeRouteByRole } from '../../lib/auth-routing';
 
+// Public routes that should be accessible even when authenticated
+const PUBLIC_ROUTES = ['/privacy', '/terms', '/splash'];
+
 export default function AuthLayout() {
   const router = useRouter();
+  const pathname = usePathname();
   const { isAuthenticated, accessToken, isLoading, user, initializeAuth } = useAuthStore();
 
   useEffect(() => {
@@ -17,10 +20,14 @@ export default function AuthLayout() {
   }, [initializeAuth]);
 
   useEffect(() => {
-    if (!isLoading && isAuthenticated && accessToken) {
+    // Check if current route is a public route that should be accessible when authenticated
+    const isPublicRoute = PUBLIC_ROUTES.some(route => pathname === `/(auth)${route}` || pathname === route);
+    
+    // Only redirect if authenticated AND not on a public route
+    if (!isLoading && isAuthenticated && accessToken && !isPublicRoute) {
       router.replace(resolveHomeRouteByRole(user?.role) as any);
     }
-  }, [isLoading, isAuthenticated, accessToken, user?.role, router]);
+  }, [isLoading, isAuthenticated, accessToken, user?.role, router, pathname]);
 
   if (isLoading) {
     return (

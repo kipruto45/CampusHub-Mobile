@@ -5,7 +5,7 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Animated, Easing, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
+import { colors, darkColors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { useAuthStore } from '../../store/auth.store';
 import { resolveHomeRouteByRole } from '../../lib/auth-routing';
@@ -42,8 +42,8 @@ const SplashScreen: React.FC = () => {
         // User is logged in, go to role-specific home
         router.replace(resolveHomeRouteByRole(user?.role) as any);
       } else {
-        // User is not logged in, go to onboarding
-        router.replace('/(auth)/onboarding');
+        // User is not logged in, go to login
+        router.replace('/(auth)/login');
       }
     }, 2500);
 
@@ -53,7 +53,7 @@ const SplashScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={[colors.background.dark, colors.background.darkSecondary]}
+        colors={[darkColors.background.primary, darkColors.background.secondary]}
         style={styles.gradient}
       >
         <Animated.View
@@ -95,7 +95,7 @@ const SplashScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.dark,
+    backgroundColor: darkColors.background.primary,
   },
   gradient: {
     flex: 1,
@@ -134,13 +134,13 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 32,
     fontWeight: '700',
-    color: colors.text.darkPrimary,
+    color: darkColors.text.primary,
     marginBottom: spacing[2],
     letterSpacing: 0.5,
   },
   tagline: {
     fontSize: 16,
-    color: colors.text.darkSecondary,
+    color: darkColors.text.secondary,
     marginBottom: spacing[10],
   },
   loadingContainer: {
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   loadingBar: {
     width: 200,
     height: 3,
-    backgroundColor: colors.background.darkTertiary,
+    backgroundColor: darkColors.background.tertiary,
     borderRadius: 2,
     overflow: 'hidden',
   },

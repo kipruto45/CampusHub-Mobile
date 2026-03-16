@@ -1,7 +1,7 @@
 // Login Screen for CampusHub
 // Premium white card design with social login
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -22,31 +22,148 @@ import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
 import { useAuthStore } from '../../store/auth.store';
 import { authAPI } from '../../services/api';
+import { exchangeNativeTokens } from '../../services/socialAuth';
+import { canUseNativeProvider, signInWithNativeProvider } from '../../services/nativeSocialAuth';
+import { biometricService } from '../../services/biometric';
 
 const LoginScreen: React.FC = () => {
   const router = useRouter();
-  const { login, isLoading } = useAuthStore();
+  const { login, loginWithBiometric, isLoading } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
   const [googleIconLoadError, setGoogleIconLoadError] = useState(false);
+  const [biometricReady, setBiometricReady] = useState(false);
+  const [biometricLabel, setBiometricLabel] = useState('Biometric');
+  const [biometricBusy, setBiometricBusy] = useState(false);
+
+  useEffect(() => {
+    const initBiometric = async () => {
+      try {
+        const shouldUse = await biometricService.shouldUseBiometric();
+        if (!shouldUse) {
+          setBiometricReady(false);
+          return;
+        }
+
+        const hasFace = await biometricService.hasFaceId();
+        const hasFingerprint = await biometricService.hasFingerprint();
+        setBiometricLabel(hasFace ? 'Face ID' : hasFingerprint ? 'Fingerprint' : 'Biometric');
+        setBiometricReady(true);
+      } catch {
+        setBiometricReady(false);
+      }
+    };
+
+    initBiometric();
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
+    if (needsTwoFactor && !twoFactorCode.trim()) {
+      Alert.alert('Two-Factor Code', 'Enter your 2FA verification code.');
+      return;
+    }
     
     try {
-      const nextRoute = await login(email, password, rememberMe);
-      router.replace(nextRoute as any);
-    } catch (err) {
-      // Error is handled in the store
+      const nextRoute = await login(
+        email,
+        password,
+        rememberMe,
+        needsTwoFactor ? twoFactorCode.trim() : undefined
+      );
+      console.log('Login successful, redirecting to:', nextRoute);
+      setNeedsTwoFactor(false);
+      setTwoFactorCode('');
+      
+      // Navigate to the appropriate dashboard based on role
+      if (nextRoute) {
+        router.replace(nextRoute as any);
+      } else {
+        // Fallback: try to determine route from stored user
+        router.replace('/(student)/tabs/home');
+      }
+    } catch (err: any) {
+      console.log('Login error:', err);
+      
+      // Parse error message properly
+      let errorMessage = 'Login failed. Please check your credentials.';
+      const statusCode = err?.response?.status;
+      const responseData = err?.response?.data;
+      
+      if (statusCode === 502 || statusCode === 503 || statusCode === 504) {
+        errorMessage =
+          'CampusHub backend is temporarily unavailable. If you are using a local tunnel, restart it and confirm the backend server is still running.';
+      } else if (responseData) {
+        // Handle MobileResponse error format
+        if (responseData.error?.message) {
+          errorMessage = responseData.error.message;
+        } else if (responseData.message) {
+          errorMessage = responseData.message;
+        } else if (responseData.detail) {
+          errorMessage = responseData.detail;
+        }
+      } else if (
+        typeof err?.message === 'string' &&
+        /cannot reach api|network error/i.test(err.message)
+      ) {
+        errorMessage =
+          'Could not reach the CampusHub backend. Check that the backend is running and that mobile/.env points to a reachable API URL.';
+      } else if (err?.message) {
+        errorMessage = err.message;
+      }
+      
+      const errorCode = responseData?.error?.code || responseData?.code;
+      if (errorCode === 'two_factor_required' || /two-factor/i.test(errorMessage)) {
+        setNeedsTwoFactor(true);
+      }
+
+      Alert.alert('Login Failed', errorMessage);
     }
   };
 
   const handleSocialLogin = async (provider: 'Google' | 'Microsoft') => {
     try {
+      const providerKey = provider === 'Google' ? 'google' : 'microsoft';
+      if (canUseNativeProvider(providerKey)) {
+        const nativeResult = await signInWithNativeProvider(providerKey);
+        if (nativeResult.success && nativeResult.tokens) {
+          const exchange = await exchangeNativeTokens(providerKey, {
+            idToken: nativeResult.tokens.idToken,
+            accessToken: nativeResult.tokens.accessToken,
+          });
+
+          if (!exchange.success || !exchange.tokens?.accessToken) {
+            throw new Error(exchange.error || 'Failed to exchange native tokens');
+          }
+
+          const nextRoute = await useAuthStore.getState().socialLogin(providerKey, {
+            accessToken: exchange.tokens.accessToken,
+            refreshToken: exchange.tokens.refreshToken,
+          });
+
+          if (nextRoute) {
+            router.replace(nextRoute as any);
+          } else {
+            router.replace('/(student)/tabs/home');
+          }
+          return;
+        }
+
+        if (!nativeResult.fallbackToWeb) {
+          Alert.alert(
+            'Authentication Error',
+            nativeResult.error || `Failed to sign in with ${provider}.`
+          );
+          return;
+        }
+      }
+
       const response =
         provider === 'Google'
           ? await authAPI.getGoogleOAuthUrl()
@@ -74,6 +191,42 @@ const LoginScreen: React.FC = () => {
           error?.message ||
           `Failed to start ${provider} sign in.`
       );
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    try {
+      setBiometricBusy(true);
+      const authResult = await biometricService.authenticate(`Log in with ${biometricLabel}`);
+      if (!authResult.success) {
+        Alert.alert('Biometric Login', authResult.error || 'Authentication failed.');
+        return;
+      }
+
+      const authKey = await biometricService.getAuthKey();
+      if (!authKey) {
+        Alert.alert(
+          'Biometric Login',
+          'Biometric login is enabled but no secure session is stored. Please log in with your password once.'
+        );
+        return;
+      }
+
+      const nextRoute = await loginWithBiometric(authKey);
+      if (nextRoute) {
+        router.replace(nextRoute as any);
+      } else {
+        router.replace('/(student)/tabs/home');
+      }
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Biometric login failed. Please try again.';
+      Alert.alert('Biometric Login Failed', message);
+    } finally {
+      setBiometricBusy(false);
     }
   };
 
@@ -118,6 +271,16 @@ const LoginScreen: React.FC = () => {
               secureTextEntry
               containerStyle={styles.inputContainer}
             />
+            {needsTwoFactor && (
+              <Input
+                label="Two-Factor Code"
+                placeholder="Enter 6-digit code"
+                value={twoFactorCode}
+                onChangeText={setTwoFactorCode}
+                keyboardType="number-pad"
+                containerStyle={styles.inputContainer}
+              />
+            )}
 
             {/* Remember Me & Forgot Password */}
             <View style={styles.helperRow}>
@@ -126,7 +289,7 @@ const LoginScreen: React.FC = () => {
                 onPress={() => setRememberMe(!rememberMe)}
               >
                 <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                  {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+                  {rememberMe && <Icon name="checkmark" size={14} color="#FFFFFF" />}
                 </View>
                 <Text style={styles.checkboxLabel}>Remember</Text>
               </TouchableOpacity>
@@ -145,6 +308,19 @@ const LoginScreen: React.FC = () => {
               size="md"
               style={styles.loginButton}
             />
+
+            {biometricReady ? (
+              <Button
+                title={`Use ${biometricLabel}`}
+                onPress={handleBiometricLogin}
+                loading={biometricBusy}
+                fullWidth
+                size="md"
+                variant="outline"
+                icon={<Icon name="finger-print" size={18} color={colors.primary[500]} />}
+                style={styles.biometricButton}
+              />
+            ) : null}
           </View>
 
           {/* Divider */}
@@ -290,6 +466,9 @@ const styles = StyleSheet.create({
   },
   loginButton: {
     marginTop: spacing[1],
+  },
+  biometricButton: {
+    marginTop: spacing[2],
   },
   dividerContainer: {
     flexDirection: 'row',

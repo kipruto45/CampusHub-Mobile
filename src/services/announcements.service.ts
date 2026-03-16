@@ -3,6 +3,17 @@
 
 import api from './api';
 
+export interface AnnouncementAttachment {
+  id: string;
+  file?: string;
+  file_url: string;
+  filename: string;
+  file_size: number;
+  formatted_file_size: string;
+  file_type: string;
+  created_at: string;
+}
+
 export interface Announcement {
   id: string;
   title: string;
@@ -21,6 +32,12 @@ export interface Announcement {
   published_at: string;
   created_by?: number;
   created_by_name?: string;
+  attachments: AnnouncementAttachment[];
+  attachment_count: number;
+  attachment_url?: string;
+  attachment_name?: string;
+  attachment_type?: string;
+  attachment_size?: string;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +50,18 @@ export interface AnnouncementListResponse {
 }
 
 class AnnouncementsApiService {
+  // Admin: Get all announcements with pagination
+  async getAdminAnnouncements(params?: {
+    page?: number;
+    page_size?: number;
+  }): Promise<AnnouncementListResponse> {
+    const response = await api.get<AnnouncementListResponse>(
+      '/announcements/admin/',
+      { params }
+    );
+    return response.data;
+  }
+
   // Get all announcements with pagination
   async getAnnouncements(params?: {
     page?: number;
@@ -95,21 +124,13 @@ class AnnouncementsApiService {
   }
 
   // Admin: Create announcement
-  async createAnnouncement(data: {
-    title: string;
-    content: string;
-    announcement_type: string;
-    status?: string;
-    target_faculty?: number;
-    target_department?: number;
-    target_course?: number;
-    target_year_of_study?: number;
-    is_pinned?: boolean;
-    published_at?: string;
-  }): Promise<Announcement> {
+  async createAnnouncement(data: FormData): Promise<Announcement> {
     const response = await api.post<Announcement>(
       '/announcements/admin/',
-      data
+      data,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }
     );
     return response.data;
   }
@@ -117,22 +138,14 @@ class AnnouncementsApiService {
   // Admin: Update announcement
   async updateAnnouncement(
     slug: string,
-    data: Partial<{
-      title: string;
-      content: string;
-      announcement_type: string;
-      status: string;
-      target_faculty: number;
-      target_department: number;
-      target_course: number;
-      target_year_of_study: number;
-      is_pinned: boolean;
-      published_at: string;
-    }>
+    data: FormData
   ): Promise<Announcement> {
     const response = await api.patch<Announcement>(
       `/announcements/admin/${slug}/`,
-      data
+      data,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }
     );
     return response.data;
   }

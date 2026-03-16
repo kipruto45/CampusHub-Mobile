@@ -30,7 +30,8 @@ interface AnalyticsData {
     id: string;
     title: string;
     download_count: number;
-    upload_count: number;
+    upload_count?: number;
+    view_count?: number;
   }[];
   top_users: {
     id: string;
@@ -277,7 +278,12 @@ const AnalyticsScreen: React.FC = () => {
                 <View style={styles.topInfo}>
                   <Text style={styles.topTitle} numberOfLines={1}>{resource.title}</Text>
                   <Text style={styles.topMeta}>
-                    {resource.download_count} downloads • {resource.upload_count} uploads
+                    {resource.download_count} downloads
+                    {typeof resource.view_count === 'number'
+                      ? ` • ${resource.view_count} views`
+                      : typeof resource.upload_count === 'number'
+                        ? ` • ${resource.upload_count} uploads`
+                        : ''}
                   </Text>
                 </View>
               </View>

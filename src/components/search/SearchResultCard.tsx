@@ -39,7 +39,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
             <Icon
               name={item?.is_bookmarked ? 'bookmark' : 'bookmark-outline'}
               size={18}
-              color={item?.is_bookmarked ? colors.warning : colors.text.tertiary}
+              color={item?.is_bookmarked ? colors.accent[500] : colors.text.tertiary}
             />
           </TouchableOpacity>
         </View>
@@ -56,9 +56,18 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
         {[courseLabel, unitLabel].filter(Boolean).join(' • ')}
       </Text>
       <View style={styles.stats}>
-        <Text style={styles.stat}>⭐ {Number(item?.average_rating || 0).toFixed(1)}</Text>
-        <Text style={styles.stat}>⬇ {Number(item?.download_count || 0)}</Text>
-        <Text style={styles.stat}>👁 {Number(item?.view_count || 0)}</Text>
+        <View style={styles.statItem}>
+          <Icon name="star" size={12} color="#F59E0B" />
+          <Text style={styles.stat}>{Number(item?.average_rating || 0).toFixed(1)}</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Icon name="download" size={12} color={colors.text.tertiary} />
+          <Text style={styles.stat}>{Number(item?.download_count || 0)}</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Icon name="eye" size={12} color={colors.text.tertiary} />
+          <Text style={styles.stat}>{Number(item?.view_count || 0)}</Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -115,6 +124,11 @@ const styles = StyleSheet.create({
   stats: {
     flexDirection: 'row',
     gap: spacing[3],
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   stat: {
     fontSize: 12,

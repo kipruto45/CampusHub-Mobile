@@ -102,6 +102,21 @@ export const useSearch = () => {
     setError(null);
   }, []);
 
+  const updateResult = useCallback(
+    (resultId: string, updater: Partial<any> | ((item: any) => any)) => {
+      setResults((prev) =>
+        prev.map((item) =>
+          item.id === resultId
+            ? typeof updater === 'function'
+              ? updater(item)
+              : { ...item, ...updater }
+            : item
+        )
+      );
+    },
+    []
+  );
+
   const clearFilters = useCallback(() => {
     setFilters({ sort: 'relevance' });
   }, []);
@@ -151,6 +166,7 @@ export const useSearch = () => {
     suggestionLoading,
     error,
     runSearch,
+    updateResult,
     loadRecentSearches,
     refreshRecentSearches: loadRecentSearches,
     clearQuery,

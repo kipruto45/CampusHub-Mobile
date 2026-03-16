@@ -5,6 +5,7 @@ import { StyleSheet, Text, View, ViewStyle } from 'react-native';
 
 import { colors } from '../../theme/colors';
 import { borderRadius, spacing } from '../../theme/spacing';
+import Icon from './Icon';
 
 type SyncStatus = 'synced' | 'pending' | 'syncing' | 'failed';
 
@@ -20,25 +21,25 @@ const statusConfig: Record<SyncStatus, { label: string; color: string; bgColor: 
     label: 'Synced',
     color: colors.success,
     bgColor: colors.success + '15',
-    icon: '✓',
+    icon: 'checkmark-circle',
   },
   pending: {
     label: 'Pending',
     color: colors.warning,
     bgColor: colors.warning + '15',
-    icon: '⏳',
+    icon: 'time',
   },
   syncing: {
     label: 'Syncing',
     color: colors.info,
     bgColor: colors.info + '15',
-    icon: '↻',
+    icon: 'sync',
   },
   failed: {
     label: 'Failed',
     color: colors.error,
     bgColor: colors.error + '15',
-    icon: '⚠',
+    icon: 'alert-circle',
   },
 };
 
@@ -60,15 +61,11 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({
         style,
       ]}
     >
-      <Text
-        style={[
-          styles.icon,
-          { color: config.color },
-          isSmall ? styles.iconSmall : styles.iconMedium,
-        ]}
-      >
-        {config.icon}
-      </Text>
+      <Icon
+        name={config.icon as any}
+        size={isSmall ? 12 : 16}
+        color={config.color}
+      />
       {showLabel && (
         <Text
           style={[

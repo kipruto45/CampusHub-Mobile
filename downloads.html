@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CampusHub - Download App</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #0D7377 0%, #14FFEC 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo h1 {
+            color: #0D7377;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        .logo p {
+            color: #666;
+            font-size: 14px;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 18px 24px;
+            margin: 16px 0;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .btn-primary {
+            background: #0D7377;
+            color: white;
+        }
+        .btn-secondary {
+            background: #14FFEC;
+            color: #0D7377;
+        }
+        .btn-outline {
+            background: transparent;
+            border: 2px solid #0D7377;
+            color: #0D7377;
+        }
+        .features {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+        .features h3 {
+            color: #0D7377;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+        .features ul {
+            list-style: none;
+            color: #666;
+            font-size: 14px;
+        }
+        .features li {
+            padding: 8px 0;
+            padding-left: 24px;
+            position: relative;
+        }
+        .features li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #0D7377;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>CampusHub</h1>
+            <p>Academic Resource Management App</p>
+        </div>
+        
+        <a href="/app/" class="btn btn-primary">
+            📱 Open Web App (PWA)
+        </a>
+        
+        <a href="/download/app-release.apk" class="btn btn-secondary">
+            ⬇️ Download Android APK
+        </a>
+        
+        <div class="features">
+            <h3>Features</h3>
+            <ul>
+                <li>Access course materials anywhere</li>
+                <li>Offline capability with PWA</li>
+                <li>Push notifications</li>
+                <li>Easy resource sharing</li>
+                <li>Academic timetable management</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

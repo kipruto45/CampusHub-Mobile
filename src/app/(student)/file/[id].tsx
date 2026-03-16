@@ -20,6 +20,7 @@ import {
   libraryService,
   LibraryFile,
 } from '../../../services/library.service';
+import { localDownloadsService } from '../../../services/local-downloads.service';
 import { colors } from '../../../theme/colors';
 import { borderRadius, spacing } from '../../../theme/spacing';
 import { shadows } from '../../../theme/shadows';
@@ -119,9 +120,41 @@ export default function LibraryFileDetailScreen() {
     setActionLoading('download');
     try {
       const downloadData = await libraryService.getDownloadUrl(file.id);
-      await Linking.openURL(downloadData.download_url);
+      const downloadKey = `personal-file:${file.id}`;
+
+      await localDownloadsService.ensureLocalFile({
+        key: downloadKey,
+        remoteUrl: downloadData.download_url,
+        fileName: downloadData.file_name,
+        title: file.title,
+        fileType: downloadData.file_type,
+      });
+
+      let detailMessage = 'Saved inside CampusHub for offline access.';
+      try {
+        const copyResult = await localDownloadsService.saveCopyToDevice(downloadKey);
+        if (copyResult.status === 'saved') {
+          detailMessage = 'Saved inside CampusHub and copied to your phone storage.';
+        } else if (copyResult.status === 'already_saved') {
+          detailMessage = 'Saved inside CampusHub. A phone-storage copy already exists.';
+        } else if (copyResult.status === 'shared') {
+          detailMessage = 'Saved inside CampusHub. Use the share sheet to save a copy to Files.';
+        }
+      } catch {
+        detailMessage = 'Saved inside CampusHub. You can export a copy again from My Downloads.';
+      }
+
+      Alert.alert('Download Complete', detailMessage, [
+        {
+          text: 'Open File',
+          onPress: () => {
+            void localDownloadsService.openLocalFile(downloadKey);
+          },
+        },
+        { text: 'OK', style: 'cancel' },
+      ]);
     } catch {
-      Alert.alert('Download failed', 'Unable to start the download right now.');
+      Alert.alert('Download failed', 'Unable to download this file right now.');
     } finally {
       setActionLoading(null);
     }
@@ -244,13 +277,13 @@ export default function LibraryFileDetailScreen() {
               disabled={favoriteLoading}
             >
               {favoriteLoading ? (
-                <ActivityIndicator size="small" color={colors.warning} />
+                <ActivityIndicator size="small" color={colors.error} />
               ) : (
                 <>
                   <Icon
-                    name={file.is_favorite ? 'star' : 'star-outline'}
+                    name={file.is_favorite ? 'heart' : 'heart-outline'}
                     size={18}
-                    color={colors.warning}
+                    color={colors.error}
                   />
                   <Text style={styles.secondaryActionText}>
                     {file.is_favorite ? 'Favorited' : 'Favorite'}

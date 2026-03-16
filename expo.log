@@ -1,0 +1,7 @@
+env: load .env
+env: export EXPO_PUBLIC_API_URL
+Starting project at /home/kipruto/Desktop/CampusHub/mobile
+Using src/app as the root directory for Expo Router.
+Starting Metro Bundler
+Waiting on http://localhost:8081
+Logs for your project will appear below.

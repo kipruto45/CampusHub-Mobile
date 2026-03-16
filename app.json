@@ -2,13 +2,13 @@
   "expo": {
     "name": "CampusHub",
     "slug": "campus-hub",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/icon-512.png",
     "userInterfaceStyle": "light",
     "scheme": "campushub",
     "splash": {
-      "image": "./assets/logo.png",
+      "image": "./assets/icon-512.png",
       "resizeMode": "contain",
       "backgroundColor": "#0D7377"
     },
@@ -25,21 +25,43 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
-        "backgroundColor": "#0D7377"
+        "foregroundImage": "./assets/icon-512.png",
+        "backgroundColor": "#FFFFFF"
       },
-      "package": "com.campushub.app",
+      "roundIcon": "./assets/icon-512.png",
+      "package": "com.campushub",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
-        "android.permission.POST_NOTIFICATIONS"
-      ]
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "bundleInRelease": true
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/icon-512.png",
+      "bundler": "metro",
+      "output": "single",
+      "meta": {
+        "name": "CampusHub",
+        "description": "CampusHub - Academic Resource Management App",
+        "theme_color": "#0D7377",
+        "background_color": "#0D7377"
+      },
+      "pwa": {
+        "themeColor": "#0D7377",
+        "backgroundColor": "#0D7377",
+        "display": "standalone",
+        "orientation": "portrait",
+        "startUrl": "/",
+        "icons": {
+          "512x512": "./assets/icon-512.png",
+          "192x192": "./assets/icon-512.png"
+        }
+      }
     },
     "plugins": [
       "expo-router",
@@ -59,13 +81,19 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/logo.png",
+          "icon": "./assets/icon-512.png",
           "color": "#0D7377"
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c21d7cd4-b659-4916-89b9-7ca6d5f7ecf7"
+      }
     }
   }
 }

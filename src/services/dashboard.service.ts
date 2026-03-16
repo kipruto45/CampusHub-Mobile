@@ -1,7 +1,7 @@
 // Dashboard API Service for CampusHub Mobile App
 // Handles normalized dashboard-related API calls with lightweight caching
 
-import api from './api';
+import api, { normalizeAbsoluteAppUrl } from './api';
 
 // User Summary Types
 export interface DashboardUser {
@@ -232,23 +232,26 @@ const emptyDashboardData = (): DashboardData => ({
 const normalizeDashboardPayload = (raw: any): DashboardData => {
   const payload = unwrapPayload<any>(raw) || {};
   const fallback = emptyDashboardData();
+  const summaryUser = payload?.user_summary?.user || {};
+  const summaryAvatar =
+    summaryUser?.avatar || summaryUser?.profile_image_url || summaryUser?.profile_image;
 
   return {
     ...fallback,
     user_summary: {
       user: {
-        id: toStringValue(payload?.user_summary?.user?.id),
-        email: toStringValue(payload?.user_summary?.user?.email),
-        first_name: toStringValue(payload?.user_summary?.user?.first_name),
-        last_name: toStringValue(payload?.user_summary?.user?.last_name),
+        id: toStringValue(summaryUser?.id),
+        email: toStringValue(summaryUser?.email),
+        first_name: toStringValue(summaryUser?.first_name),
+        last_name: toStringValue(summaryUser?.last_name),
         full_name: toStringValue(
-          payload?.user_summary?.user?.full_name ||
-            `${toStringValue(payload?.user_summary?.user?.first_name)} ${toStringValue(
-              payload?.user_summary?.user?.last_name
+          summaryUser?.full_name ||
+            `${toStringValue(summaryUser?.first_name)} ${toStringValue(
+              summaryUser?.last_name
             )}`.trim()
         ),
-        avatar: payload?.user_summary?.user?.avatar || undefined,
-        role: toStringValue(payload?.user_summary?.user?.role),
+        avatar: normalizeAbsoluteAppUrl(summaryAvatar) || undefined,
+        role: toStringValue(summaryUser?.role),
       },
       profile_completion: toNumberValue(payload?.user_summary?.profile_completion),
       is_profile_complete: Boolean(payload?.user_summary?.is_profile_complete),

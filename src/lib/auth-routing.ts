@@ -7,10 +7,13 @@ export const ADMIN_HOME_ROUTE = '/(admin)/dashboard' as const;
 export const normalizeRole = (role?: string | null): AppRole => {
   const value = String(role || '').trim().toLowerCase();
   if (!value) return 'unknown';
-  if (value === 'student') return 'student';
-  if (value === 'admin') return 'admin';
-  if (value === 'moderator') return 'moderator';
-  if (value === 'staff') return 'staff';
+  
+  // Check for exact matches
+  if (value === 'student' || value.includes('student')) return 'student';
+  if (value === 'admin' || value.includes('admin')) return 'admin';
+  if (value === 'moderator' || value.includes('moderator')) return 'moderator';
+  if (value === 'staff' || value.includes('staff')) return 'staff';
+  
   return 'unknown';
 };
 
@@ -19,5 +22,9 @@ export const isAdminRole = (role?: string | null): boolean => {
   return normalized === 'admin' || normalized === 'moderator' || normalized === 'staff';
 };
 
-export const resolveHomeRouteByRole = (role?: string | null) =>
-  isAdminRole(role) ? ADMIN_HOME_ROUTE : STUDENT_HOME_ROUTE;
+export const resolveHomeRouteByRole = (role?: string | null): string => {
+  const normalizedRole = normalizeRole(role);
+  const route = isAdminRole(role) ? ADMIN_HOME_ROUTE : STUDENT_HOME_ROUTE;
+  console.log('Resolving route for role:', role, '-> normalized:', normalizedRole, '-> route:', route);
+  return route;
+};

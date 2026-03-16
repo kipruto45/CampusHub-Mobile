@@ -8,6 +8,7 @@ import { colors } from '../../../theme/colors';
 import { exchangeCodeForTokens } from '../../../services/socialAuth';
 import { useAuthStore } from '../../../store/auth.store';
 import { resolveHomeRouteByRole } from '../../../lib/auth-routing';
+import Icon from '../../../components/ui/Icon';
 
 const OAuthCallback: React.FC = () => {
   const { provider, code, error, error_description } = useLocalSearchParams<{
@@ -109,10 +110,10 @@ const OAuthCallback: React.FC = () => {
         <ActivityIndicator size="large" color={colors.primary[500]} />
         <Text style={styles.message}>{message}</Text>
         {status === 'success' && (
-          <Text style={styles.successIcon}>✓</Text>
+          <Icon name="checkmark-circle" size={40} color={colors.success} />
         )}
         {status === 'error' && (
-          <Text style={styles.errorIcon}>✗</Text>
+          <Icon name="close-circle" size={40} color={colors.error} />
         )}
       </View>
     </>

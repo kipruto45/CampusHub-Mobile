@@ -9,10 +9,12 @@ import {
   setRefreshToken,
   setRefreshTokenCallback,
   setSessionInvalidationCallback,
+  normalizeAbsoluteAppUrl,
 } from '../services/api';
 import { notificationService } from '../services/notifications';
+import { biometricService } from '../services/biometric';
 import type { AppRole } from '../lib/auth-routing';
-import { resolveHomeRouteByRole } from '../lib/auth-routing';
+import { resolveHomeRouteByRole, STUDENT_HOME_ROUTE } from '../lib/auth-routing';
 
 const memoryStorage = (() => {
   const store: Record<string, string> = {};
@@ -36,6 +38,7 @@ const getPersistStorage = () => {
 };
 
 const APP_CACHE_KEYS = ['auth-storage'];
+const CURRENT_USER_FRESH_MS = 60_000;
 
 const EMPTY_AUTH_STATE = {
   user: null,
@@ -68,6 +71,28 @@ const clearClientCache = () => {
   }
 };
 
+const normalizeStoredName = (value: any): string => {
+  const cleaned = String(value ?? '').trim();
+  if (!cleaned) return '';
+  const lowered = cleaned.toLowerCase();
+  if (['null', 'undefined', 'none', 'nil'].includes(lowered)) return '';
+  return cleaned;
+};
+
+const sanitizeStoredUser = (user: User | null): User | null => {
+  if (!user) return user;
+  const first = normalizeStoredName((user as any).first_name);
+  const last = normalizeStoredName((user as any).last_name);
+  const full = normalizeStoredName((user as any).full_name) || `${first} ${last}`.trim();
+  return {
+    ...user,
+    first_name: first,
+    last_name: last,
+    ...(full ? { full_name: full } : {}),
+    avatar: normalizeAbsoluteAppUrl((user as any).avatar) || '',
+  };
+};
+
 interface User {
   id: string;
   email: string;
@@ -75,9 +100,12 @@ interface User {
   last_name: string;
   registration_number: string;
   avatar?: string;
+  full_name?: string;
   role: AppRole;
   department?: string;
   faculty?: string;
+  course?: string;
+  auth_provider?: string;
 }
 
 interface AuthState {
@@ -89,7 +117,13 @@ interface AuthState {
   error: string | null;
 
   // Actions
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<string>;
+  login: (
+    email: string,
+    password: string,
+    rememberMe?: boolean,
+    twoFactorCode?: string
+  ) => Promise<string>;
+  loginWithBiometric: (refreshToken: string) => Promise<string>;
   register: (data: {
     email: string;
     password: string;
@@ -120,7 +154,39 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => {
+      let currentUserRequest: Promise<void> | null = null;
+      let lastCurrentUserFetchAt = 0;
+      let lastInitializedToken: string | null = null;
+
+      const resetInitializationState = () => {
+        currentUserRequest = null;
+        lastCurrentUserFetchAt = 0;
+        lastInitializedToken = null;
+      };
+
+      const syncBiometricToken = async (token?: string | null) => {
+        if (!token) return;
+        try {
+          const enabled = await biometricService.isBiometricEnabled();
+          if (enabled) {
+            await biometricService.storeAuthKey(token);
+          }
+        } catch {
+          // Best effort only.
+        }
+      };
+
+      const clearBiometricToken = async () => {
+        try {
+          await biometricService.deleteAuthKey();
+        } catch {
+          // Best effort only.
+        }
+      };
+
       const clearSessionState = () => {
+        resetInitializationState();
+        void clearBiometricToken();
         set(EMPTY_AUTH_STATE);
         clearClientCache();
       };
@@ -131,12 +197,30 @@ export const useAuthStore = create<AuthState>()(
         });
       };
 
+      const registerRefreshTokenCallback = () => {
+        setRefreshTokenCallback(({ accessToken, refreshToken }) => {
+          const nextRefresh = refreshToken ?? get().refreshToken;
+          if (nextRefresh) {
+            void syncBiometricToken(nextRefresh);
+          }
+          set((state) => ({
+            accessToken,
+            refreshToken: refreshToken ?? state.refreshToken,
+          }));
+        });
+      };
+
       registerSessionInvalidationCallback();
 
       return {
       ...EMPTY_AUTH_STATE,
 
-      login: async (email: string, password: string, rememberMe: boolean = false) => {
+      login: async (
+        email: string,
+        password: string,
+        rememberMe: boolean = false,
+        twoFactorCode?: string
+      ) => {
         set({ isLoading: true, error: null });
         try {
           // Check if email looks like a registration number (e.g., CS/2021/001)
@@ -146,19 +230,18 @@ export const useAuthStore = create<AuthState>()(
             isRegistrationNumber ? '' : email, 
             password,
             isRegistrationNumber ? email : undefined,
-            rememberMe
+            rememberMe,
+            twoFactorCode
           );
           const { access_token, refresh_token, user } = response.data.data;
+
+          // Debug: Log user role for debugging
+          console.log('Login successful - User role:', user?.role);
 
           // Store tokens
           setAuthToken(access_token);
           setRefreshToken(refresh_token);
-          setRefreshTokenCallback(({ accessToken, refreshToken }) => {
-            set((state) => ({
-              accessToken,
-              refreshToken: refreshToken ?? state.refreshToken,
-            }));
-          });
+          registerRefreshTokenCallback();
           
           set({
             accessToken: access_token,
@@ -167,10 +250,58 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
+          void syncBiometricToken(refresh_token);
+          lastCurrentUserFetchAt = Date.now();
+          lastInitializedToken = access_token;
 
-          return resolveHomeRouteByRole(user?.role);
+          return resolveHomeRouteByRole(user?.role) || STUDENT_HOME_ROUTE;
         } catch (error: any) {
           const message = error.response?.data?.error?.message || error.response?.data?.message || 'Login failed. Please try again.';
+          set({ error: message, isLoading: false });
+          throw error;
+        }
+      },
+
+      loginWithBiometric: async (storedRefreshToken: string) => {
+        set({ isLoading: true, error: null });
+        try {
+          const response = await authAPI.refreshToken(storedRefreshToken);
+          const payload = response?.data?.data ?? response?.data ?? {};
+          const accessToken = payload?.access_token;
+          const refreshToken = payload?.refresh_token || storedRefreshToken;
+
+          if (!accessToken) {
+            throw new Error('Unable to refresh session. Please log in again.');
+          }
+
+          setAuthToken(accessToken);
+          setRefreshToken(refreshToken);
+          registerRefreshTokenCallback();
+
+          const profileResponse = await authAPI.getCurrentUser();
+          const userData = profileResponse.data.data || profileResponse.data;
+
+          set({
+            accessToken,
+            refreshToken,
+            user: userData,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+          void syncBiometricToken(refreshToken);
+          lastCurrentUserFetchAt = Date.now();
+          lastInitializedToken = accessToken;
+
+          return resolveHomeRouteByRole(userData?.role) || STUDENT_HOME_ROUTE;
+        } catch (error: any) {
+          const message =
+            error.response?.data?.error?.message ||
+            error.response?.data?.message ||
+            error?.message ||
+            'Biometric login failed. Please try again.';
+          if (error?.response?.status === 400 || error?.response?.status === 401) {
+            void clearBiometricToken();
+          }
           set({ error: message, isLoading: false });
           throw error;
         }
@@ -219,12 +350,7 @@ export const useAuthStore = create<AuthState>()(
           if (refreshToken) {
             setRefreshToken(refreshToken);
           }
-          setRefreshTokenCallback(({ accessToken: nextAccess, refreshToken: nextRefresh }) => {
-            set((state) => ({
-              accessToken: nextAccess,
-              refreshToken: nextRefresh ?? state.refreshToken,
-            }));
-          });
+          registerRefreshTokenCallback();
 
           // Fetch user profile
           const response = await authAPI.getCurrentUser();
@@ -237,8 +363,13 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
+          if (refreshToken) {
+            void syncBiometricToken(refreshToken);
+          }
+          lastCurrentUserFetchAt = Date.now();
+          lastInitializedToken = accessToken;
 
-          return resolveHomeRouteByRole(userData?.role);
+          return resolveHomeRouteByRole(userData?.role) || STUDENT_HOME_ROUTE;
         } catch (error: any) {
           const message = error.response?.data?.error?.message || error.response?.data?.message || `${provider} login failed. Please try again.`;
           set({ error: message, isLoading: false });
@@ -258,6 +389,8 @@ export const useAuthStore = create<AuthState>()(
           setAuthToken(access_token);
           setRefreshToken(refresh_token);
           set({ accessToken: access_token, refreshToken: refresh_token });
+          void syncBiometricToken(refresh_token || refreshToken);
+          lastInitializedToken = access_token;
         } catch {
           // Token refresh failed - logout
           get().logout();
@@ -272,42 +405,75 @@ export const useAuthStore = create<AuthState>()(
           return;
         }
 
-        try {
-          const response = await authAPI.getCurrentUser();
-          const userData = response.data.data || response.data;
-          set({ user: userData, isAuthenticated: true });
-        } catch (error) {
-          console.error('Failed to fetch current user:', error);
-          if (!get().refreshToken) {
-            clearSessionState();
-          }
+        if (currentUserRequest) {
+          return currentUserRequest;
         }
+
+        currentUserRequest = (async () => {
+          try {
+            const response = await authAPI.getCurrentUser();
+            const userData = response.data.data || response.data;
+            set({ user: userData, isAuthenticated: true });
+            lastCurrentUserFetchAt = Date.now();
+            lastInitializedToken = accessToken;
+          } catch (error) {
+            console.error('Failed to fetch current user:', error);
+            if (!get().refreshToken) {
+              clearSessionState();
+            }
+          } finally {
+            currentUserRequest = null;
+          }
+        })();
+
+        return currentUserRequest;
       },
 
       // Initialize auth state from persisted storage
       initializeAuth: () => {
         const { accessToken, refreshToken, user } = get();
+        registerSessionInvalidationCallback();
+
+        if (user) {
+          set({ user: sanitizeStoredUser(user) });
+        }
+
         if (accessToken) {
-          registerSessionInvalidationCallback();
           setAuthToken(accessToken);
           setRefreshToken(refreshToken);
-          setRefreshTokenCallback(({ accessToken: nextAccess, refreshToken: nextRefresh }) => {
-            set((state) => ({
-              accessToken: nextAccess,
-              refreshToken: nextRefresh ?? state.refreshToken,
-            }));
-          });
-          // Fetch fresh user data
-          get().fetchCurrentUser();
+          registerRefreshTokenCallback();
+
+          const isFreshSession =
+            lastInitializedToken === accessToken &&
+            Boolean(user) &&
+            Date.now() - lastCurrentUserFetchAt < CURRENT_USER_FRESH_MS;
+
+          if (!currentUserRequest && !isFreshSession) {
+            lastInitializedToken = accessToken;
+            void get().fetchCurrentUser();
+          }
         }
       },
 
-      getHomeRoute: () => resolveHomeRouteByRole(get().user?.role),
+      getHomeRoute: () => resolveHomeRouteByRole(get().user?.role) || STUDENT_HOME_ROUTE,
 
       updateUser: (userData) => {
         const { user } = get();
         if (user) {
-          set({ user: { ...user, ...userData } });
+          const normalized: Partial<User> = { ...userData };
+          if ('avatar' in userData) {
+            normalized.avatar = normalizeAbsoluteAppUrl(userData.avatar) || userData.avatar || '';
+          }
+          if ('first_name' in userData) {
+            normalized.first_name = normalizeStoredName((userData as any).first_name);
+          }
+          if ('last_name' in userData) {
+            normalized.last_name = normalizeStoredName((userData as any).last_name);
+          }
+          if ('full_name' in userData) {
+            (normalized as any).full_name = normalizeStoredName((userData as any).full_name);
+          }
+          set({ user: { ...user, ...normalized } });
         }
       },
 

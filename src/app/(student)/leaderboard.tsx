@@ -2,12 +2,13 @@
 // Display top students by points, uploads, downloads
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
+import Avatar from '../../components/ui/Avatar';
 import { gamificationAPI } from '../../services/api';
 
 interface LeaderboardEntry {
@@ -36,10 +37,12 @@ const LeaderboardScreen: React.FC = () => {
   const fetchLeaderboard = useCallback(async () => {
     try {
       const response = await gamificationAPI.getLeaderboard(selectedPeriod);
-      const data = response.data.data || [];
-      setLeaderboard(data);
+      // Mobile API returns { data: { entries: [...] } }
+      const entries = response.data.data?.entries || response.data.data || [];
+      setLeaderboard(entries);
     } catch (err) {
       console.error('Failed to fetch leaderboard:', err);
+      setLeaderboard([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -71,13 +74,12 @@ const LeaderboardScreen: React.FC = () => {
       <View style={styles.topThreeContainer}>
         {/* Second Place */}
         <TouchableOpacity style={[styles.topThreeCard, styles.secondPlace]}>
-          {topThree[0].user.avatar || topThree[0].user.profile_image_url ? (
-            <Image source={{ uri: topThree[0].user.avatar || topThree[0].user.profile_image_url }} style={styles.topThreeAvatar} />
-          ) : (
-            <View style={[styles.topThreeAvatar, styles.avatarPlaceholder]}>
-              <Text style={styles.avatarText}>{topThree[0].user.first_name?.[0] || 'U'}</Text>
-            </View>
-          )}
+          <Avatar
+            source={topThree[0].user.avatar || topThree[0].user.profile_image_url}
+            name={`${topThree[0].user.first_name} ${topThree[0].user.last_name}`.trim()}
+            sizePx={56}
+            cacheKey={`leaderboard-${topThree[0].user.id}`}
+          />
           <View style={[styles.rankBadge, { backgroundColor: '#C0C0C0' }]}>
             <Text style={styles.rankBadgeText}>2</Text>
           </View>
@@ -90,13 +92,12 @@ const LeaderboardScreen: React.FC = () => {
           <View style={styles.crownIcon}>
             <Icon name="star" size={20} color="#FFD700" />
           </View>
-          {topThree[1].user.avatar || topThree[1].user.profile_image_url ? (
-            <Image source={{ uri: topThree[1].user.avatar || topThree[1].user.profile_image_url }} style={styles.topThreeAvatar} />
-          ) : (
-            <View style={[styles.topThreeAvatar, styles.avatarPlaceholder]}>
-              <Text style={styles.avatarText}>{topThree[1].user.first_name?.[0] || 'U'}</Text>
-            </View>
-          )}
+          <Avatar
+            source={topThree[1].user.avatar || topThree[1].user.profile_image_url}
+            name={`${topThree[1].user.first_name} ${topThree[1].user.last_name}`.trim()}
+            sizePx={56}
+            cacheKey={`leaderboard-${topThree[1].user.id}`}
+          />
           <View style={[styles.rankBadge, { backgroundColor: '#FFD700' }]}>
             <Text style={styles.rankBadgeText}>1</Text>
           </View>
@@ -106,13 +107,12 @@ const LeaderboardScreen: React.FC = () => {
 
         {/* Third Place */}
         <TouchableOpacity style={[styles.topThreeCard, styles.thirdPlace]}>
-          {topThree[2].user.avatar || topThree[2].user.profile_image_url ? (
-            <Image source={{ uri: topThree[2].user.avatar || topThree[2].user.profile_image_url }} style={styles.topThreeAvatar} />
-          ) : (
-            <View style={[styles.topThreeAvatar, styles.avatarPlaceholder]}>
-              <Text style={styles.avatarText}>{topThree[2].user.first_name?.[0] || 'U'}</Text>
-            </View>
-          )}
+          <Avatar
+            source={topThree[2].user.avatar || topThree[2].user.profile_image_url}
+            name={`${topThree[2].user.first_name} ${topThree[2].user.last_name}`.trim()}
+            sizePx={56}
+            cacheKey={`leaderboard-${topThree[2].user.id}`}
+          />
           <View style={[styles.rankBadge, { backgroundColor: '#CD7F32' }]}>
             <Text style={styles.rankBadgeText}>3</Text>
           </View>
@@ -184,13 +184,12 @@ const LeaderboardScreen: React.FC = () => {
                 </View>
                 
                 <View style={styles.userInfo}>
-                  {entry.user.avatar || entry.user.profile_image_url ? (
-                    <Image source={{ uri: entry.user.avatar || entry.user.profile_image_url }} style={styles.userAvatar} />
-                  ) : (
-                    <View style={[styles.userAvatar, styles.avatarPlaceholder]}>
-                      <Text style={styles.avatarText}>{entry.user.first_name?.[0] || 'U'}</Text>
-                    </View>
-                  )}
+                  <Avatar
+                    source={entry.user.avatar || entry.user.profile_image_url}
+                    name={`${entry.user.first_name} ${entry.user.last_name}`.trim()}
+                    size="md"
+                    cacheKey={`leaderboard-${entry.user.id}`}
+                  />
                   <View style={styles.userDetails}>
                     <Text style={styles.userName}>
                       {entry.user.first_name} {entry.user.last_name}

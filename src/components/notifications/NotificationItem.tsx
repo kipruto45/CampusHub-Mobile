@@ -20,6 +20,12 @@ const getNotificationIcon = (type: string): string => {
       return 'checkmark-circle';
     case 'resource_rejected':
       return 'close-circle';
+    case 'new_resource':
+      return 'document-text';
+    case 'resource_updated':
+      return 'refresh';
+    case 'resource_liked':
+      return 'heart';
     case 'new_comment':
       return 'chatbubble-ellipses';
     case 'comment_reply':
@@ -34,6 +40,14 @@ const getNotificationIcon = (type: string): string => {
       return 'megaphone';
     case 'report_update':
       return 'flag';
+    case 'resource_shared_with_user':
+      return 'share';
+    case 'resource_shared_to_group':
+      return 'people';
+    case 'resource_request':
+      return 'help-circle';
+    case 'inactivity_reminder':
+      return 'time';
     case 'system':
       return 'gear';
     default:
@@ -46,6 +60,12 @@ const getNotificationColor = (type: string): string => {
     case 'resource_approved':
       return colors.success;
     case 'resource_rejected':
+      return colors.error;
+    case 'new_resource':
+      return colors.success;
+    case 'resource_updated':
+      return colors.info;
+    case 'resource_liked':
       return colors.error;
     case 'new_comment':
     case 'comment_reply':
@@ -60,6 +80,14 @@ const getNotificationColor = (type: string): string => {
       return colors.accent[500];
     case 'report_update':
       return colors.primary[600];
+    case 'resource_shared_with_user':
+      return colors.primary[500];
+    case 'resource_shared_to_group':
+      return colors.primary[400];
+    case 'resource_request':
+      return colors.warning;
+    case 'inactivity_reminder':
+      return colors.warning;
     default:
       return colors.text.secondary;
   }

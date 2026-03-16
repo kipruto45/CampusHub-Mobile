@@ -64,6 +64,7 @@ class BiometricService {
   async disableBiometric(): Promise<void> {
     try {
       await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, 'false');
+      await this.deleteAuthKey();
     } catch (error) {
       console.error('Failed to disable biometric:', error);
     }
@@ -169,8 +170,9 @@ class BiometricService {
   async shouldUseBiometric(): Promise<boolean> {
     const isEnabled = await this.isBiometricEnabled();
     const capability = await this.checkBiometricCapability();
+    const authKey = await this.getAuthKey();
     
-    return isEnabled && capability.hasHardware && capability.isEnrolled;
+    return isEnabled && capability.hasHardware && capability.isEnrolled && Boolean(authKey);
   }
 }
 

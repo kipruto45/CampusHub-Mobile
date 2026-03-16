@@ -20,7 +20,7 @@ export const FavoriteButton: React.FC<FavoriteButtonProps> = ({
   targetId,
   size = 24,
   color = colors.text.secondary,
-  activeColor = colors.accent[500],
+  activeColor = colors.error,
   onToggle,
 }) => {
   const { isFavorited, toggleFavorite } = useFavorites();
@@ -52,7 +52,7 @@ export const FavoriteButton: React.FC<FavoriteButtonProps> = ({
         <ActivityIndicator size="small" color={activeColor} />
       ) : (
         <Icon
-          name={isActive ? 'star' : 'star-outline'}
+          name={isActive ? 'heart' : 'heart-outline'}
           size={size}
           color={isActive ? activeColor : color}
         />

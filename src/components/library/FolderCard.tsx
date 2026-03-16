@@ -32,7 +32,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
             {folder.name}
           </Text>
           {folder.is_favorite && (
-            <Icon name="star" size={14} color={colors.warning} />
+            <Icon name="heart" size={14} color={colors.error} />
           )}
         </View>
         <Text style={styles.meta}>

@@ -1,7 +1,7 @@
 // Input Component for CampusHub
-// Modern, clean input field
+// Modern, clean input field with memo optimization
 
-import React, { useState } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import {
   View,
   TextInput,
@@ -25,7 +25,7 @@ interface InputProps extends Omit<TextInputProps, 'style'> {
   containerStyle?: ViewStyle;
 }
 
-const Input: React.FC<InputProps> = ({
+const Input: React.FC<InputProps> = memo(({
   label,
   error,
   hint,
@@ -45,9 +45,9 @@ const Input: React.FC<InputProps> = ({
     return colors.border.light;
   };
 
-  const handleTogglePassword = () => {
+  const handleTogglePassword = useCallback(() => {
     setIsPasswordVisible(!isPasswordVisible);
-  };
+  }, [isPasswordVisible]);
 
   return (
     <View style={[styles.container, containerStyle]}>
@@ -99,7 +99,7 @@ const Input: React.FC<InputProps> = ({
       {hint && !error && <Text style={styles.hint}>{hint}</Text>}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -120,24 +120,17 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingHorizontal: 16,
   },
-  focused: {
-    ...shadows.soft,
-  },
-  errorBorder: {
-    borderColor: colors.error,
-  },
   input: {
     flex: 1,
     fontSize: 16,
     color: colors.text.primary,
     paddingVertical: 12,
-    paddingHorizontal: 0,
   },
   inputWithLeftIcon: {
-    paddingLeft: 0,
+    paddingLeft: 8,
   },
   inputWithRightIcon: {
-    paddingRight: 0,
+    paddingRight: 8,
   },
   leftIcon: {
     marginRight: 12,
@@ -146,20 +139,28 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     padding: 4,
   },
-  toggleText: {
-    fontSize: 14,
-    color: colors.primary[500],
-    fontWeight: '500',
+  focused: {
+    borderWidth: 2,
+  },
+  errorBorder: {
+    borderColor: colors.error,
   },
   error: {
     fontSize: 12,
     color: colors.error,
-    marginTop: 6,
+    marginTop: 4,
+    marginLeft: 4,
   },
   hint: {
     fontSize: 12,
     color: colors.text.tertiary,
-    marginTop: 6,
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  toggleText: {
+    fontSize: 14,
+    color: colors.primary[500],
+    fontWeight: '500',
   },
 });
 

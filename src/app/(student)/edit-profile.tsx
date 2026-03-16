@@ -2,13 +2,14 @@
 // Backend-driven with real API integration
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator, Modal, FlatList, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
-import { userAPI } from '../../services/api';
+import { userAPI, publicAcademicAPI } from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
 
 interface UserProfile {
@@ -19,8 +20,9 @@ interface UserProfile {
   last_name: string;
   registration_number: string;
   phone_number: string;
-  profile_image: string;
-  profile_image_url: string;
+  avatar?: string;
+  profile_image?: string;
+  profile_image_url?: string;
   faculty: number | null;
   faculty_name: string;
   department: number | null;
@@ -35,9 +37,6 @@ interface UserProfile {
   profile: {
     bio: string;
     date_of_birth: string | null;
-    address: string;
-    city: string;
-    country: string;
     website: string;
     facebook: string;
     twitter: string;
@@ -45,9 +44,85 @@ interface UserProfile {
   };
 }
 
+const normalizePhoneNumber = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const hasPlus = trimmed.startsWith('+');
+  const digits = trimmed.replace(/\D/g, '');
+  if (!digits) return '';
+  const normalizedDigits = digits.replace(/^0+/, '');
+  if (!normalizedDigits) return '';
+  return hasPlus ? `+${normalizedDigits}` : normalizedDigits;
+};
+
+const normalizeWebsite = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+};
+
+const isValidIsoDate = (value: string): boolean => {
+  const [year, month, day] = value.split('-').map((item) => Number(item));
+  if (!year || !month || !day) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+};
+
+const normalizeDateOfBirth = (value: string): { value: string | null; error?: string } => {
+  const trimmed = value.trim();
+  if (!trimmed) return { value: null };
+
+  const isoPattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (isoPattern.test(trimmed)) {
+    if (isValidIsoDate(trimmed)) return { value: trimmed };
+  }
+
+  const slashPattern = /^\d{2}\/\d{2}\/\d{4}$/;
+  if (slashPattern.test(trimmed)) {
+    const [day, month, year] = trimmed.split('/');
+    const isoValue = `${year}-${month}-${day}`;
+    if (isValidIsoDate(isoValue)) return { value: isoValue };
+  }
+
+  const dashPattern = /^\d{2}-\d{2}-\d{4}$/;
+  if (dashPattern.test(trimmed)) {
+    const [day, month, year] = trimmed.split('-');
+    const isoValue = `${year}-${month}-${day}`;
+    if (isValidIsoDate(isoValue)) return { value: isoValue };
+  }
+
+  return { value: null, error: 'Date of birth must be in YYYY-MM-DD format.' };
+};
+
+const resolveAcademicSelection = (
+  selectedId: string,
+  options: Array<{ id: string | number }>
+): { value: string | number | null | undefined; invalid: boolean } => {
+  if (!selectedId) return { value: undefined, invalid: false };
+  if (!options.length) {
+    const numericId = Number(selectedId);
+    if (Number.isFinite(numericId)) {
+      return { value: numericId, invalid: false };
+    }
+    return { value: selectedId, invalid: false };
+  }
+  const match = options.find((option) => String(option.id) === String(selectedId));
+  if (!match) return { value: null, invalid: true };
+  const numericId = Number(match.id);
+  if (Number.isFinite(numericId)) {
+    return { value: numericId, invalid: false };
+  }
+  return { value: String(match.id), invalid: false };
+};
+
 const EditProfileScreen: React.FC = () => {
   const router = useRouter();
-  const { updateUser } = useAuthStore();
+  const { user, updateUser } = useAuthStore();
   
   // Loading states
   const [loading, setLoading] = useState(true);
@@ -64,13 +139,25 @@ const EditProfileScreen: React.FC = () => {
   const [studentId, setStudentId] = useState('');
   const [facultyName, setFacultyName] = useState('');
   const [departmentName, setDepartmentName] = useState('');
+  const [courseName, setCourseName] = useState('');
   const [year, setYear] = useState<string>('');
   const [semester, setSemester] = useState<string>('');
   
+  // Faculty/Course/Department selection state
+  const [faculties, setFaculties] = useState<{id: string; name: string; code: string}[]>([]);
+  const [departments, setDepartments] = useState<{id: string; name: string; code: string}[]>([]);
+  const [courses, setCourses] = useState<{id: string; name: string; code: string}[]>([]);
+  const [selectedFacultyId, setSelectedFacultyId] = useState<string>('');
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
+  const [selectedCourseId, setSelectedCourseId] = useState<string>('');
+  const [showFacultyPicker, setShowFacultyPicker] = useState(false);
+  const [showDepartmentPicker, setShowDepartmentPicker] = useState(false);
+  const [showCoursePicker, setShowCoursePicker] = useState(false);
+  const [loadingFaculties, setLoadingFaculties] = useState(false);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
+  const [loadingCourses, setLoadingCourses] = useState(false);
+  
   // Extended profile fields
-  const [address, setAddress] = useState('');
-  const [city, setCity] = useState('');
-  const [country, setCountry] = useState('');
   const [website, setWebsite] = useState('');
   const [facebook, setFacebook] = useState('');
   const [twitter, setTwitter] = useState('');
@@ -81,8 +168,154 @@ const EditProfileScreen: React.FC = () => {
   const [avatar, setAvatar] = useState<string | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
 
+  const resolveAvatar = useCallback((profile: UserProfile | null): string | null => {
+    const profileAvatar =
+      profile?.avatar || profile?.profile_image_url || profile?.profile_image || null;
+    const cachedAvatar = user?.avatar || null;
+    if (profileAvatar && cachedAvatar) {
+      const profileBase = profileAvatar.split('?')[0];
+      const cachedBase = cachedAvatar.split('?')[0];
+      if (profileBase === cachedBase && cachedAvatar.includes('v=')) {
+        return cachedAvatar;
+      }
+    }
+    return profileAvatar || cachedAvatar;
+  }, [user]);
+
+  const appendCacheBuster = (value?: string | null): string | null => {
+    if (!value) return null;
+    const separator = value.includes('?') ? '&' : '?';
+    return `${value}${separator}v=${Date.now()}`;
+  };
+
+  const buildCourseFilters = useCallback(
+    (yearValue?: string | number | null, semesterValue?: string | number | null) => ({
+      semester: semesterValue ? String(semesterValue) : undefined,
+      yearOfStudy: yearValue ? String(yearValue) : undefined,
+    }),
+    []
+  );
+
+  // Fetch faculties and courses on mount
+  const fetchAcademics = useCallback(async (profileData: UserProfile) => {
+    try {
+      setLoadingFaculties(true);
+      const facultiesResponse = await publicAcademicAPI.getFaculties();
+      const facultiesData = facultiesResponse.data?.data?.faculties || facultiesResponse.data?.data?.results || [];
+      setFaculties(facultiesData);
+      
+      // If user has a faculty, fetch departments and courses for it
+      if (profileData.faculty) {
+        const foundFaculty = facultiesData.find((f: any) => String(f.id) === String(profileData.faculty));
+        if (!foundFaculty) {
+          setSelectedFacultyId('');
+          setFacultyName('');
+          setSelectedDepartmentId('');
+          setDepartmentName('');
+          setSelectedCourseId('');
+          setCourseName('');
+          setDepartments([]);
+          setCourses([]);
+          return;
+        }
+
+        setSelectedFacultyId(String(profileData.faculty));
+        setFacultyName(foundFaculty.name);
+        
+        // Fetch departments for faculty
+        let departmentsData: Array<{ id: string; name: string; code: string }> = [];
+        try {
+          const departmentsResponse = await publicAcademicAPI.getDepartments(String(profileData.faculty));
+          departmentsData = departmentsResponse.data?.data?.departments || departmentsResponse.data?.data?.results || [];
+          setDepartments(departmentsData);
+          
+          // If user has a department, find department name
+          if (profileData.department) {
+            const foundDepartment = departmentsData.find((d: any) => String(d.id) === String(profileData.department));
+            if (foundDepartment) {
+              setSelectedDepartmentId(String(profileData.department));
+              setDepartmentName(foundDepartment.name);
+            } else {
+              setSelectedDepartmentId('');
+              setDepartmentName('');
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch departments:', err);
+        }
+
+        const courseFilters = buildCourseFilters(profileData.year_of_study, profileData.semester);
+
+        if (profileData.department) {
+          try {
+            setLoadingCourses(true);
+            const coursesResponse = await publicAcademicAPI.getCourses(
+              String(profileData.department),
+              courseFilters
+            );
+            const coursesData = coursesResponse.data?.data?.courses || coursesResponse.data?.data?.results || [];
+            setCourses(coursesData);
+            
+            // If user has a course, find course name
+            if (profileData.course) {
+              const foundCourse = coursesData.find((c: any) => String(c.id) === String(profileData.course));
+              if (foundCourse) {
+                setSelectedCourseId(String(profileData.course));
+                setCourseName(foundCourse.name);
+              } else {
+                setSelectedCourseId('');
+                setCourseName('');
+              }
+            }
+          } catch (err) {
+            console.error('Failed to fetch courses:', err);
+            setCourses([]);
+          } finally {
+            setLoadingCourses(false);
+          }
+        } else if (!departmentsData.length) {
+          // Backward compatibility when departments are not configured
+          try {
+            setLoadingCourses(true);
+            const coursesResponse = await publicAcademicAPI.getCourses(
+              String(profileData.faculty),
+              courseFilters,
+              true
+            );
+            const coursesData = coursesResponse.data?.data?.courses || coursesResponse.data?.data?.results || [];
+            setCourses(coursesData);
+            
+            if (profileData.course) {
+              const foundCourse = coursesData.find((c: any) => String(c.id) === String(profileData.course));
+              if (foundCourse) {
+                setSelectedCourseId(String(profileData.course));
+                setCourseName(foundCourse.name);
+              } else {
+                setSelectedCourseId('');
+                setCourseName('');
+              }
+            }
+          } catch (err) {
+            console.error('Failed to fetch courses:', err);
+            setCourses([]);
+          } finally {
+            setLoadingCourses(false);
+          }
+        } else {
+          setCourses([]);
+          setSelectedCourseId('');
+          setCourseName('');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch academics:', error);
+    } finally {
+      setLoadingFaculties(false);
+    }
+  }, [buildCourseFilters]);
+  
   // Fetch profile data
-  const fetchProfile = useCallback(async () => {
+  const fetchProfile = useCallback(async (): Promise<UserProfile | null> => {
     try {
       setLoading(true);
       const response = await userAPI.getProfile();
@@ -103,31 +336,110 @@ const EditProfileScreen: React.FC = () => {
       setDepartmentName(profile.department_name || '');
       setYear(profile.year_of_study?.toString() || '');
       setSemester(profile.semester?.toString() || '');
+      const resolvedAvatar = resolveAvatar(profile);
+      setAvatar(resolvedAvatar);
+      setProfileImageUrl(resolvedAvatar);
       
-      // Extended profile
-      setAddress(profile.profile?.address || '');
-      setCity(profile.profile?.city || '');
-      setCountry(profile.profile?.country || '');
-      setWebsite(profile.profile?.website || '');
-      setFacebook(profile.profile?.facebook || '');
-      setTwitter(profile.profile?.twitter || '');
-      setLinkedin(profile.profile?.linkedin || '');
-      setDateOfBirth(profile.profile?.date_of_birth || '');
-      
-      // Avatar
-      setAvatar(profile.profile_image_url || profile.profile_image || null);
-      setProfileImageUrl(profile.profile_image_url || profile.profile_image || null);
+      // Store profile for use in fetchAcademics
+      return profile;
     } catch (error: any) {
       console.error('Failed to fetch profile:', error);
       Alert.alert('Error', 'Failed to load profile data. Please try again.');
+      return null;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [resolveAvatar]);
 
+  // Load academics after profile
   useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
+    const loadData = async () => {
+      const profile = await fetchProfile();
+      if (profile) {
+        await fetchAcademics(profile);
+      }
+    };
+    loadData();
+  }, [fetchProfile, fetchAcademics]);
+  
+  // Handle faculty selection
+  const handleFacultySelect = async (faculty: {id: string; name: string}) => {
+    setSelectedFacultyId(faculty.id);
+    setFacultyName(faculty.name);
+    setSelectedDepartmentId('');
+    setSelectedCourseId('');
+    setDepartmentName('');
+    setCourseName('');
+    setDepartments([]);
+    setCourses([]);
+    setShowFacultyPicker(false);
+    
+    // Fetch departments for selected faculty
+    let departmentsData: Array<{ id: string; name: string; code: string }> = [];
+    try {
+      setLoadingDepartments(true);
+      const departmentsResponse = await publicAcademicAPI.getDepartments(faculty.id);
+      departmentsData = departmentsResponse.data?.data?.departments || departmentsResponse.data?.data?.results || [];
+      setDepartments(departmentsData);
+    } catch (err) {
+      console.error('Failed to fetch departments:', err);
+      setDepartments([]);
+    } finally {
+      setLoadingDepartments(false);
+    }
+
+    // Fetch courses by faculty only when departments are not configured
+    if (!departmentsData.length) {
+      try {
+        setLoadingCourses(true);
+        const coursesResponse = await publicAcademicAPI.getCourses(
+          faculty.id,
+          buildCourseFilters(year, semester),
+          true
+        );
+        const coursesData = coursesResponse.data?.data?.courses || coursesResponse.data?.data?.results || [];
+        setCourses(coursesData);
+      } catch (err) {
+        console.error('Failed to fetch courses:', err);
+        setCourses([]);
+      } finally {
+        setLoadingCourses(false);
+      }
+    }
+  };
+  
+  // Handle department selection
+  const handleDepartmentSelect = async (department: {id: string; name: string}) => {
+    setSelectedDepartmentId(department.id);
+    setDepartmentName(department.name);
+    setSelectedCourseId('');
+    setCourseName('');
+    setCourses([]);
+    setShowDepartmentPicker(false);
+    
+    // Fetch courses for selected department
+    try {
+      setLoadingCourses(true);
+      const coursesResponse = await publicAcademicAPI.getCourses(
+        department.id,
+        buildCourseFilters(year, semester)
+      );
+      const coursesData = coursesResponse.data?.data?.courses || coursesResponse.data?.data?.results || [];
+      setCourses(coursesData);
+    } catch (err) {
+      console.error('Failed to fetch courses:', err);
+      setCourses([]);
+    } finally {
+      setLoadingCourses(false);
+    }
+  };
+  
+  // Handle course selection
+  const handleCourseSelect = (course: {id: string; name: string}) => {
+    setSelectedCourseId(course.id);
+    setCourseName(course.name);
+    setShowCoursePicker(false);
+  };
 
   const handleSave = async () => {
     if (!firstName.trim() || !lastName.trim()) {
@@ -139,22 +451,44 @@ const EditProfileScreen: React.FC = () => {
       Alert.alert('Error', 'Please enter your email');
       return;
     }
+
+    const normalizedDob = normalizeDateOfBirth(dateOfBirth);
+    if (normalizedDob.error) {
+      Alert.alert('Error', normalizedDob.error);
+      return;
+    }
     
     setSaving(true);
     
+    const facultySelection = resolveAcademicSelection(selectedFacultyId, faculties);
+    const departmentSelection = resolveAcademicSelection(selectedDepartmentId, departments);
+    const courseSelection = resolveAcademicSelection(selectedCourseId, courses);
+    const invalidSelections = [
+      facultySelection.invalid ? 'Faculty' : null,
+      departmentSelection.invalid ? 'Department' : null,
+      courseSelection.invalid ? 'Course' : null,
+    ].filter(Boolean) as string[];
+
+    if (invalidSelections.length) {
+      Alert.alert(
+        'Selection Updated',
+        `Your ${invalidSelections.join(', ')} selection is outdated and will be cleared. Please pick a valid option.`
+      );
+    }
+
     try {
       const response = await userAPI.updateFullProfile({
         full_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
-        phone_number: phone.trim(),
+        phone_number: normalizePhoneNumber(phone),
         registration_number: studentId.trim() || undefined,
+        faculty: facultySelection.invalid ? null : facultySelection.value,
+        department: departmentSelection.invalid ? null : departmentSelection.value,
+        course: courseSelection.invalid ? null : courseSelection.value,
         year_of_study: year ? parseInt(year, 10) : undefined,
         semester: semester ? parseInt(semester, 10) : undefined,
         bio: bio.trim(),
-        date_of_birth: dateOfBirth || undefined,
-        address: address.trim(),
-        city: city.trim(),
-        country: country.trim(),
-        website: website.trim(),
+        date_of_birth: normalizedDob.value,
+        website: normalizeWebsite(website),
         facebook: facebook.trim(),
         twitter: twitter.trim(),
         linkedin: linkedin.trim(),
@@ -171,9 +505,29 @@ const EditProfileScreen: React.FC = () => {
       }]);
     } catch (error: any) {
       console.error('Failed to update profile:', error);
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.detail || 
-                          'Failed to update profile. Please try again.';
+      const responseData = error.response?.data;
+      let errorMessage =
+        responseData?.message ||
+        responseData?.detail ||
+        'Failed to update profile. Please try again.';
+
+      if (
+        (!responseData?.message && !responseData?.detail) &&
+        responseData &&
+        typeof responseData === 'object'
+      ) {
+        const fieldMessage = Object.entries(responseData)
+          .map(([field, value]) => {
+            const message = Array.isArray(value) ? value[0] : value;
+            if (!message) return '';
+            return `${field}: ${String(message)}`;
+          })
+          .filter(Boolean)
+          .join('\n');
+        if (fieldMessage) {
+          errorMessage = fieldMessage;
+        }
+      }
       Alert.alert('Error', errorMessage);
     } finally {
       setSaving(false);
@@ -196,12 +550,94 @@ const EditProfileScreen: React.FC = () => {
       'Change Photo',
       'Choose how you want to update your profile photo',
       [
-        { text: 'Take Photo', onPress: () => Alert.alert('Camera', 'Camera feature coming soon') },
-        { text: 'Choose from Gallery', onPress: () => Alert.alert('Gallery', 'Gallery feature coming soon') },
+        { text: 'Take Photo', onPress: handleTakePhoto },
+        { text: 'Choose from Gallery', onPress: handleChooseFromGallery },
         { text: 'Remove Photo', style: 'destructive', onPress: handleRemovePhoto },
         { text: 'Cancel', style: 'cancel' },
       ]
     );
+  };
+
+  const handleTakePhoto = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('Permission Required', 'Camera permission is required to take photos');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await uploadImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo');
+    }
+  };
+
+  const handleChooseFromGallery = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('Permission Required', 'Gallery permission is required to select photos');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await uploadImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error selecting photo:', error);
+      Alert.alert('Error', 'Failed to select photo');
+    }
+  };
+
+  const uploadImage = async (uri: string) => {
+    try {
+      const formData = new FormData();
+      const filename = uri.split('/').pop() || 'photo.jpg';
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : 'image/jpeg';
+
+      formData.append('profile_image', {
+        uri,
+        name: filename,
+        type,
+      } as any);
+
+      const response = await userAPI.uploadProfilePhoto(formData);
+      const payload = response.data?.data || response.data || {};
+      const uploadedUrl = payload.profile_image_url || payload.profile_image || null;
+      const resolvedUrl = uploadedUrl || uri;
+      const displayUrl = uploadedUrl ? appendCacheBuster(uploadedUrl) : resolvedUrl;
+      
+      if (response.data) {
+        setAvatar(displayUrl);
+        setProfileImageUrl(resolvedUrl);
+        updateUser({ avatar: displayUrl || resolvedUrl });
+        Alert.alert('Success', 'Profile photo updated successfully');
+      }
+    } catch (error: any) {
+      console.error('Failed to upload photo:', error);
+      console.error('Error response:', error.response?.data);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to upload photo');
+    }
   };
 
   const handleRemovePhoto = async () => {
@@ -209,6 +645,7 @@ const EditProfileScreen: React.FC = () => {
       await userAPI.deleteProfilePhoto();
       setAvatar(null);
       setProfileImageUrl(null);
+      updateUser({ avatar: '' });
       Alert.alert('Success', 'Profile photo removed');
     } catch (error: any) {
       console.error('Failed to remove photo:', error);
@@ -270,7 +707,7 @@ const EditProfileScreen: React.FC = () => {
         <View style={styles.avatarSection}>
           <View style={styles.avatarContainer}>
             {avatar ? (
-              <Image source={{ uri: avatar }} style={styles.avatarImage} />
+              <Image source={{ uri: avatar }} style={styles.avatarImage} resizeMode="cover" />
             ) : (
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>
@@ -396,26 +833,83 @@ const EditProfileScreen: React.FC = () => {
             
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Faculty</Text>
-              <TextInput 
-                style={[styles.input, styles.disabledInput]} 
-                value={facultyName} 
-                editable={false}
-                placeholder="Faculty (read-only)"
-                placeholderTextColor={colors.text.tertiary}
-              />
+              <TouchableOpacity 
+                style={[styles.input, styles.pickerButton]} 
+                onPress={() => {
+                  if (loadingFaculties) return;
+                  setShowFacultyPicker(true);
+                }}
+                disabled={loadingFaculties}
+              >
+                {loadingFaculties ? (
+                  <ActivityIndicator size="small" color={colors.primary[500]} />
+                ) : (
+                  <>
+                    <Text style={[styles.pickerText, !facultyName && styles.pickerPlaceholder]}>
+                      {facultyName || 'Select Faculty'}
+                    </Text>
+                    <Icon name="chevron-down" size={20} color={colors.text.secondary} />
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
             
             <View style={styles.inputDivider} />
             
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Department</Text>
-              <TextInput 
-                style={[styles.input, styles.disabledInput]} 
-                value={departmentName} 
-                editable={false}
-                placeholder="Department (read-only)"
-                placeholderTextColor={colors.text.tertiary}
-              />
+              <TouchableOpacity 
+                style={[styles.input, styles.pickerButton, !selectedFacultyId && styles.pickerDisabled]} 
+                onPress={() => {
+                  if (!selectedFacultyId) {
+                    Alert.alert('Select Faculty First', 'Please select a faculty before choosing a department.');
+                    return;
+                  }
+                  if (loadingDepartments) return;
+                  setShowDepartmentPicker(true);
+                }}
+                disabled={loadingDepartments || !selectedFacultyId}
+              >
+                {loadingDepartments ? (
+                  <ActivityIndicator size="small" color={colors.primary[500]} />
+                ) : (
+                  <>
+                    <Text style={[styles.pickerText, !departmentName && styles.pickerPlaceholder]}>
+                      {departmentName || 'Select Department'}
+                    </Text>
+                    <Icon name="chevron-down" size={20} color={colors.text.secondary} />
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.inputDivider} />
+            
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Course</Text>
+              <TouchableOpacity 
+                style={[styles.input, styles.pickerButton, !selectedDepartmentId && styles.pickerDisabled]} 
+                onPress={() => {
+                  if (!selectedDepartmentId) {
+                    Alert.alert('Select Department First', 'Please select a department before choosing a course.');
+                    return;
+                  }
+                  if (loadingCourses) return;
+                  setShowCoursePicker(true);
+                }}
+                disabled={loadingCourses || !selectedDepartmentId}
+              >
+                {loadingCourses ? (
+                  <ActivityIndicator size="small" color={colors.primary[500]} />
+                ) : (
+                  <>
+                    <Text style={[styles.pickerText, !courseName && styles.pickerPlaceholder]}>
+                      {courseName || 'Select Course'}
+                    </Text>
+                    <Icon name="chevron-down" size={20} color={colors.text.secondary} />
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
             
             <View style={styles.inputDivider} />
@@ -442,49 +936,6 @@ const EditProfileScreen: React.FC = () => {
                 onChangeText={setSemester}
                 placeholder="1 or 2"
                 keyboardType="number-pad"
-                placeholderTextColor={colors.text.tertiary}
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Location Information Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Location Information</Text>
-          <View style={styles.card}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Address</Text>
-              <TextInput 
-                style={styles.input} 
-                value={address} 
-                onChangeText={setAddress}
-                placeholder="Enter your address"
-                placeholderTextColor={colors.text.tertiary}
-              />
-            </View>
-            
-            <View style={styles.inputDivider} />
-            
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>City</Text>
-              <TextInput 
-                style={styles.input} 
-                value={city} 
-                onChangeText={setCity}
-                placeholder="Enter city"
-                placeholderTextColor={colors.text.tertiary}
-              />
-            </View>
-            
-            <View style={styles.inputDivider} />
-            
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Country</Text>
-              <TextInput 
-                style={styles.input} 
-                value={country} 
-                onChangeText={setCountry}
-                placeholder="Enter country"
                 placeholderTextColor={colors.text.tertiary}
               />
             </View>
@@ -554,6 +1005,156 @@ const EditProfileScreen: React.FC = () => {
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
+
+      {/* Faculty Picker Modal */}
+      <Modal
+        visible={showFacultyPicker}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowFacultyPicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Faculty</Text>
+              <TouchableOpacity onPress={() => setShowFacultyPicker(false)}>
+                <Icon name="close" size={24} color={colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            {loadingFaculties ? (
+              <ActivityIndicator size="large" color={colors.primary[500]} />
+            ) : faculties.length === 0 ? (
+              <Text style={styles.emptyText}>No faculties available</Text>
+            ) : (
+              <FlatList
+                data={faculties}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.optionItem,
+                      selectedFacultyId === item.id && styles.optionItemSelected,
+                    ]}
+                    onPress={() => handleFacultySelect(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.optionText,
+                        selectedFacultyId === item.id && styles.optionTextSelected,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                    {selectedFacultyId === item.id && (
+                      <Icon name="checkmark" size={20} color={colors.primary[500]} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Department Picker Modal */}
+      <Modal
+        visible={showDepartmentPicker}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDepartmentPicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Department</Text>
+              <TouchableOpacity onPress={() => setShowDepartmentPicker(false)}>
+                <Icon name="close" size={24} color={colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            {loadingDepartments ? (
+              <ActivityIndicator size="large" color={colors.primary[500]} />
+            ) : departments.length === 0 ? (
+              <Text style={styles.emptyText}>No departments available for this faculty</Text>
+            ) : (
+              <FlatList
+                data={departments}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.optionItem,
+                      selectedDepartmentId === item.id && styles.optionItemSelected,
+                    ]}
+                    onPress={() => handleDepartmentSelect(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.optionText,
+                        selectedDepartmentId === item.id && styles.optionTextSelected,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                    {selectedDepartmentId === item.id && (
+                      <Icon name="checkmark" size={20} color={colors.primary[500]} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Course Picker Modal */}
+      <Modal
+        visible={showCoursePicker}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowCoursePicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Course</Text>
+              <TouchableOpacity onPress={() => setShowCoursePicker(false)}>
+                <Icon name="close" size={24} color={colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            {loadingCourses ? (
+              <ActivityIndicator size="large" color={colors.primary[500]} />
+            ) : courses.length === 0 ? (
+              <Text style={styles.emptyText}>No courses available for this selection</Text>
+            ) : (
+              <FlatList
+                data={courses}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.optionItem,
+                      selectedCourseId === item.id && styles.optionItemSelected,
+                    ]}
+                    onPress={() => handleCourseSelect(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.optionText,
+                        selectedCourseId === item.id && styles.optionTextSelected,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                    {selectedCourseId === item.id && (
+                      <Icon name="checkmark" size={20} color={colors.primary[500]} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -702,8 +1303,81 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border.light,
     marginVertical: spacing[2],
   },
+  pickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[3],
+    backgroundColor: colors.background.secondary,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  pickerText: {
+    fontSize: 16,
+    color: colors.text.primary,
+    flex: 1,
+  },
+  pickerPlaceholder: {
+    color: colors.text.tertiary,
+  },
+  pickerDisabled: {
+    opacity: 0.5,
+  },
   bottomSpacing: {
     height: spacing[16],
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.card.light,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    maxHeight: '70%',
+    paddingBottom: spacing[8],
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing[4],
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: colors.text.secondary,
+    padding: spacing[8],
+  },
+  optionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing[4],
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  optionItemSelected: {
+    backgroundColor: colors.primary[50],
+  },
+  optionText: {
+    fontSize: 16,
+    color: colors.text.primary,
+    flex: 1,
+  },
+  optionTextSelected: {
+    color: colors.primary[500],
+    fontWeight: '600',
   },
 });
 

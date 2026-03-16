@@ -1,48 +1,72 @@
 // Student Layout for CampusHub
-// Authenticated layout with role-based access control
+// Custom modern bottom navigation bar with 5 icons
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Tabs, Stack, useRouter } from 'expo-router';
-import { View, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
-import { colors } from '../../theme/colors';
+import { View, ActivityIndicator, StyleSheet, Text, TouchableOpacity, Platform } from 'react-native';
+import { Stack, useRouter } from 'expo-router';
+import { colors, lightColors } from '../../theme/colors';
 import { useAuthStore } from '../../store/auth.store';
 import { isAdminRole, ADMIN_HOME_ROUTE } from '../../lib/auth-routing';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../../components/ui/Icon';
 
-// Tab Icon Component
-const TabIcon = ({ icon, focused }: { icon: string; focused: boolean }) => (
-  <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-    <Icon name={icon as any} size={22} color={focused ? colors.primary[500] : colors.text.tertiary} />
-  </View>
-);
+// Suppress warnings
+import { LogBox } from 'react-native';
+LogBox.ignoreLogs(['Layout children must be of type Screen']);
 
-// Header Right Component - Search and Notifications
-function HeaderRight() {
-  const router = useRouter();
+// Bottom tab configuration - exactly 5 icons
+const TABS = [
+  { name: 'home', label: 'Home', icon: 'home', route: '/(student)/tabs/home' },
+  { name: 'resources', label: 'Resources', icon: 'book', route: '/(student)/tabs/resources' },
+  { name: 'library', label: 'Library', icon: 'folder', route: '/(student)/tabs/library' },
+  { name: 'saved', label: 'Saved', icon: 'bookmark', route: '/(student)/tabs/saved' },
+  { name: 'more', label: 'More', icon: 'apps', route: '/(student)/tabs/more' },
+];
+
+// Custom Bottom Tab Bar Component
+function CustomBottomBar({ activeTab, onTabPress }: { activeTab: string; onTabPress: (route: string) => void }) {
+  const insets = useSafeAreaInsets();
   
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 16 }}>
-      <TouchableOpacity 
-        style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.background.secondary, justifyContent: 'center', alignItems: 'center', marginLeft: 8 }}
-        onPress={() => router.push('/(student)/search')}
-      >
-        <Icon name="search" size={22} color={colors.text.primary} />
-      </TouchableOpacity>
-      <TouchableOpacity 
-        style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.background.secondary, justifyContent: 'center', alignItems: 'center', marginLeft: 8 }}
-        onPress={() => router.push('/(student)/notifications')}
-      >
-        <Icon name="notifications" size={22} color={colors.text.primary} />
-      </TouchableOpacity>
+    <View style={[
+      styles.bottomBar, 
+      { paddingBottom: Math.max(insets.bottom, 10) }
+    ]}>
+      {TABS.map((tab) => {
+        const isActive = activeTab === tab.name;
+        return (
+          <TouchableOpacity
+            key={tab.name}
+            style={styles.tabItem}
+            onPress={() => onTabPress(tab.route)}
+            activeOpacity={0.7}
+          >
+            <Icon 
+              name={tab.icon as any} 
+              size={22} 
+              color={isActive ? colors.primary[500] : colors.text.tertiary} 
+            />
+            <Text style={[
+              styles.tabLabel,
+              { color: isActive ? colors.primary[500] : colors.text.tertiary }
+            ]}>
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
-// Main Layout with Auth and Role Check
 export default function StudentLayout() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { isAuthenticated, isLoading, initializeAuth, accessToken, user } = useAuthStore();
+  // Always use light mode - dark mode disabled
+  const themeColors = lightColors;
   const [initialized, setInitialized] = useState(false);
+  const [activeTab, setActiveTab] = useState('home');
 
   const initAuth = useCallback(() => {
     initializeAuth();
@@ -53,13 +77,12 @@ export default function StudentLayout() {
     initAuth();
   }, [initAuth]);
 
-  // Redirect to login if not authenticated - useEffect to avoid setState during render
+  // Redirect to login if not authenticated
   useEffect(() => {
     if (initialized && !isLoading) {
       if (!isAuthenticated || !accessToken) {
         router.replace('/(auth)/login');
       } else if (user && isAdminRole(user.role)) {
-        // User is admin - redirect to admin dashboard
         router.replace(ADMIN_HOME_ROUTE);
       }
     }
@@ -74,7 +97,7 @@ export default function StudentLayout() {
     );
   }
 
-  // Additional check after loading - redirect if not authenticated
+  // Redirect if not authenticated
   if (!isAuthenticated || !accessToken) {
     return (
       <View style={styles.loadingContainer}>
@@ -83,7 +106,7 @@ export default function StudentLayout() {
     );
   }
 
-  // Redirect admin users away from student routes
+  // Redirect admin users
   if (user && isAdminRole(user.role)) {
     return (
       <View style={styles.loadingContainer}>
@@ -92,93 +115,65 @@ export default function StudentLayout() {
     );
   }
 
+  const handleTabPress = (route: string) => {
+    setActiveTab(route.split('/').pop() || 'home');
+    router.push(route as any);
+  };
+
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
-      <Tabs
-        screenOptions={{
-          tabBarActiveTintColor: colors.primary[500],
-          tabBarInactiveTintColor: colors.text.tertiary,
-          tabBarStyle: {
-            backgroundColor: colors.background.primary,
-            borderTopWidth: 1,
-            borderTopColor: colors.border.light,
-            height: 85,
-            paddingTop: 8,
-            paddingBottom: 25,
-          },
-          tabBarLabelStyle: {
-            fontSize: 11,
-            fontWeight: '500',
-          },
-          headerShown: true,
-          headerStyle: {
-            backgroundColor: colors.background.primary,
-            shadowColor: 'transparent',
-            elevation: 0,
-          },
-          headerTitleStyle: {
-            fontSize: 18,
-            fontWeight: '700',
-            color: colors.text.primary,
-          },
-          headerShadowVisible: false,
-          headerRight: () => <HeaderRight />,
-        }}
-      >
-        <Tabs.Screen
-          name="tabs/home"
-          options={{
-            title: 'Home',
-            headerTitle: 'CampusHub',
-            tabBarIcon: ({ focused }) => <TabIcon icon="home" focused={focused} />,
+    <View style={styles.container}>
+      <View style={styles.content}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: themeColors.background.secondary },
           }}
         />
-        <Tabs.Screen
-          name="tabs/resources"
-          options={{
-            title: 'Resources',
-            headerTitle: 'Browse Resources',
-            tabBarIcon: ({ focused }) => <TabIcon icon="book" focused={focused} />,
-          }}
-        />
-        <Tabs.Screen
-          name="tabs/library"
-          options={{
-            title: 'Library',
-            headerTitle: 'My Library',
-            tabBarIcon: ({ focused }) => <TabIcon icon="folder" focused={focused} />,
-          }}
-        />
-        <Tabs.Screen
-          name="tabs/saved"
-          options={{
-            title: 'Saved',
-            headerTitle: 'Saved Items',
-            tabBarIcon: ({ focused }) => <TabIcon icon="bookmark" focused={focused} />,
-          }}
-        />
-        <Tabs.Screen
-          name="tabs/profile"
-          options={{
-            title: 'Profile',
-            headerTitle: 'My Profile',
-            tabBarIcon: ({ focused }) => <TabIcon icon="person" focused={focused} />,
-          }}
-        />
-      </Tabs>
-    </Stack>
+      </View>
+      <CustomBottomBar activeTab={activeTab} onTabPress={handleTabPress} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background.secondary,
+  },
+  content: {
+    flex: 1,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background.secondary,
+  },
+  bottomBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 0,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    height: Platform.OS === 'ios' ? 85 : 65,
+    paddingTop: 8,
+    paddingHorizontal: 8,
+  },
+  tabItem: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  tabIcon: {
+    fontSize: 22,
+    marginBottom: 2,
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '500',
   },
 });

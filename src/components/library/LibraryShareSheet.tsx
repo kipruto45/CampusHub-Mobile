@@ -16,6 +16,7 @@ import { borderRadius, spacing } from '../../theme/spacing';
 import BottomSheet from '../ui/BottomSheet';
 import Icon from '../ui/Icon';
 import { libraryService, LibraryFile } from '../../services/library.service';
+import { localDownloadsService } from '../../services/local-downloads.service';
 import { copyToClipboard, openNativeShareSheet } from '../../utils/share';
 import { useToast } from '../ui/Toast';
 
@@ -114,15 +115,31 @@ const LibraryShareSheet: React.FC<Props> = ({
     setLoading(true);
     try {
       const downloadData = await libraryService.getDownloadUrl(file.id);
-      
-      // Open download URL in browser or handle download
-      // For now, we'll just show a success message
-      showToast('success', `Download: ${downloadData.download_url}`);
+      const downloadKey = `personal-file:${file.id}`;
+
+      await localDownloadsService.ensureLocalFile({
+        key: downloadKey,
+        remoteUrl: downloadData.download_url,
+        fileName: downloadData.file_name,
+        title: file.title,
+        fileType: downloadData.file_type,
+      });
+
+      const copyResult = await localDownloadsService.saveCopyToDevice(downloadKey);
+      if (copyResult.status === 'saved') {
+        showToast('success', 'File saved and copied to your phone storage.');
+      } else if (copyResult.status === 'already_saved') {
+        showToast('success', 'File already has a copy in phone storage.');
+      } else if (copyResult.status === 'shared') {
+        showToast('success', 'Use the share sheet to save a copy to Files.');
+      } else if (copyResult.status === 'cancelled') {
+        showToast('warning', 'Download kept inside CampusHub. Phone-storage copy was cancelled.');
+      }
       await libraryService.recordShare(file.id, 'download');
       onShareComplete?.();
       return true;
-    } catch (err: any) {
-      showToast('error', 'Failed to get download URL');
+    } catch (_err: any) {
+      showToast('error', 'Failed to download this file');
       return false;
     } finally {
       setLoading(false);

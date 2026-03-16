@@ -1,14 +1,21 @@
-// Admin Backup & System Screen for CampusHub
-// Backup management and system export
-
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+
+import api, { adminAPI, getAuthToken } from '../../services/api';
+import { localDownloadsService } from '../../services/local-downloads.service';
 import Icon from '../../components/ui/Icon';
-import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { borderRadius, spacing } from '../../theme/spacing';
+import { shadows } from '../../theme/shadows';
 
 interface SystemStats {
   total_users: number;
@@ -29,20 +36,110 @@ interface BackupInfo {
   size_mb: number;
   resources_count: number;
   users_count: number;
+  study_groups_count?: number;
+  announcements_count?: number;
   includes: string[];
+  download_url?: string;
 }
 
 interface ExportInfo {
   export_date: string;
+  generated_at?: string;
+  exported_by?: string;
   faculties_count: number;
   departments_count: number;
   courses_count: number;
+  units_count?: number;
+  users_count?: number;
+  resources_count?: number;
+  study_groups_count?: number;
+  announcements_count?: number;
+  available_formats?: string[];
+  download_urls?: Record<string, string>;
+  format?: ExportFormat;
 }
+
+type ExportFormat = 'csv' | 'pdf' | 'excel';
+
+const EXPORT_FORMATS: Array<{
+  key: ExportFormat;
+  label: string;
+  icon: string;
+  description: string;
+  mimeType: string;
+  extension: string;
+}> = [
+  {
+    key: 'csv',
+    label: 'CSV',
+    icon: 'grid',
+    description: 'Spreadsheet-ready rows for quick analysis.',
+    mimeType: 'text/csv',
+    extension: 'csv',
+  },
+  {
+    key: 'pdf',
+    label: 'PDF',
+    icon: 'document-text',
+    description: 'Portable export for sharing and printing.',
+    mimeType: 'application/pdf',
+    extension: 'pdf',
+  },
+  {
+    key: 'excel',
+    label: 'Excel',
+    icon: 'bar-chart',
+    description: 'Excel-compatible workbook with separate sheets.',
+    mimeType: 'application/vnd.ms-excel',
+    extension: 'xls',
+  },
+];
+
+const buildApiDownloadUrl = (path: string, params?: Record<string, string>) => {
+  const baseUrl = String(api.defaults.baseURL || '').replace(/\/+$/, '');
+  const normalizedPath = String(path || '').replace(/^\/+/, '');
+  const queryString = new URLSearchParams(
+    Object.entries(params || {}).filter(([, value]) => value !== undefined && value !== null)
+  ).toString();
+
+  return `${baseUrl}/${normalizedPath}${queryString ? `?${queryString}` : ''}`;
+};
+
+const describeDownloadResult = (status: string, noun: string) => {
+  switch (status) {
+    case 'saved':
+      return `${noun} downloaded and saved to device storage.`;
+    case 'shared':
+      return `${noun} downloaded. The share sheet is open so you can save it.`;
+    case 'browser':
+      return `${noun} opened in the browser.`;
+    case 'already_saved':
+      return `${noun} is already saved on this device.`;
+    case 'cancelled':
+      return `Download finished, but saving to device was cancelled.`;
+    default:
+      return `${noun} downloaded successfully.`;
+  }
+};
+
+const formatTimestamp = (value?: string) => {
+  if (!value) {
+    return 'N/A';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+};
 
 const BackupScreen: React.FC = () => {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('csv');
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [latestBackup, setLatestBackup] = useState<BackupInfo | null>(null);
   const [latestExport, setLatestExport] = useState<ExportInfo | null>(null);
@@ -63,182 +160,216 @@ const BackupScreen: React.FC = () => {
     fetchSystemStats();
   }, [fetchSystemStats]);
 
-  const handleCreateBackup = async () => {
+  const selectedFormatMeta = useMemo(
+    () => EXPORT_FORMATS.find((format) => format.key === selectedFormat) || EXPORT_FORMATS[0],
+    [selectedFormat]
+  );
+
+  const downloadAdminFile = useCallback(
+    async (params: {
+      key: string;
+      endpoint: string;
+      query?: Record<string, string>;
+      fileName: string;
+      mimeType: string;
+      title: string;
+      noun: string;
+    }) => {
+      const authToken = getAuthToken();
+      if (!authToken) {
+        throw new Error('Your session expired. Please sign in again.');
+      }
+
+      const remoteUrl = buildApiDownloadUrl(params.endpoint, params.query);
+      await localDownloadsService.ensureLocalFile({
+        key: params.key,
+        remoteUrl,
+        fileName: params.fileName,
+        title: params.title,
+        mimeType: params.mimeType,
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      const saveResult = await localDownloadsService.saveCopyToDevice(params.key);
+      Alert.alert('Download ready', describeDownloadResult(saveResult.status, params.noun));
+    },
+    []
+  );
+
+  const handleCreateBackup = useCallback(() => {
     Alert.alert(
       'Create Backup',
-      'This will create a system backup with all current data. Continue?',
+      'This will generate a full system backup and download it. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Create',
+          text: 'Create & Download',
           onPress: async () => {
             try {
-              setExporting(true);
+              setProcessing(true);
               const response = await adminAPI.createBackup();
-              setLatestBackup(response.data.data);
-              Alert.alert('Success', 'Backup metadata generated successfully.');
-            } catch (err) {
-              Alert.alert('Error', 'Failed to create backup');
+              const backup = response.data?.data as BackupInfo;
+              setLatestBackup(backup);
+
+              await downloadAdminFile({
+                key: `admin-backup-${backup.backup_id || Date.now()}`,
+                endpoint: 'admin-management/backup/',
+                query: { download: '1' },
+                fileName: `campushub_backup_${backup.backup_id || Date.now()}.json`,
+                mimeType: 'application/json',
+                title: 'CampusHub backup',
+                noun: 'Backup',
+              });
+            } catch (err: any) {
+              Alert.alert(
+                'Backup failed',
+                err?.message ||
+                  err?.response?.data?.message ||
+                  'Unable to create and download the backup right now.'
+              );
             } finally {
-              setExporting(false);
+              setProcessing(false);
             }
           },
         },
       ]
     );
-  };
+  }, [downloadAdminFile]);
 
-  const handleExportData = async () => {
+  const handleExportData = useCallback(() => {
     Alert.alert(
       'Export Data',
-      'Export all platform data as JSON. This may take a while for large datasets.',
+      `Generate a ${selectedFormatMeta.label} export and download it?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Export',
+          text: 'Export & Download',
           onPress: async () => {
             try {
-              setExporting(true);
+              setProcessing(true);
               const response = await adminAPI.exportData();
-              setLatestExport(response.data.data);
-              Alert.alert('Success', 'Export metadata prepared successfully.');
-            } catch (err) {
-              Alert.alert('Error', 'Failed to export data');
+              const exportMeta = {
+                ...(response.data?.data as ExportInfo),
+                format: selectedFormat,
+              };
+              setLatestExport(exportMeta);
+
+              const exportStamp =
+                exportMeta.generated_at ||
+                exportMeta.export_date ||
+                new Date().toISOString();
+              const fileSuffix = exportStamp.replace(/[:.]/g, '-');
+
+              await downloadAdminFile({
+                key: `admin-export-${selectedFormat}-${fileSuffix}`,
+                endpoint: 'admin-management/export/',
+                query: {
+                  download: '1',
+                  format: selectedFormat,
+                },
+                fileName: `campushub_export_${fileSuffix}.${selectedFormatMeta.extension}`,
+                mimeType: selectedFormatMeta.mimeType,
+                title: `CampusHub ${selectedFormatMeta.label} export`,
+                noun: `${selectedFormatMeta.label} export`,
+              });
+            } catch (err: any) {
+              Alert.alert(
+                'Export failed',
+                err?.message ||
+                  err?.response?.data?.message ||
+                  'Unable to export data right now.'
+              );
             } finally {
-              setExporting(false);
+              setProcessing(false);
             }
           },
         },
       ]
     );
-  };
+  }, [downloadAdminFile, selectedFormat, selectedFormatMeta]);
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary[500]} />
-        <Text style={styles.loadingText}>Loading system information...</Text>
+        <Text style={styles.loadingText}>Loading backup tools...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Icon name="arrow-back" size={24} color={colors.text.inverse} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Backup & System</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>Backup & Export</Text>
+        <TouchableOpacity onPress={fetchSystemStats} style={styles.backButton}>
+          <Icon name="refresh" size={20} color={colors.text.inverse} />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        {/* System Stats */}
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>System Overview</Text>
-          <View style={styles.statsCard}>
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Icon name="people" size={24} color={colors.primary[500]} />
-                <Text style={styles.statValue}>{systemStats?.total_users || 0}</Text>
-                <Text style={styles.statLabel}>Total Users</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Icon name="document" size={24} color={colors.accent[500]} />
-                <Text style={styles.statValue}>{systemStats?.total_resources || 0}</Text>
-                <Text style={styles.statLabel}>Resources</Text>
-              </View>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Icon name="people" size={22} color={colors.primary[500]} />
+              <Text style={styles.statValue}>{systemStats?.total_users || 0}</Text>
+              <Text style={styles.statLabel}>Users</Text>
             </View>
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Icon name="people" size={24} color={colors.info} />
-                <Text style={styles.statValue}>{systemStats?.active_users || 0}</Text>
-                <Text style={styles.statLabel}>Active Users</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Icon name="cloud" size={24} color={colors.warning} />
-                <Text style={styles.statValue}>{(systemStats?.total_storage_used_gb || 0).toFixed(2)} GB</Text>
-                <Text style={styles.statLabel}>Storage Used</Text>
-              </View>
+            <View style={styles.statCard}>
+              <Icon name="document-text" size={22} color={colors.accent[500]} />
+              <Text style={styles.statValue}>{systemStats?.total_resources || 0}</Text>
+              <Text style={styles.statLabel}>Resources</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Icon name="activity" size={22} color={colors.info} />
+              <Text style={styles.statValue}>{systemStats?.activities_today || 0}</Text>
+              <Text style={styles.statLabel}>Today</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Icon name="cloud" size={22} color={colors.warning} />
+              <Text style={styles.statValue}>
+                {(systemStats?.total_storage_used_gb || 0).toFixed(2)} GB
+              </Text>
+              <Text style={styles.statLabel}>Storage</Text>
             </View>
           </View>
         </View>
 
-        {/* Resource Status */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Resource Status</Text>
-          <View style={styles.statusCard}>
-            <View style={styles.statusItem}>
-              <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
-              <Text style={styles.statusLabel}>Approved</Text>
-              <Text style={styles.statusValue}>{systemStats?.approved_resources || 0}</Text>
-            </View>
-            <View style={styles.statusDivider} />
-            <View style={styles.statusItem}>
-              <View style={[styles.statusDot, { backgroundColor: colors.warning }]} />
-              <Text style={styles.statusLabel}>Pending</Text>
-              <Text style={styles.statusValue}>{systemStats?.pending_resources || 0}</Text>
-            </View>
-            <View style={styles.statusDivider} />
-            <View style={styles.statusItem}>
-              <View style={[styles.statusDot, { backgroundColor: colors.error }]} />
-              <Text style={styles.statusLabel}>Rejected</Text>
-              <Text style={styles.statusValue}>{systemStats?.rejected_resources || 0}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Backup Actions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Backup & Export</Text>
-          
-          <TouchableOpacity 
-            style={styles.actionCard} 
+          <Text style={styles.sectionTitle}>Create Backup</Text>
+          <TouchableOpacity
+            style={[styles.actionCard, processing && styles.actionCardDisabled]}
             onPress={handleCreateBackup}
-            disabled={exporting}
+            disabled={processing}
           >
             <View style={[styles.actionIcon, { backgroundColor: colors.primary[50] }]}>
-              <Icon name="archive" size={28} color={colors.primary[500]} />
+              <Icon name="archive" size={26} color={colors.primary[500]} />
             </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Create Backup</Text>
+            <View style={styles.actionBody}>
+              <Text style={styles.actionTitle}>Create and Download Backup</Text>
               <Text style={styles.actionDescription}>
-                Create a full system backup including all resources and user data
+                Generates a JSON backup snapshot covering users, resources, groups, announcements, and academic data.
               </Text>
             </View>
             <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.actionCard} 
-            onPress={handleExportData}
-            disabled={exporting}
-          >
-            <View style={[styles.actionIcon, { backgroundColor: colors.accent[50] }]}>
-              <Icon name="download" size={28} color={colors.accent[500]} />
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Export Data</Text>
-              <Text style={styles.actionDescription}>
-                Export all platform data as JSON for external analysis
-              </Text>
-            </View>
-            <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Recent Backups */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Backups</Text>
           {latestBackup ? (
             <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>Latest Backup</Text>
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Created</Text>
-                <Text style={styles.infoValue}>{new Date(latestBackup.created_at).toLocaleString()}</Text>
+                <Text style={styles.infoValue}>
+                  {formatTimestamp(latestBackup.created_at)}
+                </Text>
               </View>
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Estimated Size</Text>
+                <Text style={styles.infoLabel}>Estimated size</Text>
                 <Text style={styles.infoValue}>{latestBackup.size_mb.toFixed(2)} MB</Text>
               </View>
               <View style={styles.infoRow}>
@@ -249,56 +380,107 @@ const BackupScreen: React.FC = () => {
                 <Text style={styles.infoLabel}>Resources</Text>
                 <Text style={styles.infoValue}>{latestBackup.resources_count}</Text>
               </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Study groups</Text>
+                <Text style={styles.infoValue}>{latestBackup.study_groups_count || 0}</Text>
+              </View>
             </View>
-          ) : (
-            <View style={styles.emptyCard}>
-              <Icon name="archive" size={40} color={colors.text.tertiary} />
-              <Text style={styles.emptyTitle}>No Backup Metadata Yet</Text>
-              <Text style={styles.emptyText}>
-                Generate a backup summary to review current system coverage.
-              </Text>
-            </View>
-          )}
+          ) : null}
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Latest Export</Text>
-          {latestExport ? (
-            <View style={styles.infoCard}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Prepared</Text>
-                <Text style={styles.infoValue}>{new Date(latestExport.export_date).toLocaleString()}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Faculties</Text>
-                <Text style={styles.infoValue}>{latestExport.faculties_count}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Departments</Text>
-                <Text style={styles.infoValue}>{latestExport.departments_count}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Courses</Text>
-                <Text style={styles.infoValue}>{latestExport.courses_count}</Text>
-              </View>
+          <Text style={styles.sectionTitle}>Export Data</Text>
+          <View style={styles.formatRow}>
+            {EXPORT_FORMATS.map((format) => (
+              <TouchableOpacity
+                key={format.key}
+                style={[
+                  styles.formatCard,
+                  selectedFormat === format.key && styles.formatCardActive,
+                ]}
+                onPress={() => setSelectedFormat(format.key)}
+              >
+                <Icon
+                  name={format.icon as any}
+                  size={20}
+                  color={selectedFormat === format.key ? colors.text.inverse : colors.primary[500]}
+                />
+                <Text
+                  style={[
+                    styles.formatTitle,
+                    selectedFormat === format.key && styles.formatTitleActive,
+                  ]}
+                >
+                  {format.label}
+                </Text>
+                <Text
+                  style={[
+                    styles.formatDescription,
+                    selectedFormat === format.key && styles.formatDescriptionActive,
+                  ]}
+                >
+                  {format.description}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.actionCard, processing && styles.actionCardDisabled]}
+            onPress={handleExportData}
+            disabled={processing}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: colors.accent[50] }]}>
+              <Icon name="download" size={26} color={colors.accent[500]} />
             </View>
-          ) : (
-            <View style={styles.emptyCard}>
-              <Icon name="download" size={40} color={colors.text.tertiary} />
-              <Text style={styles.emptyTitle}>No Export Metadata Yet</Text>
-              <Text style={styles.emptyText}>
-                Export summaries will appear here after you run an export.
+            <View style={styles.actionBody}>
+              <Text style={styles.actionTitle}>Export {selectedFormatMeta.label} and Download</Text>
+              <Text style={styles.actionDescription}>
+                Exports users, resources, groups, announcements, and academic structure in {selectedFormatMeta.label} format.
               </Text>
             </View>
-          )}
+            <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
+          </TouchableOpacity>
+
+          {latestExport ? (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>Latest Export</Text>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Prepared</Text>
+                <Text style={styles.infoValue}>
+                  {formatTimestamp(latestExport.export_date || latestExport.generated_at)}
+                </Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Format</Text>
+                <Text style={styles.infoValue}>{(latestExport.format || selectedFormat).toUpperCase()}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Users</Text>
+                <Text style={styles.infoValue}>{latestExport.users_count || 0}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Resources</Text>
+                <Text style={styles.infoValue}>{latestExport.resources_count || 0}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Study groups</Text>
+                <Text style={styles.infoValue}>{latestExport.study_groups_count || 0}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Announcements</Text>
+                <Text style={styles.infoValue}>{latestExport.announcements_count || 0}</Text>
+              </View>
+            </View>
+          ) : null}
         </View>
 
-        {exporting && (
-          <View style={styles.exportingOverlay}>
-            <ActivityIndicator size="large" color={colors.primary[500]} />
-            <Text style={styles.exportingText}>Processing...</Text>
+        {processing ? (
+          <View style={styles.processingCard}>
+            <ActivityIndicator size="small" color={colors.primary[500]} />
+            <Text style={styles.processingText}>Generating file and preparing download...</Text>
           </View>
-        )}
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -330,82 +512,52 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[500],
   },
   backButton: {
-    padding: spacing[2],
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text.inverse,
   },
   content: {
-    padding: spacing[6],
+    padding: spacing[5],
+    paddingBottom: spacing[8],
   },
   section: {
     marginBottom: spacing[6],
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: colors.text.primary,
     marginBottom: spacing[3],
   },
-  statsCard: {
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[3],
+  },
+  statCard: {
+    width: '47%',
     backgroundColor: colors.card.light,
     borderRadius: borderRadius.xl,
     padding: spacing[4],
     ...shadows.sm,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    marginBottom: spacing[4],
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing[3],
   },
   statValue: {
-    fontSize: 24,
+    marginTop: spacing[3],
+    fontSize: 20,
     fontWeight: '700',
     color: colors.text.primary,
-    marginTop: spacing[2],
   },
   statLabel: {
+    marginTop: spacing[1],
     fontSize: 12,
     color: colors.text.secondary,
-    marginTop: spacing[1],
-  },
-  statusCard: {
-    backgroundColor: colors.card.light,
-    borderRadius: borderRadius.xl,
-    padding: spacing[4],
-    ...shadows.sm,
-  },
-  statusItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing[2],
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: spacing[3],
-  },
-  statusLabel: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.text.secondary,
-  },
-  statusValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text.primary,
-  },
-  statusDivider: {
-    height: 1,
-    backgroundColor: colors.border.light,
-    marginVertical: spacing[2],
   },
   actionCard: {
     flexDirection: 'row',
@@ -413,85 +565,110 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card.light,
     borderRadius: borderRadius.xl,
     padding: spacing[4],
-    marginBottom: spacing[3],
     ...shadows.sm,
+  },
+  actionCardDisabled: {
+    opacity: 0.6,
   },
   actionIcon: {
     width: 56,
     height: 56,
-    borderRadius: 16,
-    justifyContent: 'center',
+    borderRadius: 18,
     alignItems: 'center',
+    justifyContent: 'center',
     marginRight: spacing[4],
   },
-  actionContent: {
+  actionBody: {
     flex: 1,
+    marginRight: spacing[3],
   },
   actionTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text.primary,
   },
   actionDescription: {
+    marginTop: spacing[1],
     fontSize: 13,
+    lineHeight: 19,
     color: colors.text.secondary,
-    marginTop: spacing[1],
   },
-  emptyCard: {
-    backgroundColor: colors.card.light,
-    borderRadius: borderRadius.xl,
-    padding: spacing[8],
-    alignItems: 'center',
-    ...shadows.sm,
+  formatRow: {
+    gap: spacing[3],
+    marginBottom: spacing[3],
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text.primary,
-    marginTop: spacing[3],
-  },
-  emptyText: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginTop: spacing[1],
-    textAlign: 'center',
-  },
-  infoCard: {
+  formatCard: {
     backgroundColor: colors.card.light,
     borderRadius: borderRadius.xl,
     padding: spacing[4],
     ...shadows.sm,
   },
+  formatCardActive: {
+    backgroundColor: colors.primary[500],
+  },
+  formatTitle: {
+    marginTop: spacing[3],
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  formatTitleActive: {
+    color: colors.text.inverse,
+  },
+  formatDescription: {
+    marginTop: spacing[1],
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.text.secondary,
+  },
+  formatDescriptionActive: {
+    color: 'rgba(255,255,255,0.86)',
+  },
+  infoCard: {
+    marginTop: spacing[3],
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    ...shadows.sm,
+  },
+  infoTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: spacing[2],
+  },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: spacing[2],
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
   infoLabel: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.text.secondary,
   },
   infoValue: {
-    fontSize: 14,
+    flexShrink: 1,
+    textAlign: 'right',
+    fontSize: 13,
     fontWeight: '600',
     color: colors.text.primary,
   },
-  exportingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    justifyContent: 'center',
+  processingCard: {
+    marginTop: spacing[2],
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing[2],
+    ...shadows.sm,
   },
-  exportingText: {
-    marginTop: spacing[3],
-    fontSize: 16,
-    color: colors.text.primary,
+  processingText: {
+    fontSize: 13,
+    color: colors.text.secondary,
   },
 });
 

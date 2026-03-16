@@ -95,8 +95,13 @@ export default function LibraryScreen() {
         formData.append('title', file.name.replace(/\.[^/.]+$/, ''));
 
         await uploadFile({ file: formData });
-        Alert.alert('Success', 'File uploaded successfully');
-        refreshStorage();
+        await Promise.all([
+          refresh(),
+          refreshFolders(),
+          refreshFiles(),
+          refreshStorage(),
+        ]);
+        Alert.alert('Success', 'File added to your library');
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to upload file');

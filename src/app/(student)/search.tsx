@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -35,6 +36,7 @@ const SearchScreen: React.FC = () => {
     loading,
     error,
     runSearch,
+    updateResult,
     clearQuery,
     clearFilters,
     removeRecentSearch,
@@ -48,14 +50,28 @@ const SearchScreen: React.FC = () => {
 
   const showRecent = query.trim().length < minQueryLength;
 
-  const onToggleBookmark = async (resourceId: string) => {
-    await bookmarksService.toggleResourceBookmark(resourceId);
-    await runSearch();
+  const onToggleBookmark = async (resourceId: string, isBookmarked: boolean) => {
+    const nextValue = !isBookmarked;
+    updateResult(resourceId, { is_bookmarked: nextValue });
+
+    try {
+      await bookmarksService.toggleResourceBookmark(resourceId);
+    } catch (err: any) {
+      updateResult(resourceId, { is_bookmarked: isBookmarked });
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to update bookmark');
+    }
   };
 
-  const onToggleFavorite = async (resourceId: string) => {
-    await favoritesService.toggleResourceFavorite(resourceId);
-    await runSearch();
+  const onToggleFavorite = async (resourceId: string, isFavorited: boolean) => {
+    const nextValue = !isFavorited;
+    updateResult(resourceId, { is_favorited: nextValue });
+
+    try {
+      await favoritesService.toggleResourceFavorite(resourceId);
+    } catch (err: any) {
+      updateResult(resourceId, { is_favorited: isFavorited });
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to update favorite');
+    }
   };
 
   const emptyState = useMemo(() => {
@@ -133,8 +149,12 @@ const SearchScreen: React.FC = () => {
               <SearchResultCard
                 item={item}
                 onPress={() => router.push(`/(student)/resource/${item.id}`)}
-                onToggleBookmark={() => onToggleBookmark(item.id)}
-                onToggleFavorite={() => onToggleFavorite(item.id)}
+                onToggleBookmark={() =>
+                  onToggleBookmark(item.id, Boolean(item.is_bookmarked))
+                }
+                onToggleFavorite={() =>
+                  onToggleFavorite(item.id, Boolean(item.is_favorited))
+                }
               />
             )}
             ListHeaderComponent={

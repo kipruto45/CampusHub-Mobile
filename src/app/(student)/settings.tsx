@@ -2,7 +2,7 @@
 // Backend-driven with real API integration
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert, ActivityIndicator, Linking, Platform, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
@@ -10,6 +10,13 @@ import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
 import { userAPI } from '../../services/api';
 import { biometricService } from '../../services/biometric';
+import { useAuthStore } from '../../store/auth.store';
+import {
+  clearNotificationUndoMs,
+  getDefaultNotificationUndoMs,
+  getNotificationUndoMs,
+  setNotificationUndoMs,
+} from '../../services/app-settings';
 
 interface UserPreferences {
   id: number;
@@ -65,6 +72,37 @@ const SettingItem: React.FC<SettingItemProps> = ({ icon, title, subtitle, onPres
 
 const SettingsScreen: React.FC = () => {
   const router = useRouter();
+  const refreshToken = useAuthStore((state) => state.refreshToken);
+  const defaultUndoDurationMs = getDefaultNotificationUndoMs();
+  
+  // Handle rate app - opens the app store
+  const handleRateApp = useCallback(async () => {
+    // CampusHub app store URLs - replace with actual app IDs when published
+    const APP_STORE_URLS = {
+      ios: 'itms-apps://itunes.apple.com/app/campushub/id123456789',
+      android: 'market://details?id=com.campushub.app',
+      web: 'https://play.google.com/store/apps/details?id=com.campushub.app',
+    };
+    
+    try {
+      const url = Platform.OS === 'ios' 
+        ? APP_STORE_URLS.ios 
+        : Platform.OS === 'android' 
+          ? APP_STORE_URLS.android 
+          : APP_STORE_URLS.web;
+      
+      const canOpen = await Linking.canOpenURL(url);
+      
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        // Fallback to web URL if native URL doesn't work
+        await Linking.openURL(APP_STORE_URLS.web);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Unable to open app store. Please try again later.');
+    }
+  }, []);
   
   // Loading state
   const [loading, setLoading] = useState(true);
@@ -75,10 +113,11 @@ const SettingsScreen: React.FC = () => {
   
   // Local toggles synced with preferences
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
   const [autosave, setAutosave] = useState(true);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [undoDurationMs, setUndoDurationMs] = useState(defaultUndoDurationMs);
+  const [showUndoModal, setShowUndoModal] = useState(false);
   
   // Language
   const [language, setLanguage] = useState('English');
@@ -93,7 +132,6 @@ const SettingsScreen: React.FC = () => {
       
       // Sync local state with preferences
       setNotificationsEnabled(prefs.app_notifications);
-      setDarkMode(prefs.theme === 'dark');
       setLanguage(prefs.language === 'en' ? 'English' : prefs.language === 'sw' ? 'Swahili' : prefs.language);
     } catch (error: any) {
       console.error('Failed to fetch preferences:', error);
@@ -116,6 +154,20 @@ const SettingsScreen: React.FC = () => {
     };
     checkBiometric();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadUndoDuration = async () => {
+      const storedValue = await getNotificationUndoMs();
+      if (active) {
+        setUndoDurationMs(storedValue);
+      }
+    };
+    loadUndoDuration();
+    return () => {
+      active = false;
+    };
+  }, []);
   
   // Save preference to API
   const updatePreference = async (key: string, value: any) => {
@@ -135,12 +187,6 @@ const SettingsScreen: React.FC = () => {
   const handleNotificationToggle = async (value: boolean) => {
     setNotificationsEnabled(value);
     await updatePreference('app_notifications', value);
-  };
-  
-  // Handle dark mode toggle
-  const handleDarkModeToggle = async (value: boolean) => {
-    setDarkMode(value);
-    await updatePreference('theme', value ? 'dark' : 'light');
   };
   
   // Handle public profile toggle
@@ -167,6 +213,16 @@ const SettingsScreen: React.FC = () => {
   const handleBiometricToggle = async (value: boolean) => {
     if (value) {
       const success = await biometricService.enableBiometric();
+      if (success) {
+        if (refreshToken) {
+          await biometricService.storeAuthKey(refreshToken);
+        } else {
+          Alert.alert(
+            'Biometric Enabled',
+            'Sign in again to finish setting up biometric login.'
+          );
+        }
+      }
       setBiometricEnabled(success);
     } else {
       await biometricService.disableBiometric();
@@ -198,6 +254,22 @@ const SettingsScreen: React.FC = () => {
     );
   };
 
+  const formatUndoDuration = (valueMs: number) => `${Math.round(valueMs / 1000)}s`;
+
+  const handleUndoDurationSelect = async (valueMs: number) => {
+    const nextValue = await setNotificationUndoMs(valueMs);
+    setUndoDurationMs(nextValue);
+    setShowUndoModal(false);
+  };
+
+  const handleUndoDurationReset = async () => {
+    const nextValue = await clearNotificationUndoMs();
+    setUndoDurationMs(nextValue);
+    setShowUndoModal(false);
+  };
+
+  const undoDurationOptions = [2000, 4000, 6000, 8000, 10000];
+
   const settingGroups: SettingGroup[] = [
     {
       title: 'Account',
@@ -225,18 +297,6 @@ const SettingsScreen: React.FC = () => {
     {
       title: 'Preferences',
       items: [
-        { 
-          icon: 'moon', 
-          title: 'Dark Mode', 
-          rightElement: (
-            <Switch 
-              value={darkMode} 
-              onValueChange={handleDarkModeToggle} 
-              trackColor={{ true: colors.primary[500] }} 
-              thumbColor="#FFFFFF" 
-            />
-          ) 
-        },
         {
           icon: 'finger-print',
           title: 'Biometric Login',
@@ -250,6 +310,12 @@ const SettingsScreen: React.FC = () => {
               disabled={!biometricAvailable}
             />
           )
+        },
+        { 
+          icon: 'time', 
+          title: 'Notification Undo Window', 
+          subtitle: `Undo window: ${formatUndoDuration(undoDurationMs)}`, 
+          onPress: () => setShowUndoModal(true) 
         },
         { 
           icon: 'globe', 
@@ -470,11 +536,19 @@ const SettingsScreen: React.FC = () => {
         <View style={styles.section}>
           <Text style={styles.groupTitle}>Support</Text>
           <View style={styles.card}>
-            <SettingItem icon="help-circle" title="Help & FAQ" onPress={() => Alert.alert('Coming Soon', 'Help & FAQ will be available soon')} />
-            <SettingItem icon="chatbubbles" title="Contact Support" onPress={() => Alert.alert('Coming Soon', 'Contact Support will be available soon')} />
-            <SettingItem icon="star" title="Rate the App" onPress={() => Alert.alert('Coming Soon', 'Rate the App will be available soon')} />
-            <SettingItem icon="document-text" title="Privacy Policy" onPress={() => Alert.alert('Coming Soon', 'Privacy Policy will be available soon')} />
-            <SettingItem icon="library" title="Terms of Service" onPress={() => Alert.alert('Coming Soon', 'Terms of Service will be available soon')} />
+            <SettingItem icon="help-circle" title="Help & FAQ" onPress={() => router.push('/(student)/help-faq' as any)} />
+            <SettingItem icon="chatbubbles" title="Contact Support" onPress={() => router.push('/(student)/contact-support' as any)} />
+            <SettingItem icon="star" title="Rate the App" onPress={handleRateApp} />
+            <SettingItem 
+              icon="document-text" 
+              title="Privacy Policy" 
+              onPress={() => router.push('/(auth)/privacy')} 
+            />
+            <SettingItem 
+              icon="library" 
+              title="Terms of Service" 
+              onPress={() => router.push('/(auth)/terms')} 
+            />
           </View>
         </View>
 
@@ -483,6 +557,47 @@ const SettingsScreen: React.FC = () => {
         
         <View style={styles.bottomSpacing} />
       </ScrollView>
+
+      <Modal
+        visible={showUndoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowUndoModal(false)}
+      >
+        <View style={styles.undoModalBackdrop}>
+          <View style={styles.undoModalCard}>
+            <Text style={styles.undoModalTitle}>Undo Window</Text>
+            <Text style={styles.undoModalSubtitle}>
+              Choose how long the Restore option stays available.
+            </Text>
+            <View style={styles.undoOptions}>
+              {undoDurationOptions.map((option) => {
+                const isActive = option === undoDurationMs;
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    style={[styles.undoOption, isActive && styles.undoOptionActive]}
+                    onPress={() => handleUndoDurationSelect(option)}
+                  >
+                    <Text style={[styles.undoOptionText, isActive && styles.undoOptionTextActive]}>
+                      {formatUndoDuration(option)}
+                    </Text>
+                    {isActive && <Icon name="checkmark" size={18} color={colors.primary[500]} />}
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity style={styles.undoOption} onPress={handleUndoDurationReset}>
+                <Text style={styles.undoOptionText}>
+                  Use default ({formatUndoDuration(defaultUndoDurationMs)})
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.undoCancel} onPress={() => setShowUndoModal(false)}>
+              <Text style={styles.undoCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -661,6 +776,70 @@ const styles = StyleSheet.create({
   },
   bottomSpacing: {
     height: spacing[16],
+  },
+  undoModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing[4],
+  },
+  undoModalCard: {
+    width: '100%',
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.xl,
+    padding: spacing[5],
+    ...shadows.md,
+  },
+  undoModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: spacing[2],
+  },
+  undoModalSubtitle: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginBottom: spacing[4],
+  },
+  undoOptions: {
+    gap: spacing[2],
+  },
+  undoOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing[3],
+    paddingHorizontal: spacing[3],
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    backgroundColor: colors.background.primary,
+  },
+  undoOptionActive: {
+    borderColor: colors.primary[500],
+    backgroundColor: colors.primary[50],
+  },
+  undoOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  undoOptionTextActive: {
+    color: colors.primary[600],
+  },
+  undoCancel: {
+    marginTop: spacing[4],
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background.secondary,
+  },
+  undoCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.secondary,
   },
 });
 

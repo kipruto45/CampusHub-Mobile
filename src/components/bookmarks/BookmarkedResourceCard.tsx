@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
 
 import { colors } from '../../theme/colors';
 import { borderRadius, spacing } from '../../theme/spacing';
+import Icon from '../ui/Icon';
 import BookmarkButton from '../resources/BookmarkButton';
 import FavoriteButton from '../resources/FavoriteButton';
 import { useResourceShare } from '../../hooks/useResourceShare';
@@ -60,7 +61,7 @@ const BookmarkedResourceCard: React.FC<BookmarkedResourceCardProps> = ({
               style={styles.actionButton}
               onPress={handleShare}
             >
-              <Text style={styles.shareIcon}>🔗</Text>
+              <Icon name="link" size={18} color={colors.text.secondary} />
             </TouchableOpacity>
           ) : null}
           {onToggleFavorite ? (

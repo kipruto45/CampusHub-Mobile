@@ -1,7 +1,8 @@
 // CampusResources Brand Colors
 // Premium green-based theme with elegant modern feel
 
-export const colors = {
+// Light Mode Colors
+export const lightColors = {
   // Primary Brand Colors
   primary: {
     50: '#E6F7F7',
@@ -55,9 +56,6 @@ export const colors = {
     primary: '#FFFFFF',
     secondary: '#F9FAFB',
     tertiary: '#F3F4F6',
-    dark: '#0F172A',
-    darkSecondary: '#1E293B',
-    darkTertiary: '#334155',
   },
 
   // Text Colors
@@ -67,8 +65,6 @@ export const colors = {
     tertiary: '#9CA3AF',
     disabled: '#D1D5DB',
     inverse: '#FFFFFF',
-    darkPrimary: '#F9FAFB',
-    darkSecondary: '#9CA3AF',
   },
 
   // Border Colors
@@ -81,7 +77,6 @@ export const colors = {
   // Card Colors
   card: {
     light: '#FFFFFF',
-    dark: '#1E293B',
   },
 
   // Shadow Colors
@@ -98,4 +93,67 @@ export const colors = {
   transparent: 'transparent',
 };
 
-export type ColorScheme = typeof colors;
+// Dark Mode Colors
+export const darkColors = {
+  ...lightColors,
+  // Primary Brand Colors - slightly brighter for dark mode
+  primary: {
+    50: '#E6F7F7',
+    100: '#B3E8E9',
+    200: '#80D9DB',
+    300: '#4DCACD',
+    400: '#26BEBF',
+    500: '#14B8A6', // Brighter teal for dark mode
+    600: '#0D7377',
+    700: '#084B4D',
+    800: '#063738',
+    900: '#032324',
+  },
+
+  // Background Colors
+  background: {
+    primary: '#0F172A',
+    secondary: '#1E293B',
+    tertiary: '#334155',
+  },
+
+  // Text Colors
+  text: {
+    primary: '#F9FAFB',
+    secondary: '#9CA3AF',
+    tertiary: '#6B7280',
+    disabled: '#4B5563',
+    inverse: '#111827',
+  },
+
+  // Border Colors
+  border: {
+    light: '#334155',
+    medium: '#475569',
+    dark: '#64748B',
+  },
+
+  // Card Colors
+  card: {
+    light: '#1E293B',
+  },
+
+  // Shadow Colors
+  shadow: {
+    light: 'rgba(0, 0, 0, 0.3)',
+    medium: 'rgba(0, 0, 0, 0.4)',
+    dark: 'rgba(0, 0, 0, 0.5)',
+  },
+
+  // Overlay
+  overlay: 'rgba(0, 0, 0, 0.7)',
+};
+
+// Default export for backwards compatibility
+export const colors = lightColors;
+
+// Get colors based on dark mode
+export const getColors = (isDark: boolean) => isDark ? darkColors : lightColors;
+
+// Type for colors
+export type ColorScheme = typeof lightColors;

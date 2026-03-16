@@ -15,6 +15,8 @@ interface ToastProps {
   visible: boolean;
   onHide: () => void;
   duration?: number;
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
 const toastConfig: Record<ToastType, {
@@ -50,6 +52,8 @@ const Toast: React.FC<ToastProps> = ({
   visible,
   onHide,
   duration = 3000,
+  actionLabel,
+  onAction,
 }) => {
   const translateY = useRef(new Animated.Value(-100)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -116,21 +120,41 @@ const Toast: React.FC<ToastProps> = ({
           {message}
         </Text>
       </View>
-      <TouchableOpacity onPress={hideToast} style={styles.closeButton}>
-        <Icon name="close" size={18} color={colors.text.secondary} />
-      </TouchableOpacity>
+      <View style={styles.actions}>
+        {actionLabel && onAction ? (
+          <TouchableOpacity
+            onPress={() => {
+              onAction();
+              hideToast();
+            }}
+            style={styles.actionButton}
+          >
+            <Text style={styles.actionText}>{actionLabel}</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity onPress={hideToast} style={styles.closeButton}>
+          <Icon name="close" size={18} color={colors.text.secondary} />
+        </TouchableOpacity>
+      </View>
     </Animated.View>
   );
 };
 
 // Toast context for global toast management
 interface ToastContextValue {
-  showToast: (type: ToastType, message: string) => void;
+  showToast: (
+    type: ToastType,
+    message: string,
+    options?: { actionLabel?: string; onAction?: () => void; duration?: number }
+  ) => void;
   hideToast: () => void;
   toastState: {
     visible: boolean;
     type: ToastType;
     message: string;
+    actionLabel?: string;
+    onAction?: () => void;
+    duration?: number;
   };
 }
 
@@ -143,15 +167,32 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     visible: boolean;
     type: ToastType;
     message: string;
+    actionLabel?: string;
+    onAction?: () => void;
+    duration?: number;
   }>({
     visible: false,
     type: 'success',
     message: '',
   });
 
-  const showToast = useCallback((type: ToastType, message: string) => {
-    setToastState({ visible: true, type, message });
-  }, []);
+  const showToast = useCallback(
+    (
+      type: ToastType,
+      message: string,
+      options?: { actionLabel?: string; onAction?: () => void; duration?: number }
+    ) => {
+      setToastState({
+        visible: true,
+        type,
+        message,
+        actionLabel: options?.actionLabel,
+        onAction: options?.onAction,
+        duration: options?.duration,
+      });
+    },
+    []
+  );
 
   const hideToast = useCallback(() => {
     setToastState(prev => ({ ...prev, visible: false }));
@@ -165,6 +206,9 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         message={toastState.message}
         visible={toastState.visible}
         onHide={hideToast}
+        actionLabel={toastState.actionLabel}
+        onAction={toastState.onAction}
+        duration={toastState.duration}
       />
     </ToastContext.Provider>
   );
@@ -228,6 +272,22 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: spacing[1],
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  actionButton: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary[50],
+  },
+  actionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary[600],
   },
 });
 

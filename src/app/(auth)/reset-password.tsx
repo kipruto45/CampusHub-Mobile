@@ -1,16 +1,29 @@
 // Reset Password Screen for CampusHub
 
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
+import Icon from '../../components/ui/Icon';
 import { authAPI } from '../../services/api';
 
-const ResetPasswordScreen: React.FC = () => {
+type ResetPasswordScreenProps = {
+  tokenOverride?: string | string[] | null;
+};
+
+const resolveToken = (value?: string | string[] | null) => {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value || undefined;
+};
+
+export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({ tokenOverride }) => {
   const router = useRouter();
-  const { token } = useLocalSearchParams<{ token?: string }>();
+  const { token: tokenParam } = useLocalSearchParams<{ token?: string | string[] }>();
+  const token = resolveToken(tokenOverride ?? tokenParam);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,8 +47,9 @@ const ResetPasswordScreen: React.FC = () => {
     try {
       await authAPI.resetPassword({
         uid: '',
-        token: token,
+        token,
         new_password: newPassword,
+        new_password_confirm: confirmPassword,
       });
       Alert.alert('Success', 'Password reset successfully!', [
         { text: 'OK', onPress: () => router.replace('/(auth)/login') }
@@ -49,39 +63,64 @@ const ResetPasswordScreen: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.backIcon}>←</Text>
-      </TouchableOpacity>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Icon name="arrow-back" size={24} color={colors.text.primary} />
+        </TouchableOpacity>
 
-      <View style={styles.content}>
-        <View style={styles.iconContainer}>
-          <Text style={styles.icon}>🔐</Text>
-        </View>
-        <Text style={styles.title}>Reset Password</Text>
-        <Text style={styles.subtitle}>Enter your new password below</Text>
-
-        <View style={styles.form}>
-          <View style={styles.field}>
-            <Text style={styles.label}>New Password</Text>
-            <TextInput style={styles.input} placeholder="Enter new password" value={newPassword} onChangeText={setNewPassword} secureTextEntry />
+        <View style={styles.content}>
+          <View style={styles.iconContainer}>
+            <Icon name="lock-closed" size={40} color={colors.primary[500]} />
           </View>
-          <View style={styles.field}>
-            <Text style={styles.label}>Confirm Password</Text>
-            <TextInput style={styles.input} placeholder="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
-          </View>
+          <Text style={styles.title}>Reset Password</Text>
+          <Text style={styles.subtitle}>Enter your new password below</Text>
 
-          <TouchableOpacity style={styles.resetBtn} onPress={handleReset} disabled={loading}>
-            <Text style={styles.resetBtnText}>{loading ? 'Resetting...' : 'Reset Password'}</Text>
-          </TouchableOpacity>
+          <View style={styles.form}>
+            <View style={styles.field}>
+              <Text style={styles.label}>New Password</Text>
+              <TextInput 
+                style={styles.input} 
+                placeholder="Enter new password" 
+                value={newPassword} 
+                onChangeText={setNewPassword} 
+                secureTextEntry 
+                placeholderTextColor={colors.text.tertiary}
+              />
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>Confirm Password</Text>
+              <TextInput 
+                style={styles.input} 
+                placeholder="Confirm new password" 
+                value={confirmPassword} 
+                onChangeText={setConfirmPassword} 
+                secureTextEntry 
+                placeholderTextColor={colors.text.tertiary}
+              />
+            </View>
+
+            <TouchableOpacity style={styles.resetBtn} onPress={handleReset} disabled={loading}>
+              <Text style={styles.resetBtnText}>{loading ? 'Resetting...' : 'Reset Password'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background.secondary, padding: spacing[6] },
+  container: { flex: 1, backgroundColor: colors.background.secondary },
+  scrollContent: { flexGrow: 1, padding: spacing[6] },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card.light, justifyContent: 'center', alignItems: 'center', marginTop: spacing[10], ...shadows.sm },
   backIcon: { fontSize: 24 },
   content: { flex: 1, justifyContent: 'center' },

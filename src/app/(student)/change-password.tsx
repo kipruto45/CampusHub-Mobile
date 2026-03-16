@@ -146,6 +146,7 @@ const ChangePasswordScreen: React.FC = () => {
 
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
         style={styles.keyboardView}
       >
         <ScrollView 

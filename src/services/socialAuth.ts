@@ -15,6 +15,11 @@ export interface OAuthResult {
   error?: string;
 }
 
+export interface NativeOAuthPayload {
+  idToken?: string;
+  accessToken?: string;
+}
+
 const coerceString = (value: unknown): string => {
   return typeof value === 'string' ? value : '';
 };
@@ -82,6 +87,37 @@ export const exchangeCodeForTokens = async (
     return { success: true, tokens };
   } catch (error: any) {
     console.error('Token exchange error:', error);
+    return {
+      success: false,
+      error: extractErrorMessage(error),
+    };
+  }
+};
+
+export const exchangeNativeTokens = async (
+  provider: 'google' | 'microsoft',
+  payload: NativeOAuthPayload
+): Promise<OAuthResult> => {
+  try {
+    const response =
+      provider === 'google'
+        ? await authAPI.googleOAuthNative({
+            id_token: payload.idToken,
+            access_token: payload.accessToken,
+          })
+        : await authAPI.microsoftOAuthNative({
+            access_token: payload.accessToken || '',
+            id_token: payload.idToken,
+          });
+
+    const tokens = extractTokens(response?.data);
+    if (!tokens) {
+      return { success: false, error: 'No access token returned by server' };
+    }
+
+    return { success: true, tokens };
+  } catch (error: any) {
+    console.error('Native token exchange error:', error);
     return {
       success: false,
       error: extractErrorMessage(error),

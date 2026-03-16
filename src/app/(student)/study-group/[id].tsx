@@ -2,13 +2,19 @@
 // View and manage a specific study group
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl, Alert, FlatList, Modal } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { colors } from '../../../theme/colors';
 import { spacing, borderRadius } from '../../../theme/spacing';
 import { shadows } from '../../../theme/shadows';
 import Icon from '../../../components/ui/Icon';
+import Avatar from '../../../components/ui/Avatar';
 import { studyGroupsAPI } from '../../../services/api';
+import { resourcesAPI } from '../../../services/api';
+import InviteLinkCard from '../../../components/social/InviteLinkCard';
+import CreateInviteLinkSheet, { CreateLinkData } from '../../../components/social/CreateInviteLinkSheet';
+import Tooltip from '../../../components/ui/Tooltip';
+import { useAuthStore } from '../../../store/auth.store';
 
 interface StudyGroupPost {
   id: string;
@@ -40,41 +46,87 @@ interface StudyGroup {
   name: string;
   description: string;
   course?: { id: string; name: string };
-  is_private: boolean;
+  privacy: string;
+  allow_member_invites: boolean;
   member_count: number;
+  max_members: number;
   created_by: { id: string; first_name: string; last_name: string };
   created_at: string;
   is_member: boolean;
   my_role?: string;
 }
 
+interface InviteLink {
+  id: string;
+  token: string;
+  invite_link: string;
+  url: string;
+  created_at: string;
+  expires_at: string | null;
+  max_uses: number | null;
+  use_count: number;
+  is_active: boolean;
+  notes: string | null;
+  created_by_name: string;
+}
+
 const StudyGroupDetailScreen: React.FC = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [group, setGroup] = useState<StudyGroup | null>(null);
   const [members, setMembers] = useState<StudyGroupMember[]>([]);
   const [posts, setPosts] = useState<StudyGroupPost[]>([]);
   const [resources, setResources] = useState<StudyGroupResource[]>([]);
-  const [activeTab, setActiveTab] = useState<'posts' | 'members' | 'resources'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'members' | 'resources' | 'invites'>('posts');
   const [newPostTitle, setNewPostTitle] = useState('');
   const [newPostContent, setNewPostContent] = useState('');
   const [posting, setPosting] = useState(false);
+  
+  // Invite Link State
+  const [inviteLinks, setInviteLinks] = useState<InviteLink[]>([]);
+  const [showCreateLinkSheet, setShowCreateLinkSheet] = useState(false);
+  const [creatingLink, setCreatingLink] = useState(false);
+
+  // Share Resource State
+  const [showShareResourceSheet, setShowShareResourceSheet] = useState(false);
+  const [userResources, setUserResources] = useState<any[]>([]);
+  const [loadingUserResources, setLoadingUserResources] = useState(false);
+
+  // Comment State
+  const [showCommentModal, setShowCommentModal] = useState(false);
+  const [commentingPostId, setCommentingPostId] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  const canManageInvites = group?.my_role === 'admin' || group?.my_role === 'moderator';
 
   const fetchGroupDetails = useCallback(async () => {
     try {
       const response = await studyGroupsAPI.get(id);
-      setGroup(response.data);
+      setGroup(response.data.data);
       
-      const [membersRes, postsRes] = await Promise.all([
+      const [membersRes, postsRes, resourcesRes] = await Promise.all([
         studyGroupsAPI.getMembers(id),
         studyGroupsAPI.getPosts(id),
+        studyGroupsAPI.getResources(id),
       ]);
       
-      setMembers(membersRes.data.results || membersRes.data);
-      setPosts(postsRes.data.results || postsRes.data);
-      setResources([]);
+      setMembers(membersRes.data.data?.results || membersRes.data.data || []);
+      setPosts(postsRes.data.data?.results || postsRes.data.data || []);
+      setResources(resourcesRes.data.data?.results || resourcesRes.data.data || []);
+      
+      // Fetch invite links if user can manage them
+      if (group?.my_role === 'admin' || group?.my_role === 'moderator') {
+        try {
+          const linksRes = await studyGroupsAPI.getInviteLinks(id);
+          setInviteLinks(linksRes.data.data || []);
+        } catch (e) {
+          // Ignore invite links fetch error
+        }
+      }
     } catch (err) {
       console.error('Failed to fetch group details:', err);
       Alert.alert('Error', 'Failed to load group details');
@@ -82,7 +134,7 @@ const StudyGroupDetailScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [id]);
+  }, [id, group?.my_role]);
 
   useEffect(() => {
     fetchGroupDetails();
@@ -143,6 +195,114 @@ const StudyGroupDetailScreen: React.FC = () => {
     }
   };
 
+  const handleLikePost = async (postId: string) => {
+    try {
+      const response = await studyGroupsAPI.likePost(id, postId);
+      const { likes_count, liked } = response.data.data;
+      
+      // Update the post in the posts list
+      setPosts(posts.map(post => 
+        post.id === postId 
+          ? { ...post, likes_count } 
+          : post
+      ));
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to like post');
+    }
+  };
+
+  const handleCommentPost = async (postId: string, content: string) => {
+    if (!content.trim()) return;
+    
+    setSubmittingComment(true);
+    try {
+      await studyGroupsAPI.createPostComment(id, postId, { content });
+      
+      // Update the post comments count
+      setPosts(posts.map(post => 
+        post.id === postId 
+          ? { ...post, comments_count: post.comments_count + 1 } 
+          : post
+      ));
+      
+      // Close modal and reset
+      setShowCommentModal(false);
+      setCommentingPostId(null);
+      setCommentText('');
+      Alert.alert('Success', 'Comment added!');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to add comment');
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  const openCommentModal = (postId: string) => {
+    setCommentingPostId(postId);
+    setCommentText('');
+    setShowCommentModal(true);
+  };
+
+  const fetchInviteLinks = async () => {
+    try {
+      const response = await studyGroupsAPI.getInviteLinks(id);
+      setInviteLinks(response.data.data || []);
+    } catch (err) {
+      console.error('Failed to fetch invite links:', err);
+    }
+  };
+
+  const fetchUserResources = async () => {
+    setLoadingUserResources(true);
+    try {
+      const response = await resourcesAPI.list({ scope: 'my', page: 1 });
+      setUserResources(response.data.data?.results || response.data.data || []);
+    } catch (err) {
+      console.error('Failed to fetch user resources:', err);
+    } finally {
+      setLoadingUserResources(false);
+    }
+  };
+
+  const handleOpenShareResource = async () => {
+    await fetchUserResources();
+    setShowShareResourceSheet(true);
+  };
+
+  const handleShareResource = async (resourceId: string) => {
+    try {
+      await studyGroupsAPI.shareResource(id, { resource_id: resourceId });
+      Alert.alert('Success', 'Resource shared successfully!');
+      setShowShareResourceSheet(false);
+      fetchGroupDetails();
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.error || 'Failed to share resource');
+    }
+  };
+
+  const handleCreateInviteLink = async (data: CreateLinkData) => {
+    setCreatingLink(true);
+    try {
+      await studyGroupsAPI.createInviteLink(id, data);
+      await fetchInviteLinks();
+      Alert.alert('Success', 'Invite link created successfully!');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to create invite link');
+    } finally {
+      setCreatingLink(false);
+    }
+  };
+
+  const handleRevokeInviteLink = async (linkId: string) => {
+    try {
+      await studyGroupsAPI.revokeInviteLink(linkId);
+      await fetchInviteLinks();
+      Alert.alert('Success', 'Invite link revoked successfully');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to revoke invite link');
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -180,7 +340,29 @@ const StudyGroupDetailScreen: React.FC = () => {
         <Text style={styles.headerTitle} numberOfLines={1}>
           {group?.name}
         </Text>
-        <View style={styles.headerSpacer} />
+        <View style={styles.headerActions}>
+          <Tooltip 
+            title="How to Share Resources"
+            content="Tap the upload icon to share your uploaded resources with this group. Go to the Resources tab to see shared resources. Only resources you've uploaded can be shared."
+            iconName="information-circle"
+          />
+          {group?.is_member && (
+            <TouchableOpacity 
+              onPress={handleOpenShareResource} 
+              style={styles.headerAction}
+            >
+              <Icon name="cloud-upload" size={22} color={colors.text.inverse} />
+            </TouchableOpacity>
+          )}
+          {canManageInvites && (
+            <TouchableOpacity 
+              onPress={() => setShowCreateLinkSheet(true)} 
+              style={styles.headerAction}
+            >
+              <Icon name="person-add" size={22} color={colors.text.inverse} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView
@@ -209,7 +391,7 @@ const StudyGroupDetailScreen: React.FC = () => {
                 )}
               </View>
             </View>
-            {group?.is_private && (
+            {group?.privacy !== 'public' && (
               <View style={styles.privateBadge}>
                 <Icon name="lock-closed" size={14} color={colors.text.secondary} />
               </View>
@@ -230,10 +412,22 @@ const StudyGroupDetailScreen: React.FC = () => {
                   <Icon name="log-out" size={18} color={colors.error} />
                   <Text style={styles.leaveButtonText}>Leave Group</Text>
                 </TouchableOpacity>
+                {canManageInvites && (
+                  <TouchableOpacity
+                    style={styles.inviteButton}
+                    onPress={() => {
+                      fetchInviteLinks();
+                      setActiveTab('invites');
+                    }}
+                  >
+                    <Icon name="link" size={18} color={colors.primary[500]} />
+                    <Text style={styles.inviteButtonText}>Invite</Text>
+                  </TouchableOpacity>
+                )}
                 {group?.my_role === 'admin' && (
                   <TouchableOpacity
                     style={styles.manageButton}
-                    onPress={() => Alert.alert('Coming Soon', 'Group management coming soon!')}
+                    onPress={() => router.push(`/(student)/study-group/${id}/manage`)}
                   >
                     <Icon name="settings" size={18} color={colors.primary[500]} />
                     <Text style={styles.manageButtonText}>Manage</Text>
@@ -277,6 +471,19 @@ const StudyGroupDetailScreen: React.FC = () => {
               Resources ({resources.length})
             </Text>
           </TouchableOpacity>
+          {canManageInvites && (
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'invites' && styles.activeTab]}
+              onPress={() => {
+                fetchInviteLinks();
+                setActiveTab('invites');
+              }}
+            >
+              <Text style={[styles.tabText, activeTab === 'invites' && styles.activeTabText]}>
+                Invites ({inviteLinks.length})
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {activeTab === 'posts' && (
@@ -306,7 +513,7 @@ const StudyGroupDetailScreen: React.FC = () => {
                   {posting ? (
                     <ActivityIndicator size="small" color={colors.text.inverse} />
                   ) : (
-                    <Icon name="arrow-forward" size={18} color={colors.text.inverse} />
+                    <Icon name="send" size={18} color={colors.text.inverse} />
                   )}
                 </TouchableOpacity>
               </View>
@@ -317,7 +524,12 @@ const StudyGroupDetailScreen: React.FC = () => {
                 <View key={post.id} style={styles.postCard}>
                   <View style={styles.postHeader}>
                     <View style={styles.postAuthorAvatar}>
-                      <Icon name="person" size={20} color={colors.text.secondary} />
+                      <Avatar
+                        source={post.author?.avatar}
+                        name={`${post.author?.first_name || ''} ${post.author?.last_name || ''}`.trim()}
+                        sizePx={40}
+                        cacheKey={`study-post-${post.author?.id || 'unknown'}`}
+                      />
                     </View>
                     <View style={styles.postAuthorInfo}>
                       <Text style={styles.postAuthorName}>
@@ -329,11 +541,17 @@ const StudyGroupDetailScreen: React.FC = () => {
                   {post.title && <Text style={styles.postTitle}>{post.title}</Text>}
                   <Text style={styles.postContent}>{post.content}</Text>
                   <View style={styles.postActions}>
-                    <TouchableOpacity style={styles.postAction}>
+                    <TouchableOpacity 
+                      style={styles.postAction}
+                      onPress={() => handleLikePost(post.id)}
+                    >
                       <Icon name="heart-outline" size={18} color={colors.text.secondary} />
                       <Text style={styles.postActionText}>{post.likes_count}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.postAction}>
+                    <TouchableOpacity 
+                      style={styles.postAction}
+                      onPress={() => openCommentModal(post.id)}
+                    >
                       <Icon name="chatbubble" size={18} color={colors.text.secondary} />
                       <Text style={styles.postActionText}>{post.comments_count}</Text>
                     </TouchableOpacity>
@@ -360,7 +578,12 @@ const StudyGroupDetailScreen: React.FC = () => {
               members.map((member) => (
                 <View key={member.id} style={styles.memberCard}>
                   <View style={styles.memberAvatar}>
-                    <Icon name="person" size={24} color={colors.text.secondary} />
+                    <Avatar
+                      source={member.user?.avatar}
+                      name={`${member.user?.first_name || ''} ${member.user?.last_name || ''}`.trim()}
+                      sizePx={48}
+                      cacheKey={`study-member-${member.user?.id || 'unknown'}`}
+                    />
                   </View>
                   <View style={styles.memberInfo}>
                     <Text style={styles.memberName}>
@@ -388,6 +611,25 @@ const StudyGroupDetailScreen: React.FC = () => {
 
         {activeTab === 'resources' && (
           <View style={styles.tabContent}>
+            {/* Share Resource Button */}
+            {group?.is_member && (
+              <TouchableOpacity 
+                style={styles.createLinkButton}
+                onPress={handleOpenShareResource}
+              >
+                <View style={[styles.createLinkIcon, { backgroundColor: colors.primary[50] }]}>
+                  <Icon name="share-social" size={24} color={colors.primary[500]} />
+                </View>
+                <View style={styles.createLinkInfo}>
+                  <Text style={styles.createLinkTitle}>Share Resource</Text>
+                  <Text style={styles.createLinkText}>
+                    Share your uploaded resources with this group
+                  </Text>
+                </View>
+                <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
+              </TouchableOpacity>
+            )}
+
             {resources.length > 0 ? (
               resources.map((resource) => (
                 <TouchableOpacity 
@@ -421,8 +663,160 @@ const StudyGroupDetailScreen: React.FC = () => {
           </View>
         )}
 
+        {activeTab === 'invites' && canManageInvites && (
+          <View style={styles.tabContent}>
+            {/* Create Link Button */}
+            <TouchableOpacity 
+              style={styles.createLinkButton}
+              onPress={() => setShowCreateLinkSheet(true)}
+            >
+              <View style={styles.createLinkIcon}>
+                <Icon name="add" size={24} color={colors.primary[500]} />
+              </View>
+              <View style={styles.createLinkInfo}>
+                <Text style={styles.createLinkTitle}>Create Invite Link</Text>
+                <Text style={styles.createLinkText}>
+                  Generate a new link for others to join
+                </Text>
+              </View>
+              <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
+            </TouchableOpacity>
+
+            {/* Invite Links List */}
+            {inviteLinks.length > 0 ? (
+              inviteLinks.map((link) => (
+                <InviteLinkCard
+                  key={link.id}
+                  link={link}
+                  onRevoke={handleRevokeInviteLink}
+                  onUpdate={() => fetchInviteLinks()}
+                />
+              ))
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Icon name="link" size={48} color={colors.text.tertiary} />
+                <Text style={styles.emptyTitle}>No Invite Links</Text>
+                <Text style={styles.emptyText}>
+                  Create an invite link to share with others
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      {/* Create Invite Link Sheet */}
+      <CreateInviteLinkSheet
+        visible={showCreateLinkSheet}
+        onClose={() => setShowCreateLinkSheet(false)}
+        onCreate={handleCreateInviteLink}
+      />
+
+      {/* Share Resource Modal */}
+      <Modal
+        visible={showShareResourceSheet}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowShareResourceSheet(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowShareResourceSheet(false)}>
+              <Icon name="close" size={24} color={colors.text.primary} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Share Resource</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          {loadingUserResources ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.primary[500]} />
+            </View>
+          ) : userResources.length > 0 ? (
+            <ScrollView style={styles.modalContent}>
+              {userResources.map((resource) => (
+                <TouchableOpacity
+                  key={resource.id}
+                  style={styles.resourceSelectCard}
+                  onPress={() => handleShareResource(resource.id)}
+                >
+                  <View style={[styles.resourceIcon, { backgroundColor: colors.primary[50] }]}>
+                    <Icon name="document-text" size={24} color={colors.primary[500]} />
+                  </View>
+                  <View style={styles.resourceInfo}>
+                    <Text style={styles.resourceTitle} numberOfLines={2}>
+                      {resource.title}
+                    </Text>
+                    <Text style={styles.resourceMeta}>
+                      {resource.resource_type} • {resource.course_name || 'No course'}
+                    </Text>
+                  </View>
+                  <Icon name="add-circle" size={24} color={colors.primary[500]} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Icon name="document-text" size={48} color={colors.text.tertiary} />
+              <Text style={styles.emptyTitle}>No Resources</Text>
+              <Text style={styles.emptyText}>
+                You haven't uploaded any resources yet
+              </Text>
+              <TouchableOpacity
+                style={styles.uploadButton}
+                onPress={() => {
+                  setShowShareResourceSheet(false);
+                  router.push('/(student)/upload-resource');
+                }}
+              >
+                <Text style={styles.uploadButtonText}>Upload Resource</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </Modal>
+
+      {/* Comment Modal */}
+      <Modal
+        visible={showCommentModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowCommentModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowCommentModal(false)}>
+              <Icon name="close" size={24} color={colors.text.primary} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Add Comment</Text>
+            <TouchableOpacity 
+              onPress={() => handleCommentPost(commentingPostId!, commentText)}
+              disabled={!commentText.trim() || submittingComment}
+            >
+              <Text style={[
+                styles.sendButton,
+                (!commentText.trim() || submittingComment) && styles.sendButtonDisabled
+              ]}>
+                {submittingComment ? 'Posting...' : 'Post'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.commentInputContainer}>
+            <TextInput
+              style={styles.commentInput}
+              placeholder="Write your comment..."
+              placeholderTextColor={colors.text.tertiary}
+              multiline
+              value={commentText}
+              onChangeText={setCommentText}
+              autoFocus
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -464,6 +858,18 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 40,
+  },
+  headerAction: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
   },
   scrollView: {
     flex: 1,
@@ -574,6 +980,54 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 15,
   },
+  inviteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary[50],
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  inviteButtonText: {
+    color: colors.primary[500],
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  createLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card.light,
+    padding: spacing[4],
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing[4],
+    borderWidth: 1,
+    borderColor: colors.primary[200],
+    borderStyle: 'dashed',
+  },
+  createLinkIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary[50],
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing[3],
+  },
+  createLinkInfo: {
+    flex: 1,
+  },
+  createLinkTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 2,
+  },
+  createLinkText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+  },
   tabsContainer: {
     flexDirection: 'row',
     marginHorizontal: 16,
@@ -653,12 +1107,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   postAuthorAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.background.secondary,
-    justifyContent: 'center',
-    alignItems: 'center',
     marginRight: 8,
   },
   postAuthorInfo: {
@@ -708,12 +1156,6 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   memberAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.background.secondary,
-    justifyContent: 'center',
-    alignItems: 'center',
     marginRight: 16,
   },
   memberInfo: {
@@ -787,6 +1229,68 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 32,
+  },
+  // Share Resource Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: colors.background.secondary,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing[4],
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+    backgroundColor: colors.background.primary,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  modalContent: {
+    flex: 1,
+    padding: spacing[4],
+  },
+  resourceSelectCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background.primary,
+    borderRadius: borderRadius.lg,
+    padding: spacing[4],
+    marginBottom: spacing[3],
+  },
+  uploadButton: {
+    backgroundColor: colors.primary[500],
+    paddingVertical: spacing[3],
+    paddingHorizontal: spacing[6],
+    borderRadius: borderRadius.md,
+    marginTop: spacing[4],
+  },
+  uploadButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  sendButton: {
+    color: colors.primary[500],
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  sendButtonDisabled: {
+    color: colors.text.tertiary,
+  },
+  commentInputContainer: {
+    flex: 1,
+    padding: spacing[4],
+  },
+  commentInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.text.primary,
+    textAlignVertical: 'top',
+    minHeight: 120,
   },
 });
 

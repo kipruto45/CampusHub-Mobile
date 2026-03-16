@@ -107,7 +107,11 @@ const UsersScreen: React.FC = () => {
   };
 
   const renderUserItem = ({ item }: { item: User }) => (
-    <View style={styles.userCard}>
+    <TouchableOpacity 
+      style={styles.userCard}
+      onPress={() => router.push(`/(admin)/user-detail?id=${item.id}`)}
+      activeOpacity={0.7}
+    >
       <View style={styles.userAvatar}>
         <Text style={styles.avatarText}>
           {item.first_name?.[0] || item.email[0].toUpperCase()}
@@ -139,7 +143,7 @@ const UsersScreen: React.FC = () => {
           {item.is_active ? 'Active' : 'Inactive'}
         </Text>
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 
   const getRoleColor = (role: string) => {
@@ -178,9 +182,6 @@ const UsersScreen: React.FC = () => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color={colors.text.inverse} />
-        </TouchableOpacity>
         <Text style={styles.title}>Users Management</Text>
       </View>
 
@@ -255,12 +256,10 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     padding: spacing[4],
     paddingTop: spacing[8],
     backgroundColor: colors.primary[500],
-  },
-  backButton: {
-    marginRight: spacing[3],
   },
   title: {
     fontSize: 20,

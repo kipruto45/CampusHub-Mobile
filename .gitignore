@@ -5,3 +5,13 @@
 expo-env.d.ts
 # @end expo-cli
 node_modules
+.expo
+.env
+.env.*
+android/local.properties
+dist
+web-build
+campushub-*.json
+
+# Local Netlify folder
+.netlify

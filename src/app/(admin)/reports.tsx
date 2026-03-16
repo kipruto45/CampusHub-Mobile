@@ -221,9 +221,6 @@ const ReportsScreen: React.FC = () => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color={colors.text.inverse} />
-        </TouchableOpacity>
         <Text style={styles.title}>User Reports</Text>
         {pendingCount > 0 && (
           <View style={styles.badge}>

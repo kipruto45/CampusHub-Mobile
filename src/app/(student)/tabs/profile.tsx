@@ -10,7 +10,7 @@ import { shadows } from '../../../theme/shadows';
 import Icon from '../../../components/ui/Icon';
 import ErrorState from '../../../components/ui/ErrorState';
 import { useAuthStore } from '../../../store/auth.store';
-import { userAPI, analyticsAPI, gamificationAPI } from '../../../services/api';
+import { userAPI, gamificationAPI } from '../../../services/api';
 
 // Types
 interface LinkedProvider {
@@ -36,9 +36,9 @@ interface UserProfile {
 }
 
 interface UserStats {
-  resources: number;
+  bookmarks: number;
   downloads: number;
-  saved: number;
+  comments: number;
   uploads: number;
 }
 
@@ -48,12 +48,13 @@ interface GamificationStats {
   total_downloads: number;
   total_shares: number;
   total_comments: number;
-  rank?: number;
+  leaderboard_rank?: number | null;
   badges: Array<{
     id: string;
     name: string;
     icon: string;
     is_earned: boolean;
+    category?: string;
   }>;
 }
 
@@ -66,41 +67,83 @@ const ProfileScreen: React.FC = () => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(user);
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [gamificationStats, setGamificationStats] = useState<GamificationStats | null>(null);
-  const [linkedProviders] = useState<LinkedProvider[]>([]); // Empty - would need backend endpoint
+  const [linkedProviders, setLinkedProviders] = useState<LinkedProvider[]>([]);
 
   const fetchUserData = useCallback(async () => {
     try {
       setError(null);
       
-      // Fetch profile, stats, and gamification in parallel
-      const [profileRes, statsRes, gamificationRes] = await Promise.all([
+      const [profileRes, linkedAccountsRes, gamificationRes] = await Promise.all([
         userAPI.getProfile(),
-        analyticsAPI.getDashboard(),
+        userAPI.getLinkedAccounts().catch(() => ({ data: { data: { linked_providers: [], accounts: [] } } })),
         gamificationAPI.getStats().catch(() => ({ data: { data: null } })), // Graceful fallback
       ]);
       
       const profileData = profileRes.data.data;
-      const statsData = statsRes.data.data;
+      const linkedData = linkedAccountsRes.data.data || {};
       const gamificationData = gamificationRes.data?.data;
       
       setUserProfile(profileData);
       setUserStats({
-        resources: statsData?.stats?.total_bookmarks || 0,
-        downloads: statsData?.stats?.total_downloads || 0,
-        saved: statsData?.stats?.total_favorites || 0,
-        uploads: statsData?.stats?.total_uploads || 0,
+        bookmarks: profileData?.stats?.total_bookmarks || 0,
+        downloads: profileData?.stats?.total_downloads || 0,
+        comments: profileData?.stats?.total_comments || 0,
+        uploads: profileData?.stats?.total_uploads || 0,
       });
+      const accounts = Array.isArray(linkedData?.accounts) ? linkedData.accounts : [];
+      const accountMap = new Map<string, any>(
+        accounts.map((account: any, index: number) => [
+          String(account?.provider || `provider-${index}`),
+          account as any,
+        ])
+      );
+      const providerNames = Array.from(
+        new Set([
+          ...(Array.isArray(linkedData?.linked_providers) ? linkedData.linked_providers : []),
+          ...accounts.map((account: any) => String(account?.provider || '').trim()).filter(Boolean),
+        ])
+      );
+      setLinkedProviders(
+        providerNames.map((provider: any, index: number) => {
+          const account: any = accountMap.get(String(provider));
+          return {
+            id: String(account?.id || `${provider}-${index}`),
+            provider: provider as LinkedProvider['provider'],
+            email: account?.provider_email || profileData?.email || '',
+            connected: true,
+          };
+        })
+      );
       
       // Set gamification stats if available
       if (gamificationData) {
+        const earnedBadges = Array.isArray(gamificationData.earned_badges)
+          ? gamificationData.earned_badges
+          : [];
+        const allBadges = Array.isArray(gamificationData.all_badges)
+          ? gamificationData.all_badges
+          : [];
+        const badgesSource = earnedBadges.length > 0 ? earnedBadges : allBadges;
+        const mappedBadges = badgesSource.map((badge: any) => ({
+          id: String(badge?.id || ''),
+          name: String(badge?.name || 'Badge'),
+          icon: String(badge?.icon || ''),
+          is_earned: earnedBadges.length > 0 ? true : Boolean(badge?.is_earned),
+          category: String(badge?.category || ''),
+        }));
+
         setGamificationStats({
-          total_points: gamificationData.total_points || 0,
-          total_uploads: gamificationData.stats?.total_uploads || 0,
-          total_downloads: gamificationData.stats?.total_downloads || 0,
-          total_shares: gamificationData.stats?.total_shares || 0,
-          total_comments: gamificationData.stats?.total_comments || 0,
-          rank: gamificationData.rank,
-          badges: gamificationData.badges || [],
+          total_points: Number(gamificationData.total_points || 0),
+          total_uploads: Number(gamificationData.total_uploads || 0),
+          total_downloads: Number(gamificationData.total_downloads || 0),
+          total_shares: Number(gamificationData.total_shares || 0),
+          total_comments: Number(gamificationData.total_comments || 0),
+          leaderboard_rank:
+            gamificationData.leaderboard_rank === null ||
+            gamificationData.leaderboard_rank === undefined
+              ? null
+              : Number(gamificationData.leaderboard_rank),
+          badges: mappedBadges,
         });
       }
     } catch (err: any) {
@@ -200,6 +243,20 @@ const ProfileScreen: React.FC = () => {
     }
   };
 
+  const getRankBadge = (rank?: number | null) => {
+    if (!rank || rank < 1) return null;
+    if (rank <= 3) {
+      return { label: 'Elite', icon: 'diamond', color: colors.warning };
+    }
+    if (rank <= 10) {
+      return { label: 'Gold', icon: 'star', color: colors.accent[500] };
+    }
+    if (rank <= 50) {
+      return { label: 'Silver', icon: 'shield-checkmark', color: colors.gray[500] };
+    }
+    return { label: 'Bronze', icon: 'pricetag', color: colors.accent[700] };
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -222,7 +279,8 @@ const ProfileScreen: React.FC = () => {
   }
 
   const profile = userProfile;
-  const stats = userStats || { resources: 0, downloads: 0, saved: 0, uploads: 0 };
+  const stats = userStats || { bookmarks: 0, downloads: 0, comments: 0, uploads: 0 };
+  const rankBadge = getRankBadge(gamificationStats?.leaderboard_rank);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -235,7 +293,7 @@ const ProfileScreen: React.FC = () => {
       <View style={styles.profileCard}>
         <View style={styles.avatarContainer}>
           {profile?.avatar ? (
-            <Image source={{ uri: profile.avatar }} style={styles.avatarImage} />
+            <Image source={{ uri: profile.avatar }} style={styles.avatarImage} resizeMode="cover" />
           ) : (
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
@@ -265,6 +323,19 @@ const ProfileScreen: React.FC = () => {
               <Text style={styles.badgeText}>{profile.department}</Text>
             </View>
           )}
+          {rankBadge ? (
+            <View
+              style={[
+                styles.tierBadge,
+                { backgroundColor: `${rankBadge.color}20` },
+              ]}
+            >
+              <Icon name={rankBadge.icon as any} size={12} color={rankBadge.color} />
+              <Text style={[styles.tierBadgeText, { color: rankBadge.color }]}>
+                {rankBadge.label}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -309,8 +380,8 @@ const ProfileScreen: React.FC = () => {
       {/* Stats - From Backend */}
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>{stats.resources}</Text>
-          <Text style={styles.statLabel}>Resources</Text>
+          <Text style={styles.statValue}>{stats.bookmarks}</Text>
+          <Text style={styles.statLabel}>Bookmarks</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
@@ -319,8 +390,8 @@ const ProfileScreen: React.FC = () => {
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>{stats.saved}</Text>
-          <Text style={styles.statLabel}>Saved</Text>
+          <Text style={styles.statValue}>{stats.comments}</Text>
+          <Text style={styles.statLabel}>Comments</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
@@ -334,12 +405,32 @@ const ProfileScreen: React.FC = () => {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Achievements & Progress</Text>
-            {gamificationStats.rank && (
-              <View style={styles.rankBadge}>
-                <Icon name="diamond" size={14} color="#D97706" />
-                <Text style={styles.rankText}>#{gamificationStats.rank}</Text>
+            {gamificationStats.leaderboard_rank ? (
+              <View
+                style={[
+                  styles.rankBadge,
+                  {
+                    backgroundColor: `${
+                      rankBadge?.color || colors.warning
+                    }20`,
+                  },
+                ]}
+              >
+                <Icon
+                  name={(rankBadge?.icon || 'diamond') as any}
+                  size={14}
+                  color={rankBadge?.color || colors.warning}
+                />
+                <Text
+                  style={[
+                    styles.rankText,
+                    { color: rankBadge?.color || colors.warning },
+                  ]}
+                >
+                  {rankBadge ? rankBadge.label : 'Rank'} • #{gamificationStats.leaderboard_rank}
+                </Text>
               </View>
-            )}
+            ) : null}
           </View>
           <View style={styles.gamificationCard}>
             {/* Points */}
@@ -567,7 +658,8 @@ const styles = StyleSheet.create({
   },
   badgeRow: { 
     flexDirection: 'row', 
-    gap: spacing[2] 
+    gap: spacing[2],
+    flexWrap: 'wrap',
   },
   badge: { 
     backgroundColor: colors.primary[50], 
@@ -582,6 +674,18 @@ const styles = StyleSheet.create({
     fontSize: 12, 
     fontWeight: '500', 
     color: colors.primary[700] 
+  },
+  tierBadge: {
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+  },
+  tierBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   section: {
     marginHorizontal: spacing[6],
@@ -873,7 +977,7 @@ const styles = StyleSheet.create({
   rankBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.warning[50],
+    backgroundColor: `${colors.warning}20`,
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[1],
     borderRadius: borderRadius.full,
@@ -881,7 +985,7 @@ const styles = StyleSheet.create({
   rankText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.warning[700],
+    color: colors.warning,
     marginLeft: spacing[1],
   },
   bottomSpacing: {

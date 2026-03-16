@@ -9,7 +9,7 @@ import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
 import ErrorState from '../../components/ui/ErrorState';
-import api from '../../services/api';
+import { adminAPI } from '../../services/api';
 
 interface Faculty {
   id: string;
@@ -25,7 +25,8 @@ interface Department {
   id: string;
   name: string;
   code: string;
-  faculty: string;
+  faculty_id?: string;
+  faculty_name?: string;
   is_active: boolean;
   course_count?: number;
   description?: string;
@@ -50,15 +51,22 @@ const FacultiesScreen: React.FC = () => {
       }
       
       const [facultiesRes, departmentsRes] = await Promise.all([
-        api.get('/faculties/'),
-        api.get('/faculties/departments/'),
+        adminAPI.getFaculties({ page_size: 200 }),
+        adminAPI.getDepartments({ page_size: 200 }),
       ]);
+
+      const facultiesData = facultiesRes?.data?.data?.results || [];
+      const departmentsData = departmentsRes?.data?.data?.results || [];
       
-      setFaculties(facultiesRes.data?.results || facultiesRes.data || []);
-      setDepartments(departmentsRes.data?.results || departmentsRes.data || []);
+      setFaculties(facultiesData);
+      setDepartments(departmentsData);
     } catch (err: any) {
       console.error('Failed to fetch faculties:', err);
-      setError(err.response?.data?.message || 'Failed to load data');
+      setError(
+        err.response?.data?.message ||
+          err.response?.data?.error?.message ||
+          'Failed to load data'
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -92,25 +100,38 @@ const FacultiesScreen: React.FC = () => {
   };
 
   const handleSave = async () => {
+    if (!formData.name || !formData.code) {
+      Alert.alert('Validation Error', 'Please enter name and code');
+      return;
+    }
     try {
       if (editingItem) {
-        await api.patch(`/faculties/${editingItem.id}/`, formData);
+        await adminAPI.updateFaculty(editingItem.id, {
+          name: formData.name,
+          code: formData.code,
+        });
         Alert.alert('Success', 'Updated successfully');
       } else {
-        await api.post('/faculties/', formData);
+        await adminAPI.createFaculty({ name: formData.name, code: formData.code });
         Alert.alert('Success', 'Created successfully');
       }
       setModalVisible(false);
       fetchData(true);
     } catch (err: any) {
-      Alert.alert('Error', 'Failed to save');
+      console.error('Failed to save faculty:', err);
+      const errorMsg =
+        err.response?.data?.message ||
+        err.response?.data?.error?.message ||
+        'Failed to save';
+      Alert.alert('Error', errorMsg);
     }
   };
 
   const handleToggleActive = async (item: Faculty | Department, type: 'faculty' | 'department') => {
     try {
-      const endpoint = type === 'faculty' ? `/faculties/${item.id}/` : `/faculties/departments/${item.id}/`;
-      await api.patch(endpoint, { is_active: !item.is_active });
+      if (type === 'faculty') {
+        await adminAPI.updateFaculty(item.id, { is_active: !(item.is_active ?? true) });
+      }
       fetchData(true);
     } catch (err: any) {
       Alert.alert('Error', 'Failed to update status');
@@ -151,7 +172,7 @@ const FacultiesScreen: React.FC = () => {
       </View>
       <View style={styles.itemInfo}>
         <Text style={styles.itemName}>{item.name}</Text>
-        <Text style={styles.itemMeta}>{item.code} • {item.faculty}</Text>
+        <Text style={styles.itemMeta}>{item.code} • {item.faculty_name || 'No faculty'}</Text>
       </View>
       <View style={styles.itemActions}>
         <TouchableOpacity style={styles.actionButton} onPress={() => handleEdit(item)}>
