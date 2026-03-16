@@ -1,7 +1,8 @@
 // API Service for CampusHub Mobile App
 // Backend/mobile integration layer with endpoint and response normalization.
 
-import axios, {
+import axios from '../utils/axios-shim';
+import {
   AxiosError,
   AxiosInstance,
   AxiosResponse,
