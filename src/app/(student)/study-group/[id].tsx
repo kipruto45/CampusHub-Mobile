@@ -525,6 +525,7 @@ const StudyGroupDetailScreen: React.FC = () => {
                   <View style={styles.postHeader}>
                     <View style={styles.postAuthorAvatar}>
                       <Avatar
+                        forceInitials
                         source={post.author?.avatar}
                         name={`${post.author?.first_name || ''} ${post.author?.last_name || ''}`.trim()}
                         sizePx={40}
@@ -579,6 +580,7 @@ const StudyGroupDetailScreen: React.FC = () => {
                 <View key={member.id} style={styles.memberCard}>
                   <View style={styles.memberAvatar}>
                     <Avatar
+                      forceInitials
                       source={member.user?.avatar}
                       name={`${member.user?.first_name || ''} ${member.user?.last_name || ''}`.trim()}
                       sizePx={48}

@@ -11,6 +11,8 @@ interface AvatarProps {
   sizePx?: number;
   showBorder?: boolean;
   cacheKey?: string;
+  /** When true, ignore source and render initials only. */
+  forceInitials?: boolean;
 }
 
 const sizes = {
@@ -56,16 +58,18 @@ export const Avatar: React.FC<AvatarProps> = ({
   sizePx,
   showBorder = false,
   cacheKey,
+  forceInitials = false,
 }) => {
   const cacheKeyValue = useMemo(() => (cacheKey ? String(cacheKey) : ''), [cacheKey]);
   const dimension = sizePx ?? sizes[size];
   const fontSize = sizePx ? Math.max(12, Math.round(sizePx / 2.8)) : fontSizes[size];
 
   const initialUri = useMemo(() => {
+    if (forceInitials) return null;
     const cached = getCachedAvatar(cacheKeyValue);
     const normalizedSource = source?.trim();
     return cached || normalizedSource || null;
-  }, [cacheKeyValue, source]);
+  }, [cacheKeyValue, source, forceInitials]);
 
   const [displayUri, setDisplayUri] = useState<string | null>(initialUri);
 
@@ -79,7 +83,7 @@ export const Avatar: React.FC<AvatarProps> = ({
   };
 
   useEffect(() => {
-    const normalizedSource = source?.trim();
+    const normalizedSource = forceInitials ? null : source?.trim();
     const cached = getCachedAvatar(cacheKeyValue);
 
     if (!normalizedSource) {
@@ -113,7 +117,7 @@ export const Avatar: React.FC<AvatarProps> = ({
     };
   }, [source, cacheKeyValue, displayUri]);
 
-  const resolvedSource = displayUri || source?.trim() || null;
+  const resolvedSource = forceInitials ? null : displayUri || source?.trim() || null;
 
   return (
     <View

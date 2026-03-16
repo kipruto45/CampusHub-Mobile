@@ -2,6 +2,7 @@
 // Main app entry point with notification initialization
 
 import { Stack, useRouter } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, AppState, AppStateStatus, Alert } from 'react-native';
 import { useEffect, useRef } from 'react';
@@ -69,6 +70,45 @@ export default function RootLayout() {
       notificationService.removeNotificationListeners();
     };
   }, []);
+
+  // Handle deep links (invite links, shared resources)
+  useEffect(() => {
+    const handleDeepLink = (url?: string | null) => {
+      if (!url) return;
+      const parsed = Linking.parse(url);
+      const path = (parsed.path || '').replace(/^\/+/, '');
+      const segments = path.split('/').filter(Boolean);
+      const qp = parsed.queryParams || {};
+
+      // Study group invites
+      const inviteToken =
+        (segments[0] === 'invite' && segments[1]) ||
+        (segments[0] === 'group-invite' && segments[1]) ||
+        (typeof qp.token === 'string' && qp.token) ||
+        (typeof qp.invite === 'string' && qp.invite);
+      if (inviteToken) {
+        router.push(`/(student)/group-invite?token=${inviteToken}`);
+        return;
+      }
+
+      // Shared resources (by id or slug)
+      const resourceId =
+        (segments[0] === 'resource' && segments[1]) ||
+        (segments[0] === 'r' && segments[1]) ||
+        (typeof qp.resource === 'string' && qp.resource) ||
+        (typeof qp.resource_id === 'string' && qp.resource_id);
+      if (resourceId) {
+        router.push(`/(student)/resource/${resourceId}`);
+        return;
+      }
+    };
+
+    // initial URL
+    Linking.getInitialURL().then(handleDeepLink).catch(() => {});
+    // runtime URL events
+    const sub = Linking.addEventListener('url', ({ url }) => handleDeepLink(url));
+    return () => sub.remove();
+  }, [router]);
 
   useEffect(() => {
     const unsubscribe = notificationService.subscribeToRealtimeNotifications((notification) => {

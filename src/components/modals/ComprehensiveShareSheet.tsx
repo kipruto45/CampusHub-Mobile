@@ -126,7 +126,8 @@ const ResourceShareSheet: React.FC<Props> = ({
     setLoading(true);
     try {
       const payload = await resourcesService.getResourceShareLink(resource.id);
-      await copyToClipboard(payload.share_url);
+      const shareUrl = payload.deep_link_url || payload.share_url;
+      await copyToClipboard(shareUrl);
       await resourcesService.recordResourceShare(resource.id, 'copy_link');
     } catch (error) {
       console.error('Failed to copy link:', error);
@@ -141,10 +142,11 @@ const ResourceShareSheet: React.FC<Props> = ({
     setLoading(true);
     try {
       const payload = await resourcesService.getResourceShareLink(resource.id);
+      const shareUrl = payload.deep_link_url || payload.share_url;
       const shared = await openNativeShareSheet({
         title: payload.title,
         message: payload.share_message,
-        url: payload.share_url,
+        url: shareUrl,
       });
       if (shared) {
         await resourcesService.recordResourceShare(resource.id, 'native_share');

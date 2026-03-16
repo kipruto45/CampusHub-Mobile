@@ -75,6 +75,7 @@ const LeaderboardScreen: React.FC = () => {
         {/* Second Place */}
         <TouchableOpacity style={[styles.topThreeCard, styles.secondPlace]}>
           <Avatar
+            forceInitials
             source={topThree[0].user.avatar || topThree[0].user.profile_image_url}
             name={`${topThree[0].user.first_name} ${topThree[0].user.last_name}`.trim()}
             sizePx={56}
@@ -93,6 +94,7 @@ const LeaderboardScreen: React.FC = () => {
             <Icon name="star" size={20} color="#FFD700" />
           </View>
           <Avatar
+            forceInitials
             source={topThree[1].user.avatar || topThree[1].user.profile_image_url}
             name={`${topThree[1].user.first_name} ${topThree[1].user.last_name}`.trim()}
             sizePx={56}
@@ -108,6 +110,7 @@ const LeaderboardScreen: React.FC = () => {
         {/* Third Place */}
         <TouchableOpacity style={[styles.topThreeCard, styles.thirdPlace]}>
           <Avatar
+            forceInitials
             source={topThree[2].user.avatar || topThree[2].user.profile_image_url}
             name={`${topThree[2].user.first_name} ${topThree[2].user.last_name}`.trim()}
             sizePx={56}
@@ -185,6 +188,7 @@ const LeaderboardScreen: React.FC = () => {
                 
                 <View style={styles.userInfo}>
                   <Avatar
+                    forceInitials
                     source={entry.user.avatar || entry.user.profile_image_url}
                     name={`${entry.user.first_name} ${entry.user.last_name}`.trim()}
                     size="md"
