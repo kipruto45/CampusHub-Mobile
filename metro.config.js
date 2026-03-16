@@ -16,6 +16,9 @@ config.resolver.extraNodeModules = {
   axios: path.resolve(__dirname, 'node_modules/axios'),
 };
 
+// Enable package exports resolution (needed for axios 1.x)
+config.resolver.unstable_enablePackageExports = true;
+
 // Use minimal workers
 config.maxWorkers = 2;
 
