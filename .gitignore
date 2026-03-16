@@ -9,11 +9,13 @@ node_modules
 .env
 .env.*
 android/local.properties
+android/.kotlin/
 dist
 web-build
 campushub-*.json
 android/app/google-services.json
 ios/GoogleService-Info.plist
+.apk
 
 # Local Netlify folder
 .netlify
