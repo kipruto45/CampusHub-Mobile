@@ -2,6 +2,7 @@ const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 
 const config = getDefaultConfig(__dirname);
+const { sourceExts = [] } = config.resolver || {};
 const defaultResolveRequest = config.resolver.resolveRequest;
 
 // Exclude build directories from watching to fix ENOSPC error
@@ -10,6 +11,9 @@ config.resolver.blockList = [
   /ios\/.*/,
   /\.expo\/.*/,
 ];
+
+// Allow CommonJS modules with .cjs extension (axios ships CJS builds)
+config.resolver.sourceExts = Array.from(new Set([...sourceExts, 'cjs']));
 
 // Force resolution of axios from project node_modules to avoid "module not found" during bundling
 config.resolver.extraNodeModules = {
