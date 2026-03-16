@@ -5,13 +5,16 @@ const config = getDefaultConfig(__dirname);
 
 // Exclude build directories from watching to fix ENOSPC error
 config.resolver.blockList = [
-  /node_modules\/.*\/android\/build\/.*/,
-  /node_modules\/.*\/ios\/build\/.*/,
-  /node_modules\/.*\/build\/.*/,
-  /\.expo\/.*/,
   /android\/.*/,
   /ios\/.*/,
+  /\.expo\/.*/,
 ];
+
+// Force resolution of axios from project node_modules to avoid "module not found" during bundling
+config.resolver.extraNodeModules = {
+  ...(config.resolver.extraNodeModules || {}),
+  axios: path.resolve(__dirname, 'node_modules/axios'),
+};
 
 // Use minimal workers
 config.maxWorkers = 2;
