@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { useToast } from '../../components/ui/Toast';
 import { useRouter } from 'expo-router';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
@@ -12,24 +13,24 @@ import Icon from '../../components/ui/Icon';
 
 const ForgotPasswordScreen: React.FC = () => {
   const router = useRouter();
+  const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
     if (!email) {
-      Alert.alert('Error', 'Please enter your email address');
+      showToast('error', 'Please enter your email address');
       return;
     }
     
     setLoading(true);
     try {
       await authAPI.forgotPassword(email);
-      Alert.alert('Success', 'Password reset link sent to your email!', [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      showToast('success', 'Password reset link sent to your email!');
+      router.back();
     } catch (error: any) {
       const message = error.response?.data?.message || 'Failed to send reset link. Please try again.';
-      Alert.alert('Error', message);
+      showToast('error', message);
     } finally {
       setLoading(false);
     }

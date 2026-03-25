@@ -4,11 +4,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
 import { userAPI, trashAPI } from '../../services/api';
+import { cloudStorageService, googleDriveService, onedriveService, type CloudAccount, type CloudStorageStats } from '../../services/cloud-storage.service';
+import { localDownloadsService } from '../../services/local-downloads.service';
 
 // Storage Categories
 interface StorageCategory {
@@ -30,6 +34,10 @@ interface StorageData {
 const StorageScreen: React.FC = () => {
   const router = useRouter();
   const [showClearCacheModal, setShowClearCacheModal] = useState(false);
+  const [cloudAccounts, setCloudAccounts] = useState<CloudAccount[]>([]);
+  const [cloudStats, setCloudStats] = useState<{ google_drive?: CloudStorageStats; onedrive?: CloudStorageStats }>({});
+  const [loadingCloud, setLoadingCloud] = useState(false);
+  const [connectingCloud, setConnectingCloud] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,11 +72,84 @@ const StorageScreen: React.FC = () => {
 
   useEffect(() => {
     fetchStorageData();
+    fetchCloudAccounts();
   }, [fetchStorageData]);
+
+  const fetchCloudAccounts = async () => {
+    try {
+      const accounts = await cloudStorageService.getConnectedAccounts();
+      setCloudAccounts(accounts);
+      
+      // Fetch stats for each connected account
+      const stats: { google_drive?: CloudStorageStats; onedrive?: CloudStorageStats } = {};
+      for (const account of accounts) {
+        if (account.provider === 'google_drive') {
+          stats.google_drive = await googleDriveService.getStorageStats();
+        } else if (account.provider === 'onedrive') {
+          stats.onedrive = await onedriveService.getStorageStats();
+        }
+      }
+      setCloudStats(stats);
+    } catch (err) {
+      console.error('Failed to fetch cloud accounts:', err);
+    }
+  };
+
+  const handleConnectCloud = async (provider: 'google_drive' | 'onedrive') => {
+    try {
+      setConnectingCloud(provider);
+      const { authUrl } = provider === 'google_drive' 
+        ? await googleDriveService.connect()
+        : await onedriveService.connect();
+      
+      // Open browser for OAuth
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, 'campushub://');
+      
+      if (result.type === 'success') {
+        await fetchCloudAccounts();
+      }
+    } catch (err: any) {
+      Alert.alert('Connection Failed', err.message || 'Failed to connect to cloud storage');
+    } finally {
+      setConnectingCloud(null);
+    }
+  };
+
+  const handleDisconnectCloud = async (provider: 'google_drive' | 'onedrive') => {
+    Alert.alert(
+      'Disconnect Cloud Storage',
+      `Are you sure you want to disconnect your ${provider === 'google_drive' ? 'Google Drive' : 'OneDrive'} account?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoadingCloud(true);
+              provider === 'google_drive' 
+                ? await googleDriveService.disconnect()
+                : await onedriveService.disconnect();
+              await fetchCloudAccounts();
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to disconnect');
+            } finally {
+              setLoadingCloud(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Check if cloud is connected
+  const isGoogleConnected = cloudAccounts.some(a => a.provider === 'google_drive');
+  const isOneDriveConnected = cloudAccounts.some(a => a.provider === 'onedrive');
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchStorageData();
+    fetchCloudAccounts();
   }, [fetchStorageData]);
 
   // Storage data from API
@@ -106,21 +187,36 @@ const StorageScreen: React.FC = () => {
     { name: 'Used Storage', size: formatSize(usedStorage), sizeBytes: usedStorage, percentage: percentage, icon: 'folder', color: colors.primary[500], fileCount: 0 },
   ] : [];
 
-  const handleClearCache = () => {
-    Alert.alert(
-      'Clear Cache',
-      'This will remove temporary files and free up storage space.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Clear', 
-          onPress: () => {
-            setShowClearCacheModal(false);
-            Alert.alert('Success', 'Cache cleared successfully!');
-          }
-        }
-      ]
-    );
+  const handleClearCache = async () => {
+    try {
+      setLoading(true);
+      const result = await localDownloadsService.clearAll();
+      setShowClearCacheModal(false);
+      const freedMb = result.bytes / (1024 * 1024);
+      await fetchStorageData();
+      Alert.alert(
+        'Cache cleared',
+        `Removed ${result.deleted} files${freedMb ? ` and freed ${freedMb.toFixed(1)} MB` : ''}.`
+      );
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to clear cache');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManageDownloads = () => router.push('/(student)/downloads');
+
+  const handleSyncCloud = async (provider: 'google_drive' | 'onedrive') => {
+    try {
+      setLoadingCloud(true);
+      await cloudStorageService.syncFiles(provider);
+      Alert.alert('Sync complete', `${provider === 'google_drive' ? 'Google Drive' : 'OneDrive'} files are up to date.`);
+    } catch (err: any) {
+      Alert.alert('Sync failed', err.message || 'Could not sync files');
+    } finally {
+      setLoadingCloud(false);
+    }
   };
 
   const renderProgressCircle = () => {
@@ -210,7 +306,10 @@ const StorageScreen: React.FC = () => {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {/* Storage Overview Card */}
         <View style={styles.overviewCard}>
           {renderProgressCircle()}
@@ -290,13 +389,13 @@ const StorageScreen: React.FC = () => {
               <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionItem}>
-              <View style={[styles.actionIcon, { backgroundColor: colors.accent[50] }]}>
+            <TouchableOpacity style={styles.actionItem} onPress={handleManageDownloads}>
+              <View style={[styles.actionIcon, { backgroundColor: colors.accent[50] }]}> 
                 <Icon name="download" size={22} color={colors.accent[500]} />
               </View>
               <View style={styles.actionInfo}>
                 <Text style={styles.actionTitle}>Manage Downloads</Text>
-                <Text style={styles.actionSubtitle}>12 files saved offline</Text>
+                <Text style={styles.actionSubtitle}>View and remove offline files</Text>
               </View>
               <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
             </TouchableOpacity>
@@ -316,7 +415,7 @@ const StorageScreen: React.FC = () => {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionItem}>
-              <View style={[styles.actionIcon, { backgroundColor: colors.info + '20' }]}>
+              <View style={[styles.actionIcon, { backgroundColor: colors.info + '20' }]}> 
                 <Icon name="time" size={22} color={colors.info} />
               </View>
               <View style={styles.actionInfo}>
@@ -326,6 +425,94 @@ const StorageScreen: React.FC = () => {
               <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* Cloud Storage Connections */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Cloud Storage</Text>
+          <View style={styles.actionsCard}>
+            {/* Google Drive */}
+            <TouchableOpacity 
+              style={styles.actionItem}
+              onPress={() => isGoogleConnected ? handleDisconnectCloud('google_drive') : handleConnectCloud('google_drive')}
+              disabled={connectingCloud === 'google_drive'}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: '#4285F420' }]}>
+                <Text style={{ fontSize: 20 }}>📁</Text>
+              </View>
+              <View style={styles.actionInfo}>
+                <Text style={styles.actionTitle}>Google Drive</Text>
+                <Text style={styles.actionSubtitle}>
+                  {isGoogleConnected 
+                    ? (cloudStats.google_drive ? `${formatSize(cloudStats.google_drive.storage_used)} of ${formatSize(cloudStats.google_drive.storage_total)} used` : 'Connected')
+                    : 'Connect to import/export files'}
+                </Text>
+              </View>
+              {connectingCloud === 'google_drive' ? (
+                <ActivityIndicator size="small" color={colors.primary[500]} />
+              ) : (
+                <Icon 
+                  name={isGoogleConnected ? 'checkmark-circle' : 'chevron-forward'} 
+                  size={20} 
+                  color={isGoogleConnected ? colors.success : colors.text.tertiary} 
+                />
+              )}
+            </TouchableOpacity>
+
+            {/* OneDrive */}
+            <TouchableOpacity 
+              style={styles.actionItem}
+              onPress={() => isOneDriveConnected ? handleDisconnectCloud('onedrive') : handleConnectCloud('onedrive')}
+              disabled={connectingCloud === 'onedrive'}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: '#0078D420' }]}>
+                <Text style={{ fontSize: 20 }}>☁️</Text>
+              </View>
+              <View style={styles.actionInfo}>
+                <Text style={styles.actionTitle}>OneDrive</Text>
+                <Text style={styles.actionSubtitle}>
+                  {isOneDriveConnected 
+                    ? (cloudStats.onedrive ? `${formatSize(cloudStats.onedrive.storage_used)} of ${formatSize(cloudStats.onedrive.storage_total)} used` : 'Connected')
+                    : 'Connect to import/export files'}
+                </Text>
+              </View>
+              {connectingCloud === 'onedrive' ? (
+                <ActivityIndicator size="small" color={colors.primary[500]} />
+              ) : (
+                <Icon 
+                  name={isOneDriveConnected ? 'checkmark-circle' : 'chevron-forward'} 
+                  size={20} 
+                  color={isOneDriveConnected ? colors.success : colors.text.tertiary} 
+                />
+              )}
+            </TouchableOpacity>
+          </View>
+          
+          {(isGoogleConnected || isOneDriveConnected) && (
+            <View style={[styles.actionsCard, { marginTop: 12 }]}>
+              <TouchableOpacity style={styles.actionItem} onPress={() => handleSyncCloud('google_drive')} disabled={loadingCloud}>
+                <View style={[styles.actionIcon, { backgroundColor: colors.primary[50] }]}> 
+                  <Icon name="download" size={22} color={colors.primary[500]} />
+                </View>
+                <View style={styles.actionInfo}>
+                  <Text style={styles.actionTitle}>Import from Cloud</Text>
+                  <Text style={styles.actionSubtitle}>Add files from Google Drive or OneDrive</Text>
+                </View>
+                <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.actionItem} onPress={() => handleSyncCloud('onedrive')} disabled={loadingCloud}>
+                <View style={[styles.actionIcon, { backgroundColor: colors.accent[50] }]}> 
+                  <Icon name="cloud-upload" size={22} color={colors.accent[500]} />
+                </View>
+                <View style={styles.actionInfo}>
+                  <Text style={styles.actionTitle}>Export to Cloud</Text>
+                  <Text style={styles.actionSubtitle}>Backup resources to cloud storage</Text>
+                </View>
+                <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Storage Tips */}

@@ -1,8 +1,10 @@
 // Library Screen for CampusHub
 // Personal library for private files - Backend-driven
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Alert, Modal, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { colors } from '../../../theme/colors';
 import { spacing, borderRadius } from '../../../theme/spacing';
@@ -14,6 +16,24 @@ import FavoriteFolderButton from '../../../components/library/FavoriteFolderButt
 import { favoritesService } from '../../../services/favorites.service';
 import { libraryService } from '../../../services/library.service';
 import { mobileAutomationService } from '../../../services/mobileAutomation.service';
+import { useToast } from '../../../components/ui/Toast';
+
+const formatNumber = (value: number) => {
+  try {
+    return new Intl.NumberFormat().format(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const formatDateLocale = (iso: string) => {
+  if (!iso) return '';
+  try {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+};
 
 // Types matching backend response
 interface Folder {
@@ -45,10 +65,14 @@ interface LibrarySummary {
 
 const LibraryScreen: React.FC = () => {
   const router = useRouter();
+  const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [showRenameFolder, setShowRenameFolder] = useState(false);
+  const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
+  const [renameFolderName, setRenameFolderName] = useState('');
   const [activeTab, setActiveTab] = useState<'files' | 'folders'>('folders');
   
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -59,10 +83,14 @@ const LibraryScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
+  const [pendingActions, setPendingActions] = useState<{ id: string; exec: () => Promise<unknown> }[]>([]);
+  const [lastOpenedMap, setLastOpenedMap] = useState<Record<string, string>>({});
 
   const fetchLibraryData = useCallback(async () => {
     try {
       setError(null);
+      setIsOffline(false);
 
       const [storageSummary, foldersData, filesData] = await Promise.all([
         libraryService.getStorageSummary(),
@@ -100,7 +128,11 @@ const LibraryScreen: React.FC = () => {
       );
     } catch (err: any) {
       console.error('Failed to fetch library:', err);
-      setError(err.response?.data?.message || 'Failed to load library');
+      const message = err.response?.data?.message || 'Failed to load library';
+      setError(message);
+      if (message.toLowerCase().includes('network') || message.toLowerCase().includes('offline')) {
+        setIsOffline(true);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -109,12 +141,57 @@ const LibraryScreen: React.FC = () => {
 
   useEffect(() => {
     fetchLibraryData();
+    const unsub = NetInfo.addEventListener((state) => {
+      setIsOffline(state.isConnected === false);
+    });
+    // load last opened map
+    AsyncStorage.getItem('library_last_opened_v1')
+      .then((val) => {
+        if (val) {
+          setLastOpenedMap(JSON.parse(val));
+        }
+      })
+      .catch(() => {});
+    return () => unsub();
   }, [fetchLibraryData]);
+
+  useEffect(() => {
+    const flush = async () => {
+      if (isOffline || pendingActions.length === 0) return;
+      const queue = [...pendingActions];
+      setPendingActions([]);
+      for (const action of queue) {
+        try {
+          await action.exec();
+        } catch (err) {
+          console.error('Queued action failed', err);
+          showToast('error', 'Some offline actions failed to sync');
+        }
+      }
+    };
+    void flush();
+  }, [isOffline, pendingActions, showToast]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchLibraryData();
   }, [fetchLibraryData]);
+
+  const filteredFolders = useMemo(() => {
+    if (!searchQuery.trim()) return folders;
+    const term = searchQuery.trim().toLowerCase();
+    return folders.filter((f) => f.name.toLowerCase().includes(term));
+  }, [folders, searchQuery]);
+
+  const filteredFiles = useMemo(() => {
+    const term = searchQuery.trim().toLowerCase();
+    const pool = term ? files.filter((f) => f.name.toLowerCase().includes(term)) : files;
+    return [...pool].sort((a, b) => {
+      const aTime = new Date(lastOpenedMap[a.id] || a.updated_at || a.created_at).getTime();
+      const bTime = new Date(lastOpenedMap[b.id] || b.updated_at || b.created_at).getTime();
+      return bTime - aTime;
+    });
+  }, [files, searchQuery, lastOpenedMap]);
 
   const handleRetry = useCallback(() => {
     setLoading(true);
@@ -124,7 +201,7 @@ const LibraryScreen: React.FC = () => {
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
-      Alert.alert('Error', 'Please enter a folder name');
+      showToast('error', 'Please enter a folder name');
       return;
     }
     
@@ -137,50 +214,82 @@ const LibraryScreen: React.FC = () => {
       await libraryService.createFolder({ name: safeName });
       setNewFolderName('');
       setShowCreateFolder(false);
-      Alert.alert('Success', 'Folder created successfully!');
+      showToast('success', 'Folder created successfully!');
       fetchLibraryData();
     } catch (err: any) {
       console.error('Failed to create folder:', err);
-      Alert.alert('Error', 'Failed to create folder');
+      showToast('error', 'Failed to create folder');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDeleteFolder = async (id: string, name: string) => {
-    Alert.alert('Delete Folder', `Are you sure you want to delete "${name}" and all its contents?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { 
-        text: 'Delete', 
-        style: 'destructive', 
-          onPress: async () => {
-            try {
-              await libraryService.deleteFolder(id);
-              setFolders(prev => prev.filter(f => f.id !== id));
-            } catch (err) {
-              Alert.alert('Error', 'Failed to delete folder');
-          }
-        }
-      },
-    ]);
+    const exec = async () => libraryService.deleteFolder(id);
+    const optimistic = () => setFolders((prev) => prev.filter((f) => f.id !== id));
+    optimistic();
+    if (isOffline) {
+      setPendingActions((q) => [...q, { id: `delete-folder-${id}`, exec }]);
+      showToast('info', 'Folder deletion queued offline');
+      return;
+    }
+    try {
+      await exec();
+      showToast('success', 'Folder deleted.');
+    } catch (err) {
+      showToast('error', 'Failed to delete folder');
+      fetchLibraryData();
+    }
+  };
+
+  const handleRenameFolder = async () => {
+    if (!renameFolderId || !renameFolderName.trim()) {
+      showToast('error', 'Folder name required');
+      return;
+    }
+    const exec = async () => libraryService.renameFolder(renameFolderId, renameFolderName.trim());
+    const optimistic = () =>
+      setFolders((prev) =>
+        prev.map((f) => (f.id === renameFolderId ? { ...f, name: renameFolderName.trim() } : f))
+      );
+    optimistic();
+    setShowRenameFolder(false);
+    setRenameFolderId(null);
+    setRenameFolderName('');
+
+    if (isOffline) {
+      setPendingActions((q) => [...q, { id: `rename-folder-${renameFolderId}`, exec }]);
+      showToast('info', 'Rename queued offline');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await exec();
+      showToast('success', 'Folder renamed');
+    } catch (err: any) {
+      showToast('error', err?.response?.data?.message || 'Failed to rename folder');
+      fetchLibraryData();
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleDeleteFile = async (id: string, name: string) => {
-    Alert.alert('Delete File', `Are you sure you want to delete "${name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { 
-        text: 'Delete', 
-        style: 'destructive', 
-          onPress: async () => {
-            try {
-              await libraryService.deleteFile(id);
-              setFiles(prev => prev.filter(f => f.id !== id));
-            } catch (err) {
-              Alert.alert('Error', 'Failed to delete file');
-          }
-        }
-      },
-    ]);
+    const exec = async () => libraryService.deleteFile(id);
+    const optimistic = () => setFiles((prev) => prev.filter((f) => f.id !== id));
+    optimistic();
+    if (isOffline) {
+      setPendingActions((q) => [...q, { id: `delete-file-${id}`, exec }]);
+      showToast('info', 'File deletion queued offline');
+      return;
+    }
+    try {
+      await exec();
+      showToast('success', 'File deleted.');
+    } catch (err) {
+      showToast('error', 'Failed to delete file');
+      fetchLibraryData();
+    }
   };
 
   const handleToggleFolderFavorite = async (folderId: string) => {
@@ -195,15 +304,21 @@ const LibraryScreen: React.FC = () => {
       )
     );
 
+    const exec = async () => favoritesService.toggleFolderFavorite(folderId);
+    if (isOffline) {
+      setPendingActions((q) => [...q, { id: `favorite-folder-${folderId}-${Date.now()}`, exec }]);
+      showToast('info', 'Favorite update queued offline');
+      return;
+    }
     try {
-      await favoritesService.toggleFolderFavorite(folderId);
+      await exec();
     } catch {
       setFolders((prev) =>
         prev.map((folder) =>
           folder.id === folderId ? { ...folder, is_favorite: Boolean(current.is_favorite) } : folder
         )
       );
-      Alert.alert('Error', 'Failed to update folder favorite');
+      showToast('error', 'Failed to update folder favorite');
     }
   };
 
@@ -217,15 +332,21 @@ const LibraryScreen: React.FC = () => {
       )
     );
 
+    const exec = async () => favoritesService.toggleFileFavorite(fileId);
+    if (isOffline) {
+      setPendingActions((q) => [...q, { id: `favorite-file-${fileId}-${Date.now()}`, exec }]);
+      showToast('info', 'Favorite update queued offline');
+      return;
+    }
     try {
-      await favoritesService.toggleFileFavorite(fileId);
+      await exec();
     } catch {
       setFiles((prev) =>
         prev.map((file) =>
           file.id === fileId ? { ...file, is_favorite: Boolean(current.is_favorite) } : file
         )
       );
-      Alert.alert('Error', 'Failed to update file favorite');
+      showToast('error', 'Failed to update file favorite');
     }
   };
 
@@ -265,14 +386,6 @@ const LibraryScreen: React.FC = () => {
     return 'document';
   };
 
-  const filteredFolders = folders.filter(f => 
-    f.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const filteredFiles = files.filter(f => 
-    f.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   const storageUsed = summary?.used_storage ? summary.used_storage / (1024 * 1024 * 1024) : 0; // Convert to GB
   const storageTotal = summary?.storage_limit ? summary.storage_limit / (1024 * 1024 * 1024) : 10; // Default 10GB
   const storagePercent = (storageUsed / storageTotal) * 100;
@@ -282,11 +395,9 @@ const LibraryScreen: React.FC = () => {
       style={styles.folderCard}
       onPress={() => router.push(`/(student)/folder/${item.id}`)}
       onLongPress={() => {
-        Alert.alert(item.name, 'Choose an action', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Rename', onPress: () => Alert.alert('Coming Soon', 'Rename feature coming soon!') },
-          { text: 'Delete', style: 'destructive', onPress: () => handleDeleteFolder(item.id, item.name) },
-        ]);
+        setRenameFolderId(item.id);
+        setRenameFolderName(item.name);
+        setShowRenameFolder(true);
       }}
     >
       <View style={styles.folderLeft}>
@@ -295,7 +406,7 @@ const LibraryScreen: React.FC = () => {
         </View>
         <View style={styles.folderInfo}>
           <Text style={styles.folderName}>{item.name}</Text>
-          <Text style={styles.folderMeta}>{item.file_count || 0} files</Text>
+          <Text style={styles.folderMeta}>{formatNumber(item.file_count || 0)} files</Text>
         </View>
       </View>
       <View style={styles.itemActions}>
@@ -311,14 +422,16 @@ const LibraryScreen: React.FC = () => {
   const renderFileItem = ({ item }: { item: LibraryFile }) => (
     <TouchableOpacity 
       style={styles.fileCard}
-      onPress={() => router.push(`/(student)/file/${item.id}` as any)}
-      onLongPress={() => {
-        Alert.alert(item.name, 'Choose an action', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'View Details', onPress: () => router.push(`/(student)/file/${item.id}` as any) },
-          { text: 'Delete', style: 'destructive', onPress: () => handleDeleteFile(item.id, item.name) },
-        ]);
+      onPress={async () => {
+        const now = new Date().toISOString();
+        setLastOpenedMap((prev) => ({ ...prev, [item.id]: now }));
+        await AsyncStorage.setItem(
+          'library_last_opened_v1',
+          JSON.stringify({ ...lastOpenedMap, [item.id]: now })
+        );
+        router.push(`/(student)/file/${item.id}` as any);
       }}
+      onLongPress={() => handleDeleteFile(item.id, item.name)}
     >
       <View style={styles.fileLeft}>
         <View style={styles.fileIconBox}>
@@ -326,7 +439,7 @@ const LibraryScreen: React.FC = () => {
         </View>
         <View style={styles.fileInfo}>
           <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.fileMeta}>{formatFileSize(item.file_size)} • {formatDate(item.created_at)}</Text>
+          <Text style={styles.fileMeta}>{formatFileSize(item.file_size)} • {formatDateLocale(item.created_at)}</Text>
         </View>
       </View>
       <FavoriteFileButton
@@ -355,8 +468,20 @@ const LibraryScreen: React.FC = () => {
   // Loading state
   if (loading && !refreshing) {
     return (
-      <View style={[styles.container, styles.centerContent]}>
-        <ActivityIndicator size="large" color={colors.primary[500]} />
+      <View style={[styles.container, { paddingTop: spacing[6] }]}>
+        <View style={{ padding: spacing[4], gap: spacing[3] }}>
+          {[1, 2, 3].map((key) => (
+            <View key={key} style={[styles.folderCard, { opacity: 0.35 }]}>
+              <View style={styles.folderLeft}>
+                <View style={[styles.folderIconBox, { backgroundColor: colors.gray[200] }]} />
+                <View style={{ gap: 6 }}>
+                  <View style={{ width: 160, height: 12, backgroundColor: colors.gray[200], borderRadius: 6 }} />
+                  <View style={{ width: 90, height: 10, backgroundColor: colors.gray[100], borderRadius: 6 }} />
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
       </View>
     );
   }
@@ -386,7 +511,7 @@ const LibraryScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Search Bar */}
+      {/* Search & offline */}
       <View style={styles.searchContainer}>
         <Icon name="search" size={20} color={colors.text.tertiary} />
         <TextInput 
@@ -400,6 +525,12 @@ const LibraryScreen: React.FC = () => {
           <TouchableOpacity onPress={() => setSearchQuery('')}>
             <Icon name="close-circle" size={20} color={colors.text.tertiary} />
           </TouchableOpacity>
+        )}
+        {isOffline && (
+          <View style={styles.offlinePill}>
+            <Icon name="cloud-offline" size={16} color={colors.warning} />
+            <Text style={styles.offlineText}>Offline</Text>
+          </View>
         )}
       </View>
 
@@ -466,6 +597,10 @@ const LibraryScreen: React.FC = () => {
           renderItem={renderFolderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={12}
+          maxToRenderPerBatch={16}
+          windowSize={8}
+          removeClippedSubviews
           ListEmptyComponent={renderEmptyFolders}
           refreshControl={
             <RefreshControl
@@ -486,6 +621,10 @@ const LibraryScreen: React.FC = () => {
           renderItem={renderFileItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={12}
+          maxToRenderPerBatch={16}
+          windowSize={8}
+          removeClippedSubviews
           ListEmptyComponent={renderEmptyFiles}
           refreshControl={
             <RefreshControl
@@ -496,6 +635,12 @@ const LibraryScreen: React.FC = () => {
             />
           }
         />
+      )}
+
+      {isOffline && (
+        <Text style={styles.offlineMessage}>
+          You’re offline. Showing last loaded data. Pull to retry.
+        </Text>
       )}
 
       {/* Create Folder Modal */}
@@ -531,6 +676,47 @@ const LibraryScreen: React.FC = () => {
                   <ActivityIndicator size="small" color={colors.text.inverse} />
                 ) : (
                   <Text style={styles.modalBtnCreateText}>Create</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Rename Folder Modal */}
+      <Modal visible={showRenameFolder} animationType="slide" transparent onRequestClose={() => setShowRenameFolder(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Rename Folder</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Folder name"
+              placeholderTextColor={colors.text.tertiary}
+              value={renameFolderName}
+              onChangeText={setRenameFolderName}
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={[styles.modalBtn, styles.modalBtnCancel]}
+                onPress={() => {
+                  setShowRenameFolder(false);
+                  setRenameFolderId(null);
+                  setRenameFolderName('');
+                }}
+                disabled={submitting}
+              >
+                <Text style={styles.modalBtnCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalBtn, styles.modalBtnCreate, submitting && styles.modalBtnDisabled]}
+                onPress={handleRenameFolder}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color={colors.text.inverse} />
+                ) : (
+                  <Text style={styles.modalBtnCreateText}>Save</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -624,6 +810,21 @@ const styles = StyleSheet.create({
     fontSize: 15, 
     color: colors.text.primary, 
     marginLeft: spacing[2] 
+  },
+  offlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.warning + '15',
+    marginLeft: spacing[2],
+  },
+  offlineText: {
+    color: colors.warning,
+    fontWeight: '700',
+    fontSize: 12,
   },
   tabsContainer: { 
     flexDirection: 'row', 
@@ -743,6 +944,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: colors.text.primary, marginBottom: spacing[2] },
   emptyText: { fontSize: 14, color: colors.text.secondary, textAlign: 'center' },
+  offlineMessage: { textAlign: 'center', color: colors.text.tertiary, paddingVertical: spacing[3] },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: spacing[6] },
   modalContent: { backgroundColor: colors.card.light, borderRadius: borderRadius.xl, padding: spacing[6] },
   modalTitle: { fontSize: 20, fontWeight: '600', color: colors.text.primary, marginBottom: spacing[4], textAlign: 'center' },

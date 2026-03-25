@@ -191,6 +191,8 @@ type IconName =
   | 'dice'
   | 'game-controller'
   | 'gift'
+  | 'ribbon'
+  | 'ribbon-outline'
   | 'cart'
   | 'wallet'
   | 'card'
@@ -298,6 +300,7 @@ type IconName =
   | 'camera'
   | 'business'
   | 'bulb'
+  | 'sparkles'
 
 interface IconProps {
   name: IconName;

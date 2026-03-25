@@ -6,7 +6,7 @@ import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { colors } from '../../theme/colors';
 import { borderRadius } from '../../theme/spacing';
 
-type BadgeVariant = 'primary' | 'success' | 'warning' | 'error' | 'info' | 'gray';
+type BadgeVariant = 'primary' | 'success' | 'warning' | 'error' | 'info' | 'gray' | 'secondary' | 'outline';
 
 interface BadgeProps {
   label: string;
@@ -35,6 +35,10 @@ const Badge: React.FC<BadgeProps> = ({
         return '#DBEAFE';
       case 'gray':
         return colors.gray[100];
+      case 'secondary':
+        return colors.background.secondary;
+      case 'outline':
+        return colors.transparent;
       default:
         return colors.primary[100];
     }
@@ -54,10 +58,18 @@ const Badge: React.FC<BadgeProps> = ({
         return '#1E40AF';
       case 'gray':
         return colors.gray[700];
+      case 'secondary':
+        return colors.text.secondary;
+      case 'outline':
+        return colors.text.secondary;
       default:
         return colors.primary[700];
     }
   };
+
+  const outlineStyles = variant === 'outline'
+    ? { borderColor: colors.border.medium, borderWidth: 1 }
+    : null;
 
   return (
     <View
@@ -65,6 +77,7 @@ const Badge: React.FC<BadgeProps> = ({
         styles.badge,
         size === 'md' && styles.badgeMd,
         { backgroundColor: getBackgroundColor() },
+        outlineStyles,
         style,
       ]}
     >

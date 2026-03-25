@@ -109,31 +109,36 @@ const Toast: React.FC<ToastProps> = ({
         styles.container,
         { 
           backgroundColor: config.bgColor,
+          borderColor: config.color + '40',
           transform: [{ translateY }],
           opacity,
+          shadowColor: config.color,
         },
       ]}
     >
-      <View style={styles.content}>
-        <Icon name={config.icon as any} size={22} color={config.color} />
-        <Text style={[styles.message, { color: colors.text.primary }]}>
-          {message}
-        </Text>
-      </View>
-      <View style={styles.actions}>
-        {actionLabel && onAction ? (
-          <TouchableOpacity
-            onPress={() => {
-              onAction();
-              hideToast();
-            }}
-            style={styles.actionButton}
-          >
-            <Text style={styles.actionText}>{actionLabel}</Text>
-          </TouchableOpacity>
-        ) : null}
+      <View style={styles.glow} pointerEvents="none" />
+      <View style={styles.row}>
+        <View style={[styles.iconBadge, { backgroundColor: config.color + '12' }]}>
+          <Icon name={config.icon as any} size={18} color={config.color} />
+        </View>
+        <View style={styles.copy}>
+          <Text style={[styles.message, { color: colors.text.primary }]} numberOfLines={3}>
+            {message}
+          </Text>
+          {actionLabel && onAction ? (
+            <TouchableOpacity
+              onPress={() => {
+                onAction();
+                hideToast();
+              }}
+              style={styles.actionButton}
+            >
+              <Text style={[styles.actionText, { color: config.color }]}>{actionLabel}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
         <TouchableOpacity onPress={hideToast} style={styles.closeButton}>
-          <Icon name="close" size={18} color={colors.text.secondary} />
+          <Icon name="close" size={16} color={colors.text.secondary} />
         </TouchableOpacity>
       </View>
     </Animated.View>
@@ -244,50 +249,61 @@ export const showWarningToast = (message: string) => {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 60,
-    left: spacing[4],
-    right: spacing[4],
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    top: 16,
+    left: 12,
+    right: 12,
     padding: spacing[4],
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    overflow: 'hidden',
+    alignSelf: 'center',
+    maxWidth: 520,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 8,
     zIndex: 1000,
   },
-  content: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
     gap: spacing[3],
   },
+  iconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copy: {
+    flex: 1,
+    gap: spacing[1],
+  },
   message: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 15,
+    fontWeight: '700',
     flex: 1,
   },
   closeButton: {
     padding: spacing[1],
   },
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
   actionButton: {
-    paddingHorizontal: spacing[2],
+    paddingHorizontal: spacing[3],
     paddingVertical: spacing[1],
     borderRadius: borderRadius.md,
-    backgroundColor: colors.primary[50],
+    backgroundColor: '#ffffff25',
   },
   actionText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.primary[600],
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary[700],
+  },
+  glow: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#ffffff10',
+    opacity: 0.9,
   },
 });
 

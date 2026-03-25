@@ -577,6 +577,9 @@ const normalizeResource = (raw: any) => {
     tags: normalizeTags(raw?.tags),
     is_bookmarked: Boolean(raw?.is_bookmarked),
     is_favorited: Boolean(raw?.is_favorited),
+    is_in_my_library: Boolean(raw?.is_in_my_library),
+    default_library_folder_name: raw?.default_library_folder_name || '',
+    library_folder_name: raw?.library_folder_name || '',
     can_share:
       typeof raw?.can_share === 'boolean'
         ? raw.can_share
@@ -1430,7 +1433,7 @@ export const authAPI = {
     email: string,
     password: string,
     registration_number?: string,
-    remember_me?: boolean,
+    remember_me: boolean = true, // Default to true for 90-day session
     two_factor_code?: string
   ) =>
     api
@@ -1438,7 +1441,7 @@ export const authAPI = {
         email,
         password,
         registration_number,
-        ...(typeof remember_me === 'boolean' ? { remember_me } : {}),
+        remember_me: true, // Always remember for 90 days
         ...(two_factor_code ? { two_factor_code } : {}),
       })
       .then((response) => {
@@ -1532,11 +1535,126 @@ export const authAPI = {
   microsoftOAuthNative: (payload: { access_token: string; id_token?: string }) =>
     api.post('/auth/microsoft/native/', payload),
 
+  // Passwordless magic link
+  requestMagicLink: (email: string) =>
+    api.post('/auth/magic-link/', { email }).then((response) =>
+      toEnvelopeResponse(response, extractData<any>(response.data))
+    ),
+
+  consumeMagicLink: (token: string) =>
+    api.post('/auth/magic-link/consume/', { token }).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, {
+        access_token: payload?.access || payload?.access_token,
+        refresh_token: payload?.refresh || payload?.refresh_token,
+        token_type: payload?.token_type || 'magic_link',
+        expires_in: payload?.expires_in,
+      });
+    }),
+
+  startPasskeyRegistration: (name?: string) =>
+    api.post('/auth/passkeys/register/start/', name ? { name } : {}).then((response) =>
+      toEnvelopeResponse(response, extractData<any>(response.data))
+    ),
+
+  completePasskeyRegistration: (credential: Record<string, any>, name?: string) =>
+    api
+      .post('/auth/passkeys/register/complete/', {
+        credential,
+        ...(name ? { name } : {}),
+      })
+      .then((response) => toEnvelopeResponse(response, extractData<any>(response.data))),
+
+  startPasskeyAuthentication: (userId?: string | number) =>
+    api
+      .post('/auth/passkeys/auth/start/', userId ? { user_id: userId } : {})
+      .then((response) => toEnvelopeResponse(response, extractData<any>(response.data))),
+
+  completePasskeyAuthentication: (credential: Record<string, any>) =>
+    api.post('/auth/passkeys/auth/complete/', { credential }).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, {
+        access_token: payload?.access || payload?.access_token,
+        refresh_token: payload?.refresh || payload?.refresh_token,
+        token_type: payload?.token_type || 'passkey',
+        expires_in: payload?.expires_in,
+        user_id: payload?.user_id,
+      });
+    }),
+
+  listPasskeys: () =>
+    api.get('/auth/passkeys/').then((response) =>
+      toEnvelopeResponse(response, extractData<any>(response.data))
+    ),
+
+  deletePasskey: (passkeyId: string | number) =>
+    api.delete('/auth/passkeys/', { data: { passkey_id: passkeyId } }).then((response) =>
+      toEnvelopeResponse(response, extractData<any>(response.data))
+    ),
+
+  updatePasskey: (passkeyId: string | number, name: string) =>
+    api.patch('/auth/passkeys/update/', { passkey_id: passkeyId, name }).then((response) =>
+      toEnvelopeResponse(response, extractData<any>(response.data))
+    ),
+
   getCurrentUser: () =>
     api.get('/auth/profile/').then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, normalizeUser(payload));
     }),
+};
+
+// AI features
+export const aiAPI = {
+  search: (query: string, options?: { type?: 'semantic' | 'keyword' | 'hybrid'; limit?: number; resource_type?: string }) =>
+    api.get('/ai/search/', {
+      params: {
+        q: query,
+        type: options?.type || 'hybrid',
+        limit: options?.limit || 20,
+        resource_type: options?.resource_type,
+      },
+    }),
+
+  recommendations: (options?: { limit?: number; include_popular?: boolean }) =>
+    api.get('/ai/recommendations/', {
+      params: {
+        limit: options?.limit || 10,
+        include_popular: options?.include_popular ?? true,
+      },
+    }),
+
+  summarizeResource: (resourceId: string, options?: { max_length?: number; summary_type?: string }) =>
+    api.post('/ai/summarize/', {
+      resource_id: resourceId,
+      max_length: options?.max_length ?? 200,
+      summary_type: options?.summary_type ?? 'auto',
+    }),
+
+  summarizeText: (text: string, options?: { max_length?: number; summary_type?: string }) =>
+    api.post('/ai/summarize/', {
+      text,
+      max_length: options?.max_length ?? 200,
+      summary_type: options?.summary_type ?? 'auto',
+    }),
+
+  chat: (
+    message: string,
+    options?: {
+      clear_context?: boolean;
+      cancelToken?: any;
+    }
+  ) =>
+    api.post(
+      '/ai/chat/',
+      {
+        message,
+        clear_context: options?.clear_context ?? false,
+      },
+      {
+        cancelToken: options?.cancelToken,
+      }
+    ),
 };
 
 export const resourcesAPI = {
@@ -1601,6 +1719,8 @@ export const resourcesAPI = {
 
   delete: (id: string) => api.delete(`/resources/${id}/`),
 
+  restoreSelf: (slugOrId: string) => api.post(`/resources/${slugOrId}/restore-self/`),
+
   download: (id: string) => api.post(`/mobile/resources/${id}/download/`),
 
   saveToLibrary: (id: string, folderId?: string, title?: string) =>
@@ -1646,6 +1766,18 @@ export const resourcesAPI = {
     api.post(`/resources/${id}/share-to-group/`, { group_id: groupId, message }).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
+    }),
+
+  // Validate and get shared resource info
+  getSharedResource: (token: string) =>
+    api.get(`/mobile/resources/shared/${token}/`).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, normalizeResource(payload));
+    }),
+
+  validateShareToken: (token: string) =>
+    api.get(`/mobile/resources/shared/${token}/validate/`).then((response) => {
+      return toEnvelopeResponse(response, response.data);
     }),
 
   searchStudents: (query: string) =>
@@ -1714,6 +1846,28 @@ export const adminManagementAPI = {
 
   pinResource: (id: string, isPinned: boolean) =>
     api.post(`admin-management/resources/${id}/pin/`, { pin: isPinned }),
+
+  // Admin resource upload
+  uploadResource: (data: FormData) =>
+    api.post('admin-management/resources/upload/', data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((response) => {
+      return toEnvelopeResponse(response, response.data);
+    }),
+
+  // Admin bulk resource upload
+  bulkUploadResources: (data: FormData) =>
+    api.post('admin-management/resources/bulk-upload/', data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((response) => {
+      return toEnvelopeResponse(response, response.data);
+    }),
+
+  // Get upload metadata templates
+  getUploadTemplate: () =>
+    api.get('admin-management/resources/upload-template/').then((response) => {
+      return toEnvelopeResponse(response, response.data);
+    }),
 };
 
 export const bookmarksAPI = {
@@ -2286,6 +2440,262 @@ export const billingAPI = {
     }),
 };
 
+export const paymentsAPI = {
+  getPlans: () =>
+    api.get('/payments/plans/').then((response) => {
+      const payload = response.data || {};
+      const rawPlans = asArray(payload?.plans || payload);
+      const plans = rawPlans.map((plan: any) => ({
+        id: String(plan?.id || ''),
+        name: String(plan?.name || ''),
+        tier: String(plan?.tier || ''),
+        description: String(plan?.description || ''),
+        price_monthly: String(plan?.price_monthly ?? ''),
+        price_yearly: String(plan?.price_yearly ?? ''),
+        billing_period: String(plan?.billing_period || ''),
+        storage_limit_gb: Number(plan?.storage_limit_gb ?? 0),
+        max_upload_size_mb: Number(plan?.max_upload_size_mb ?? 0),
+        download_limit_monthly: Number(plan?.download_limit_monthly ?? 0),
+        can_download_unlimited: Boolean(plan?.can_download_unlimited),
+        has_ads: Boolean(plan?.has_ads),
+        has_priority_support: Boolean(plan?.has_priority_support),
+        has_analytics: Boolean(plan?.has_analytics),
+        has_early_access: Boolean(plan?.has_early_access),
+        is_featured: Boolean(plan?.is_featured),
+        stripe_monthly_price_id: String(plan?.stripe_monthly_price_id || ''),
+        stripe_yearly_price_id: String(plan?.stripe_yearly_price_id || ''),
+      }));
+
+      return toEnvelopeResponse(response, { plans });
+    }),
+
+  getSubscription: () =>
+    api.get('/payments/subscription/').then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, {
+        subscription: payload?.subscription ?? null,
+        plan: payload?.plan ?? null,
+      });
+    }),
+
+  createSubscription: (payload: {
+    plan_id: string;
+    billing_period?: 'monthly' | 'yearly';
+  }) =>
+    api.post('/payments/subscription/', payload).then((response) => {
+      const data = response.data || {};
+      return toEnvelopeResponse(response, data);
+    }),
+
+  cancelSubscription: () =>
+    api.post('/payments/subscription/cancel/', {}).then((response) => {
+      const data = response.data || {};
+      return toEnvelopeResponse(response, data);
+    }),
+
+  reactivateSubscription: () =>
+    api.post('/payments/subscription/reactivate/', {}).then((response) => {
+      const data = response.data || {};
+      return toEnvelopeResponse(response, data);
+    }),
+
+  getBillingPortal: () =>
+    api.get('/payments/portal/').then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, {
+        portal_url: String(payload?.portal_url || ''),
+      });
+    }),
+
+  getPaymentHistory: () =>
+    api.get('/payments/payments/').then((response) => {
+      const payload = response.data || {};
+      const payments = asArray(payload?.payments || payload);
+      return toEnvelopeResponse(response, { payments });
+    }),
+
+  getPaymentStatus: (payload: { payment_id: string; provider?: string }) =>
+    api
+      .get('/payments/payments/status/', {
+        params: {
+          payment_id: payload.payment_id,
+          ...(payload.provider ? { provider: payload.provider } : {}),
+        },
+      })
+      .then((response) => {
+        const data = response.data || {};
+        return toEnvelopeResponse(response, data);
+      }),
+
+  createPayment: (payload: {
+    provider?: 'stripe' | 'paypal' | 'mobile_money';
+    amount: string | number;
+    currency?: string;
+    description?: string;
+    payment_type?: 'one_time' | 'subscription' | 'refund';
+    phone_number?: string;
+    metadata?: Record<string, unknown>;
+  }) =>
+    api
+      .post('/payments/checkout/', {
+        provider: payload.provider || 'stripe',
+        amount: payload.amount,
+        currency: payload.currency || 'USD',
+        description: payload.description || 'CampusHub payment',
+        payment_type: payload.payment_type || 'one_time',
+        ...(payload.phone_number ? { phone_number: payload.phone_number } : {}),
+        ...(payload.metadata ? { metadata: payload.metadata } : {}),
+      })
+      .then((response) => {
+        const data = response.data || {};
+        return toEnvelopeResponse(response, data);
+      }),
+
+  getLimits: () =>
+    api.get('/payments/limits/').then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  getStorageUpgrades: () =>
+    api.get('/payments/storage/').then((response) => {
+      const payload = response.data || {};
+      const upgrades = asArray(payload?.upgrades || payload);
+      return toEnvelopeResponse(response, { upgrades });
+    }),
+
+  purchaseStorageUpgrade: (payload: {
+    storage_gb: number;
+    duration_days?: number;
+    provider?: 'stripe' | 'paypal' | 'mobile_money';
+    phone_number?: string;
+  }) =>
+    api
+      .post('/payments/storage/', {
+        storage_gb: payload.storage_gb,
+        duration_days: payload.duration_days ?? 30,
+        provider: payload.provider || 'stripe',
+        ...(payload.phone_number ? { phone_number: payload.phone_number } : {}),
+      })
+      .then((response) => {
+        const data = response.data || {};
+        return toEnvelopeResponse(response, data);
+      }),
+
+  applyPromoCode: (code: string) =>
+    api.post('/payments/promo/', { code }).then((response) => {
+      const data = response.data || {};
+      return toEnvelopeResponse(response, data);
+    }),
+
+  // Freemium tiers / feature access
+  getTiers: () =>
+    api.get('/payments/tiers/').then((response) => {
+      const payload = response.data || {};
+      const tiers = asArray(payload?.tiers || payload);
+      return toEnvelopeResponse(response, { tiers, current_tier: payload?.current_tier ?? null });
+    }),
+
+  getUserTier: () =>
+    api.get('/payments/tiers/user/').then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  getFeatureAccessSummary: () =>
+    api.get('/payments/feature-access/').then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  checkFeatureAccess: (feature: string) =>
+    api.get('/payments/feature-access/', { params: { feature } }).then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  startTrial: () =>
+    api.post('/payments/trial/', {}).then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, payload);
+    }),
+};
+
+export const iapAPI = {
+  getProducts: (params?: { platform?: 'apple' | 'google' | 'web'; type?: 'subscription' | 'one_time' | 'feature_unlock' }) =>
+    api
+      .get('/payments/in-app/products/', {
+        params: {
+          ...(params?.platform ? { platform: params.platform } : {}),
+          ...(params?.type ? { type: params.type } : {}),
+        },
+      })
+      .then((response) => {
+        const payload = response.data || {};
+        const products = asArray(payload?.products || payload);
+        return toEnvelopeResponse(response, { products });
+      }),
+
+  getSubscription: () =>
+    api.get('/payments/in-app/subscription/').then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  subscribe: (payload: {
+    platform: 'apple' | 'google' | 'web';
+    product_id: string;
+    transaction_id?: string;
+    receipt_data?: string;
+    purchase_token?: string;
+    order_id?: string;
+    success_url?: string;
+    cancel_url?: string;
+  }) =>
+    api
+      .post('/payments/in-app/subscribe/', {
+        platform: payload.platform,
+        product_id: payload.product_id,
+        ...(payload.transaction_id ? { transaction_id: payload.transaction_id } : {}),
+        ...(payload.receipt_data ? { receipt_data: payload.receipt_data } : {}),
+        ...(payload.purchase_token ? { purchase_token: payload.purchase_token } : {}),
+        ...(payload.order_id ? { order_id: payload.order_id } : {}),
+        ...(payload.success_url ? { success_url: payload.success_url } : {}),
+        ...(payload.cancel_url ? { cancel_url: payload.cancel_url } : {}),
+      })
+      .then((response) => {
+        const data = response.data || {};
+        return toEnvelopeResponse(response, data);
+      }),
+
+  restore: (payload?: { platform?: 'apple' | 'google' | 'web' }) =>
+    api
+      .post('/payments/in-app/restore/', {
+        ...(payload?.platform ? { platform: payload.platform } : {}),
+      })
+      .then((response) => {
+        const data = response.data || {};
+        return toEnvelopeResponse(response, data);
+      }),
+
+  cancelSubscription: (payload?: { platform?: 'apple' | 'google' | 'web' }) =>
+    api
+      .post('/payments/in-app/cancel/', {
+        ...(payload?.platform ? { platform: payload.platform } : {}),
+      })
+      .then((response) => {
+        const data = response.data || {};
+        return toEnvelopeResponse(response, data);
+      }),
+
+  getFeatures: () =>
+    api.get('/payments/in-app/features/').then((response) => {
+      const payload = response.data || {};
+      const features = asArray(payload?.features || payload);
+      return toEnvelopeResponse(response, { features });
+    }),
+};
+
 export const searchAPI = {
   search: (
     query: string,
@@ -2377,6 +2787,13 @@ export const analyticsAPI = {
         recent_resources: resources,
         announcements,
       });
+    }),
+
+  getEventAnalytics: (params?: { period?: string }) =>
+    api.get('/analytics/events/', {
+      params: {
+        ...(params?.period ? { period: params.period } : {}),
+      },
     }),
 
   getStats: async () => {
@@ -2503,6 +2920,14 @@ export const coursesAPI = {
         results: units,
       });
     }),
+
+  getEventAnalytics: (params?: { period?: string }) =>
+    api
+      .get('/analytics/events/', { params })
+      .then((response) => {
+        const payload = extractData<any>(response.data);
+        return toEnvelopeResponse(response, payload);
+      }),
 };
 
 export const facultiesAPI = {
@@ -2604,20 +3029,26 @@ export const userUploadsAPI = {
     api.get('/resources/my-uploads/', { params: { page: params?.page } }).then((response) => {
       const raw = response.data || {};
       const source = asArray(raw?.results || raw);
-      let uploads = source.map((item: any) => ({
-        id: String(item?.id || ''),
-        title: item?.title || '',
-        description: item?.description || '',
-        resource_type: item?.resource_type || item?.file_type || '',
-        file_size: Number(item?.file_size || 0),
-        status: item?.status === 'approved' ? 'published' : item?.status || 'pending',
-        view_count: Number(item?.view_count || 0),
-        download_count: Number(item?.download_count || 0),
-        average_rating: Number(item?.average_rating || 0),
-        created_at: item?.created_at || '',
-        updated_at: item?.updated_at || '',
-        rejection_reason: item?.rejection_reason || '',
-      }));
+      let uploads = source.map((item: any) => {
+        const statusRaw = item?.status || 'pending';
+        const normalizedStatus = statusRaw === 'approved' ? 'published' : statusRaw;
+        return {
+          id: String(item?.id || ''),
+          slug: item?.slug || String(item?.id || ''),
+          title: item?.title || '',
+          description: item?.description || '',
+          resource_type: item?.resource_type || item?.file_type || '',
+          file_size: Number(item?.file_size || 0),
+          status: normalizedStatus,
+          view_count: Number(item?.view_count || 0),
+          download_count: Number(item?.download_count || 0),
+          average_rating: Number(item?.average_rating || 0),
+          created_at: item?.created_at || '',
+          updated_at: item?.updated_at || '',
+          rejection_reason: item?.rejection_reason || '',
+          is_deleted: Boolean(item?.is_deleted),
+        };
+      });
 
       if (params?.status && params.status !== 'all') {
         uploads = uploads.filter((item) => item.status === params.status);
@@ -2719,14 +3150,207 @@ export const gamificationAPI = {
       return toEnvelopeResponse(response, payload);
     }),
 
+  getPoints: () =>
+    api.get('/gamification/points/').then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  getPointsHistory: (params?: { limit?: number }) =>
+    api
+      .get('/gamification/points/history/', {
+        params: {
+          ...(params?.limit ? { limit: params.limit } : {}),
+        },
+      })
+      .then((response) => {
+        const payload = extractData<any>(response.data);
+        const history = asArray(payload);
+        return toEnvelopeResponse(response, { history });
+      }),
+
+  getCategories: () =>
+    api.get('/gamification/categories/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const categories = asArray(payload);
+      return toEnvelopeResponse(response, { categories });
+    }),
+
+  getActions: () =>
+    api.get('/gamification/actions/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const actions = asArray(payload);
+      return toEnvelopeResponse(response, { actions });
+    }),
+
+  getUserBadges: () =>
+    api.get('/gamification/badges/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const badges = asArray(payload);
+      return toEnvelopeResponse(response, { badges });
+    }),
+
+  getAllBadges: () =>
+    api.get('/gamification/badges/all/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const badges = asArray(payload);
+      return toEnvelopeResponse(response, { badges });
+    }),
+
+  getBadgeProgress: () =>
+    api.get('/gamification/badges/progress/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const progress = asArray(payload);
+      return toEnvelopeResponse(response, { progress });
+    }),
+
   getLeaderboard: (period?: string) =>
     api.get('/mobile/leaderboard/', { params: { period } }).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
     }),
 
+  getRank: (params?: { type?: 'global' | 'faculty' | 'department'; period?: 'daily' | 'weekly' | 'monthly' | 'all_time' }) =>
+    api
+      .get('/gamification/leaderboard/rank/', {
+        params: {
+          ...(params?.type ? { type: params.type } : {}),
+          ...(params?.period ? { period: params.period } : {}),
+        },
+      })
+      .then((response) => {
+        const payload = extractData<any>(response.data);
+        return toEnvelopeResponse(response, payload);
+      }),
+
   checkBadges: () =>
     api.post('/gamification/check-badges/').then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  getCurrentStreak: () =>
+    api.get('/gamification/streaks/current/').then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  getStreakHistory: (params?: { limit?: number }) =>
+    api
+      .get('/gamification/streaks/history/', {
+        params: {
+          ...(params?.limit ? { limit: params.limit } : {}),
+        },
+      })
+      .then((response) => {
+        const payload = extractData<any>(response.data);
+        const history = asArray(payload);
+        return toEnvelopeResponse(response, { history });
+      }),
+
+  freezeStreak: () =>
+    api.post('/gamification/streaks/freeze/', {}).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  unfreezeStreak: () =>
+    api.post('/gamification/streaks/unfreeze/', {}).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  getAchievementsByCategory: () =>
+    api.get('/gamification/achievements/by-category/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const categories = asArray(payload);
+      return toEnvelopeResponse(response, { categories });
+    }),
+
+  getAchievementStats: () =>
+    api.get('/gamification/achievements/stats/').then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  claimAchievementReward: (achievementId: string) =>
+    api.post(`/gamification/achievements/${achievementId}/claim/`, {}).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+};
+
+// Referrals API for invite codes, referral stats, and rewards history
+export const referralsAPI = {
+  getCode: () =>
+    api.get('/referrals/code/').then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  getStats: () =>
+    api.get('/referrals/stats/').then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  list: () =>
+    api.get('/referrals/list/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const referrals = asArray(payload);
+      return toEnvelopeResponse(response, { referrals });
+    }),
+
+  useCode: (code: string) =>
+    api.post('/referrals/use/', { code }).then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  rewards: () =>
+    api.get('/referrals/rewards/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const rewards = asArray(payload);
+      return toEnvelopeResponse(response, { rewards });
+    }),
+
+  claim: (referralId: string) =>
+    api.post('/referrals/claim/', { referral_id: referralId }).then((response) => {
+      const payload = response.data || {};
+      return toEnvelopeResponse(response, payload);
+    }),
+};
+
+// Certificates API for user certificates, verification, and PDF downloads
+export const certificatesAPI = {
+  list: () =>
+    api.get('/certificates/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const source = (payload && typeof payload === 'object' && Array.isArray(payload.results))
+        ? payload.results
+        : asArray(payload);
+      const certificates = asArray(source);
+      return toEnvelopeResponse(response, {
+        certificates,
+        ...(payload && typeof payload === 'object'
+          ? {
+              pagination: payload.pagination ?? null,
+              count: payload.count ?? certificates.length,
+              next: payload.next ?? null,
+              previous: payload.previous ?? null,
+            }
+          : {}),
+      });
+    }),
+
+  get: (uniqueId: string) =>
+    api.get(`/certificates/${uniqueId}/`).then((response) => {
+      const payload = extractData<any>(response.data);
+      return toEnvelopeResponse(response, payload);
+    }),
+
+  verify: (uniqueId: string) =>
+    api.get(`/certificates/verify/${uniqueId}/`).then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
     }),
@@ -2879,10 +3503,95 @@ export const adminAPI = {
         previous: raw?.previous || null,
       });
     }),
+  getUserUploads: (id: string, params?: { page?: number; page_size?: number }) =>
+    api.get('admin-management/resources/', { params: { ...params, uploaded_by: id } }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw).map(normalizeResource);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
   updateUserStatus: (id: string, isActive: boolean) =>
     api.patch(`admin-management/users/${id}/status/`, { is_active: isActive }),
   updateUserRole: (id: string, role: string) =>
     api.patch(`admin-management/users/${id}/role/`, { role }),
+  listInvitations: (params?: {
+    page?: number;
+    page_size?: number;
+    search?: string;
+    status?: string;
+    role?: string;
+    batch?: string;
+  }) =>
+    api.get('admin-management/users/invitations/', { params }).then((response) => {
+      const raw = response.data || {};
+      return toEnvelopeResponse(response, {
+        results: asArray(raw?.results || raw),
+        count: Number(raw?.count || asArray(raw?.results || raw).length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getInvitationRoleOptions: (availableOnly: boolean = false) =>
+    api
+      .get('admin-management/users/invitations/options/', {
+        params: { available_only: availableOnly },
+      })
+      .then((response) => toEnvelopeResponse(response, extractData(response.data))),
+  createInvitation: (data: {
+    email: string;
+    role?: string;
+    roles: string[];
+    note?: string;
+    expires_in_days?: number;
+    metadata?: Record<string, any>;
+    email_subject?: string;
+    email_body?: string;
+  }) =>
+    api
+      .post('admin-management/users/invitations/', data)
+      .then((response) => toEnvelopeResponse(response, extractData(response.data))),
+  bulkCreateInvitations: (
+    data:
+      | FormData
+      | {
+          csv_text: string;
+          default_roles?: string[];
+          default_note?: string;
+          default_expires_in_days?: number;
+        }
+  ) => {
+    const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
+    return api
+      .post('admin-management/users/invitations/bulk/', data, {
+        headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
+      })
+      .then((response) => toEnvelopeResponse(response, extractData(response.data)));
+  },
+  revokeInvitation: (id: string) =>
+    api
+      .post(`admin-management/users/invitations/${id}/revoke/`)
+      .then((response) => toEnvelopeResponse(response, extractData(response.data))),
+  validateInvitation: (token: string) =>
+    api
+      .get(`admin-management/users/invitations/validate/${token}/`)
+      .then((response) => toEnvelopeResponse(response, extractData(response.data))),
+  acceptInvitation: (data: {
+    token: string;
+    full_name?: string;
+    password?: string;
+    password_confirm?: string;
+    registration_number?: string;
+    phone_number?: string;
+  }) =>
+    api
+      .post('admin-management/users/invitations/accept/', data)
+      .then((response) => toEnvelopeResponse(response, extractData(response.data))),
+  impersonateUser: (id: string) =>
+    api.post(`admin-management/users/${id}/impersonate/`).then((response) => response.data),
   listReports: (params?: { status?: string; page?: number; page_size?: number }) =>
     api.get('admin-management/reports/', { params }).then((response) => {
       const raw = response.data || {};

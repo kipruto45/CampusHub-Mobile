@@ -8,16 +8,35 @@ import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
-import { userUploadsAPI } from '../../services/api';
+import { resourcesAPI, userUploadsAPI } from '../../services/api';
+
+const formatNumber = (value: number) => {
+  try {
+    return new Intl.NumberFormat().format(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const formatDateLocale = (iso: string) => {
+  if (!iso) return '';
+  try {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+};
 
 // Types
 interface UploadItem {
   id: string;
+  slug?: string;
   title: string;
   description?: string;
   resource_type: string;
   file_size: number;
-  status: 'published' | 'draft' | 'pending' | 'rejected';
+  status: 'published' | 'draft' | 'pending' | 'rejected' | 'archived';
+  is_deleted?: boolean;
   view_count: number;
   download_count: number;
   average_rating: number;
@@ -25,7 +44,7 @@ interface UploadItem {
   rejection_reason?: string;
 }
 
-type TabType = 'all' | 'published' | 'pending' | 'rejected' | 'draft';
+type TabType = 'all' | 'published' | 'pending' | 'rejected' | 'draft' | 'archived';
 
 const MyUploadsScreen: React.FC = () => {
   const router = useRouter();
@@ -35,10 +54,13 @@ const MyUploadsScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
 
   const fetchUploads = useCallback(async () => {
     try {
       setError(null);
+      setIsOffline(false);
       const params: any = {};
       if (activeTab !== 'all') {
         params.status = activeTab;
@@ -49,7 +71,11 @@ const MyUploadsScreen: React.FC = () => {
       setUploads(data);
     } catch (err: any) {
       console.error('Error fetching uploads:', err);
-      setError(err.response?.data?.message || 'Failed to load your uploads');
+      const message = err.response?.data?.message || 'Failed to load your uploads';
+      setError(message);
+      if (message.toLowerCase().includes('network') || message.toLowerCase().includes('offline')) {
+        setIsOffline(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -70,6 +96,7 @@ const MyUploadsScreen: React.FC = () => {
     { key: 'published', label: 'Published', count: uploads.filter(u => u.status === 'published').length },
     { key: 'pending', label: 'Pending', count: uploads.filter(u => u.status === 'pending').length },
     { key: 'rejected', label: 'Rejected', count: uploads.filter(u => u.status === 'rejected').length },
+    { key: 'archived', label: 'Archived', count: uploads.filter(u => u.status === 'archived').length },
     { key: 'draft', label: 'Drafts', count: uploads.filter(u => u.status === 'draft').length },
   ];
 
@@ -86,18 +113,7 @@ const MyUploadsScreen: React.FC = () => {
   };
 
   const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffDays = Math.floor(diffMs / 86400000);
-      
-      if (diffDays < 1) return 'Today';
-      if (diffDays < 7) return `${diffDays} days ago`;
-      return date.toLocaleDateString();
-    } catch {
-      return dateString;
-    }
+    return formatDateLocale(dateString);
   };
 
   const getStatusColor = (status: string) => {
@@ -106,6 +122,7 @@ const MyUploadsScreen: React.FC = () => {
       case 'draft': return colors.gray[500];
       case 'pending': return colors.warning;
       case 'rejected': return colors.error;
+      case 'archived': return colors.text.tertiary;
       default: return colors.gray[500];
     }
   };
@@ -115,6 +132,7 @@ const MyUploadsScreen: React.FC = () => {
       case 'published': return 'Approved';
       case 'pending': return 'Pending Review';
       case 'rejected': return 'Rejected';
+      case 'archived': return 'Archived';
       default: return status;
     }
   };
@@ -163,6 +181,26 @@ const MyUploadsScreen: React.FC = () => {
     );
   };
 
+  const handleRestore = async (item: UploadItem) => {
+    const target = item.slug || item.id;
+    try {
+      setRestoringId(item.id);
+      await resourcesAPI.restoreSelf(target);
+      Alert.alert('Restored', 'Your resource was sent for review. It will reappear once approved.');
+      setUploads((prev) =>
+        prev.map((u) =>
+          u.id === item.id
+            ? { ...u, status: 'pending', is_deleted: false }
+            : u
+        )
+      );
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.detail || 'Failed to restore resource');
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   const handleViewRejection = (reason: string) => {
     Alert.alert('Rejection Reason', reason, [{ text: 'OK' }]);
   };
@@ -190,11 +228,11 @@ const MyUploadsScreen: React.FC = () => {
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Icon name="eye" size={12} color={colors.text.secondary} />
-            <Text style={styles.statText}>{item.view_count || 0}</Text>
+            <Text style={styles.statText}>{formatNumber(item.view_count || 0)}</Text>
           </View>
           <View style={styles.statItem}>
             <Icon name="download" size={12} color={colors.primary[500]} />
-            <Text style={styles.statText}>{item.download_count || 0}</Text>
+            <Text style={styles.statText}>{formatNumber(item.download_count || 0)}</Text>
           </View>
           <View style={styles.statItem}>
             <Icon name="star" size={12} color={colors.warning} />
@@ -217,6 +255,19 @@ const MyUploadsScreen: React.FC = () => {
         >
           <Icon name="create" size={18} color={colors.primary[500]} />
         </TouchableOpacity>
+        {item.status === 'archived' && (
+          <TouchableOpacity 
+            style={styles.actionBtn}
+            onPress={() => handleRestore(item)}
+            disabled={restoringId === item.id}
+          >
+            {restoringId === item.id ? (
+              <ActivityIndicator size="small" color={colors.success} />
+            ) : (
+              <Icon name="refresh" size={18} color={colors.success} />
+            )}
+          </TouchableOpacity>
+        )}
         <TouchableOpacity 
           style={styles.actionBtn}
           onPress={() => handleDelete(item.id, item.title)}
@@ -257,9 +308,17 @@ const MyUploadsScreen: React.FC = () => {
   );
 
   const renderLoading = () => (
-    <View style={styles.loadingContainer}>
-      <ActivityIndicator size="large" color={colors.primary[500]} />
-      <Text style={styles.loadingText}>Loading uploads...</Text>
+    <View style={{ padding: spacing[4], gap: spacing[3] }}>
+      {[1, 2, 3, 4].map((key) => (
+        <View key={key} style={[styles.uploadCard, { opacity: 0.35 }]}>
+          <View style={styles.thumbnail} />
+          <View style={{ flex: 1, marginLeft: spacing[3], gap: 6 }}>
+            <View style={{ width: '70%', height: 12, backgroundColor: colors.gray[200], borderRadius: 6 }} />
+            <View style={{ width: '50%', height: 10, backgroundColor: colors.gray[100], borderRadius: 6 }} />
+            <View style={{ width: '60%', height: 10, backgroundColor: colors.gray[100], borderRadius: 6 }} />
+          </View>
+        </View>
+      ))}
     </View>
   );
 
@@ -351,6 +410,10 @@ const MyUploadsScreen: React.FC = () => {
           contentContainerStyle={styles.list}
           ListEmptyComponent={renderEmpty}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={12}
+          maxToRenderPerBatch={16}
+          windowSize={8}
+          removeClippedSubviews
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -359,6 +422,11 @@ const MyUploadsScreen: React.FC = () => {
             />
           }
         />
+      )}
+      {isOffline && (
+        <Text style={styles.offlineText}>
+          You’re offline. Showing last loaded data. Pull to retry.
+        </Text>
       )}
     </View>
   );
@@ -616,6 +684,11 @@ const styles = StyleSheet.create({
   loadingText: { 
     fontSize: 14, 
     color: colors.text.secondary 
+  },
+  offlineText: {
+    textAlign: 'center',
+    color: colors.text.tertiary,
+    paddingVertical: spacing[3],
   },
 });
 

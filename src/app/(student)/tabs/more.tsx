@@ -69,6 +69,46 @@ const MAIN_MENU_ITEMS: MenuItem[] = [
 // Secondary menu items
 const SECONDARY_MENU_ITEMS: MenuItem[] = [
   {
+    id: 'groups',
+    title: 'Groups',
+    subtitle: 'Study groups & communities',
+    icon: 'people',
+    iconColor: colors.primary[500],
+    route: '/(student)/study-groups',
+  },
+  {
+    id: 'achievements',
+    title: 'Achievements',
+    subtitle: 'Points, badges & streaks',
+    icon: 'diamond',
+    iconColor: colors.warning,
+    route: '/(student)/gamification',
+  },
+  {
+    id: 'referrals',
+    title: 'Referrals',
+    subtitle: 'Invite friends & earn',
+    icon: 'gift',
+    iconColor: colors.accent[500],
+    route: '/(student)/referrals',
+  },
+  {
+    id: 'billing',
+    title: 'Billing',
+    subtitle: 'Plans & receipts',
+    icon: 'card',
+    iconColor: colors.primary[500],
+    route: '/(student)/billing',
+  },
+  {
+    id: 'certificates',
+    title: 'Certificates',
+    subtitle: 'My earned certificates',
+    icon: 'ribbon',
+    iconColor: '#6366F1',
+    route: '/(student)/certificates',
+  },
+  {
     id: 'favorites',
     title: 'Favorites',
     icon: 'heart',

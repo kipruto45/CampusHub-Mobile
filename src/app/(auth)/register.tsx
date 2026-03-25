@@ -14,6 +14,7 @@ import {
   Image,
   Linking,
 } from 'react-native';
+import { useToast } from '../../components/ui/Toast';
 import { useRouter } from 'expo-router';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
@@ -28,6 +29,7 @@ import { canUseNativeProvider, signInWithNativeProvider } from '../../services/n
 
 const RegisterScreen: React.FC = () => {
   const router = useRouter();
+  const { showToast } = useToast();
   const { register, isLoading } = useAuthStore();
   
   // Personal info state - simplified
@@ -36,27 +38,28 @@ const RegisterScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
+  const [magicBusy, setMagicBusy] = useState(false);
 
   const handleRegister = async () => {
     if (!fullName || !email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all required fields');
+      showToast('error', 'Please fill in all required fields');
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      showToast('error', 'Passwords do not match');
       return;
     }
 
     if (!agreeTerms) {
-      Alert.alert('Error', 'Please agree to the Terms of Service and Privacy Policy');
+      showToast('error', 'Please agree to the Terms of Service and Privacy Policy');
       return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      showToast('error', 'Please enter a valid email address');
       return;
     }
 
@@ -74,23 +77,41 @@ const RegisterScreen: React.FC = () => {
         last_name: lastName,
       });
       
-      Alert.alert(
-        'Registration Successful',
-        'Your account has been created successfully. Please log in to continue.',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.replace('/(auth)/login'),
-          },
-        ]
-      );
+      showToast('success', 'Registration successful! Please log in to continue');
+      router.replace('/(auth)/login');
     } catch (error: any) {
       console.log('Registration error:', error);
       const message = error?.response?.data?.message || 
                      error?.response?.data?.error?.message ||
                      error?.response?.data?.error?.details ||
                      'Registration failed. Please try again.';
-      Alert.alert('Registration Failed', typeof message === 'object' ? JSON.stringify(message) : message);
+      showToast('error', typeof message === 'object' ? JSON.stringify(message) : message);
+    }
+  };
+
+  const handleMagicLink = async () => {
+    if (!email.trim()) {
+      showToast('warning', 'Enter your email to get a magic link');
+      return;
+    }
+
+    // Reuse basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      showToast('error', 'Please enter a valid email address');
+      return;
+    }
+
+    try {
+      setMagicBusy(true);
+      await authAPI.requestMagicLink(email.trim().toLowerCase());
+      showToast('success', 'Check your email for a one-tap sign-in link.');
+      router.push('/(auth)/magic-link');
+    } catch (err: any) {
+      const message = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Unable to send magic link.';
+      showToast('error', message);
+    } finally {
+      setMagicBusy(false);
     }
   };
 
@@ -123,10 +144,7 @@ const RegisterScreen: React.FC = () => {
         }
 
         if (!nativeResult.fallbackToWeb) {
-          Alert.alert(
-            'Authentication Error',
-            nativeResult.error || `Failed to sign up with ${provider}.`
-          );
+          showToast('error', nativeResult.error || `Failed to sign up with ${provider}`);
           return;
         }
       }
@@ -140,19 +158,13 @@ const RegisterScreen: React.FC = () => {
       const authorizationUrl = payload?.authorization_url;
 
       if (!authorizationUrl) {
-        Alert.alert('Error', `${provider} sign up is not available at the moment.`);
+        showToast('error', `${provider} sign up is not available at the moment`);
         return;
       }
 
       await Linking.openURL(authorizationUrl);
     } catch (error: any) {
-      Alert.alert(
-        'Authentication Error',
-        error?.response?.data?.error ||
-          error?.response?.data?.detail ||
-          error?.message ||
-          `Failed to start ${provider} sign up.`
-      );
+      showToast('error', error?.response?.data?.error || error?.response?.data?.detail || error?.message || `Failed to start ${provider} sign up`);
     }
   };
 
@@ -263,6 +275,17 @@ const RegisterScreen: React.FC = () => {
               fullWidth
               size="md"
               style={styles.registerButton}
+            />
+
+            <Button
+              title="Email me a magic link"
+              onPress={handleMagicLink}
+              loading={magicBusy}
+              fullWidth
+              size="md"
+              variant="outline"
+              icon={<Icon name="mail" size={18} color={colors.primary[500]} />}
+              style={styles.magicLinkButton}
             />
           </View>
 
@@ -441,6 +464,9 @@ const styles = StyleSheet.create({
   },
   registerButton: {
     marginTop: spacing.sm,
+  },
+  magicLinkButton: {
+    marginTop: spacing.xs,
   },
   dividerContainer: {
     flexDirection: 'row',

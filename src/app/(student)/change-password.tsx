@@ -3,6 +3,7 @@
 
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
+import { useToast } from '../../components/ui/Toast';
 import { useRouter } from 'expo-router';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
@@ -12,6 +13,7 @@ import { userAPI } from '../../services/api';
 
 const ChangePasswordScreen: React.FC = () => {
   const router = useRouter();
+  const { showToast } = useToast();
   
   // Form state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -28,32 +30,32 @@ const ChangePasswordScreen: React.FC = () => {
 
   const validatePassword = (): boolean => {
     if (!currentPassword.trim()) {
-      Alert.alert('Error', 'Please enter your current password');
+      showToast('error', 'Please enter your current password');
       return false;
     }
     
     if (!newPassword.trim()) {
-      Alert.alert('Error', 'Please enter a new password');
+      showToast('error', 'Please enter a new password');
       return false;
     }
     
     if (newPassword.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters long');
+      showToast('error', 'Password must be at least 8 characters long');
       return false;
     }
     
     if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(newPassword)) {
-      Alert.alert('Error', 'Password must contain uppercase, lowercase, and number');
+      showToast('error', 'Password must contain uppercase, lowercase, and number');
       return false;
     }
     
     if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'New passwords do not match');
+      showToast('error', 'New passwords do not match');
       return false;
     }
     
     if (currentPassword === newPassword) {
-      Alert.alert('Error', 'New password must be different from current password');
+      showToast('error', 'New password must be different from current password');
       return false;
     }
     
@@ -72,11 +74,8 @@ const ChangePasswordScreen: React.FC = () => {
         new_password_confirm: confirmPassword,
       });
       
-      Alert.alert(
-        'Success', 
-        'Your password has been changed successfully!',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
+      showToast('success', 'Password changed successfully!');
+      router.back();
     } catch (error: any) {
       console.error('Failed to change password:', error);
       const errorMessage = error.response?.data?.old_password?.[0] || 
@@ -84,7 +83,7 @@ const ChangePasswordScreen: React.FC = () => {
                           error.response?.data?.non_field_errors?.[0] ||
                           error.response?.data?.detail || 
                           'Failed to change password. Please check your current password.';
-      Alert.alert('Error', errorMessage);
+      showToast('error', errorMessage);
     } finally {
       setSaving(false);
     }

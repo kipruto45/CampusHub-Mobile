@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { colors } from '../../theme/colors';
 import { borderRadius, spacing } from '../../theme/spacing';
@@ -8,6 +8,7 @@ import BookmarkButton from '../resources/BookmarkButton';
 import FavoriteButton from '../resources/FavoriteButton';
 import { useResourceShare } from '../../hooks/useResourceShare';
 import ResourceShareSheet from '../modals/ResourceShareSheet';
+import { useToast } from '../ui/Toast';
 
 interface BookmarkedResourceCardProps {
   item: any;
@@ -35,9 +36,11 @@ const BookmarkedResourceCard: React.FC<BookmarkedResourceCardProps> = ({
       : null
   );
 
+  const { showToast } = useToast();
+
   const handleShare = () => {
     if (!resource?.can_share) {
-      Alert.alert('Not Shareable', 'This resource is not available for sharing.');
+      showToast('info', 'This resource is not available for sharing.');
       return;
     }
     share.openShareSheet();

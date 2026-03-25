@@ -7,6 +7,8 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  Platform,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -21,6 +23,9 @@ import {
   LibraryFile,
 } from '../../../services/library.service';
 import { localDownloadsService } from '../../../services/local-downloads.service';
+import * as Sharing from 'expo-sharing';
+import { useToast } from '../../../components/ui/Toast';
+import { strings } from '../../../constants/strings';
 import { colors } from '../../../theme/colors';
 import { borderRadius, spacing } from '../../../theme/spacing';
 import { shadows } from '../../../theme/shadows';
@@ -50,7 +55,11 @@ const getFileIconName = (fileType?: string) => {
 
 export default function LibraryFileDetailScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
+  const isEditMode = edit === 'true';
+  const { showToast } = useToast();
+
+  const fileId = String(id || '');
 
   const [file, setFile] = useState<LibraryFile | null>(null);
   const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null);
@@ -60,8 +69,31 @@ export default function LibraryFileDetailScreen() {
   const [shareVisible, setShareVisible] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<'preview' | 'download' | null>(null);
+  const [editedTitle, setEditedTitle] = useState<string>('');
+  const [saving, setSaving] = useState(false);
 
-  const fileId = String(id || '');
+  // Initialize edited title when file loads
+  useEffect(() => {
+    if (file?.title) {
+      setEditedTitle(file.title);
+    }
+  }, [file?.title]);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editedTitle.trim() || !fileId) return;
+    
+    setSaving(true);
+    try {
+      await libraryService.renameFile(fileId, editedTitle.trim());
+      setFile((prev) => prev ? { ...prev, title: editedTitle.trim() } : null);
+      Alert.alert('Success', 'File renamed successfully');
+      router.back();
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to rename file');
+    } finally {
+      setSaving(false);
+    }
+  }, [editedTitle, fileId, router]);
 
   const fetchFileData = useCallback(async () => {
     if (!fileId) {
@@ -100,65 +132,45 @@ export default function LibraryFileDetailScreen() {
 
     const previewUrl = previewInfo?.file_url || file.file_url;
     if (!previewUrl) {
-      Alert.alert('Preview unavailable', 'This file does not have a preview URL yet.');
+      showToast('info', strings.downloads.previewUnavailable);
       return;
     }
 
     setActionLoading('preview');
     try {
-      await Linking.openURL(previewUrl);
-    } catch {
-      Alert.alert('Preview failed', 'Unable to open the preview right now.');
-    } finally {
-      setActionLoading(null);
-    }
-  }, [file, previewInfo]);
-
-  const handleDownload = useCallback(async () => {
-    if (!file) return;
-
-    setActionLoading('download');
-    try {
-      const downloadData = await libraryService.getDownloadUrl(file.id);
+      // Ensure we have a local copy (view-only)
       const downloadKey = `personal-file:${file.id}`;
+      const record =
+        (await localDownloadsService.getRecord(downloadKey)) ||
+        (await localDownloadsService.ensureLocalFile({
+          key: downloadKey,
+          remoteUrl: previewUrl,
+          fileName: file.title,
+          title: file.title,
+          fileType: file.file_type,
+        }));
 
-      await localDownloadsService.ensureLocalFile({
-        key: downloadKey,
-        remoteUrl: downloadData.download_url,
-        fileName: downloadData.file_name,
-        title: file.title,
-        fileType: downloadData.file_type,
-      });
-
-      let detailMessage = 'Saved inside CampusHub for offline access.';
-      try {
-        const copyResult = await localDownloadsService.saveCopyToDevice(downloadKey);
-        if (copyResult.status === 'saved') {
-          detailMessage = 'Saved inside CampusHub and copied to your phone storage.';
-        } else if (copyResult.status === 'already_saved') {
-          detailMessage = 'Saved inside CampusHub. A phone-storage copy already exists.';
-        } else if (copyResult.status === 'shared') {
-          detailMessage = 'Saved inside CampusHub. Use the share sheet to save a copy to Files.';
-        }
-      } catch {
-        detailMessage = 'Saved inside CampusHub. You can export a copy again from My Downloads.';
+      const shareAvailable = await Sharing.isAvailableAsync().catch(() => false);
+      if (shareAvailable) {
+        await Sharing.shareAsync(record.localUri, {
+          mimeType: record.mimeType,
+          dialogTitle: 'Open with…',
+          UTI: record.mimeType,
+        });
+      } else {
+        await Linking.openURL(record.localUri || previewUrl);
       }
-
-      Alert.alert('Download Complete', detailMessage, [
-        {
-          text: 'Open File',
-          onPress: () => {
-            void localDownloadsService.openLocalFile(downloadKey);
-          },
-        },
-        { text: 'OK', style: 'cancel' },
-      ]);
     } catch {
-      Alert.alert('Download failed', 'Unable to download this file right now.');
+      showToast(
+        'error',
+        Platform.OS === 'web'
+          ? strings.downloads.openErrorWeb
+          : strings.downloads.openErrorDevice
+      );
     } finally {
       setActionLoading(null);
     }
-  }, [file]);
+  }, [file, previewInfo, showToast]);
 
   const handleToggleFavorite = useCallback(async () => {
     if (!file) return;
@@ -167,8 +179,9 @@ export default function LibraryFileDetailScreen() {
     try {
       const updatedFile = await libraryService.favoriteFile(file.id);
       setFile(updatedFile);
+      showToast('success', strings.file.favoriteSuccess);
     } catch {
-      Alert.alert('Favorite failed', 'Unable to update favorite status right now.');
+      showToast('error', strings.file.favoriteFailed);
     } finally {
       setFavoriteLoading(false);
     }
@@ -191,16 +204,25 @@ export default function LibraryFileDetailScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
-          headerTitle: file?.title || 'File',
+          headerTitle: isEditMode ? 'Edit File' : (file?.title || 'File'),
           headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-              <Icon name="chevron-back" size={22} color={colors.text.primary} />
+            <TouchableOpacity 
+              onPress={() => isEditMode ? router.back() : router.back()} 
+              style={styles.headerButton}
+            >
+              <Icon name={isEditMode ? 'close' : 'chevron-back'} size={22} color={colors.text.primary} />
             </TouchableOpacity>
           ),
           headerRight: () => (
-            <TouchableOpacity onPress={() => setShareVisible(true)} style={styles.headerButton}>
-              <Icon name="share-social" size={20} color={colors.primary[500]} />
-            </TouchableOpacity>
+            isEditMode ? (
+              <TouchableOpacity onPress={() => handleSaveEdit()} style={styles.headerButton}>
+                <Text style={{ color: colors.primary[500], fontWeight: '600' }}>Save</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={() => setShareVisible(true)} style={styles.headerButton}>
+                <Icon name="share-social" size={20} color={colors.primary[500]} />
+              </TouchableOpacity>
+            )
           ),
         }}
       />
@@ -252,21 +274,6 @@ export default function LibraryFileDetailScreen() {
                 <>
                   <Icon name="eye" size={18} color={colors.text.inverse} />
                   <Text style={styles.primaryActionText}>Open</Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleDownload}
-              disabled={actionLoading !== null}
-            >
-              {actionLoading === 'download' ? (
-                <ActivityIndicator size="small" color={colors.primary[500]} />
-              ) : (
-                <>
-                  <Icon name="download" size={18} color={colors.primary[500]} />
-                  <Text style={styles.secondaryActionText}>Download</Text>
                 </>
               )}
             </TouchableOpacity>

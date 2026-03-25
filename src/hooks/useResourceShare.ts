@@ -1,6 +1,4 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert } from 'react-native';
-
 import { useToast } from '../components/ui/Toast';
 import {
   ResourceSharePayload,
@@ -102,7 +100,6 @@ export const useResourceShare = (resource: ShareableResource | null) => {
       const message = resolveErrorMessage(err);
       setError(message);
       showToast('error', message);
-      Alert.alert('Share Error', message);
       return false;
     } finally {
       setLoading(false);
@@ -128,7 +125,6 @@ export const useResourceShare = (resource: ShareableResource | null) => {
       const message = resolveErrorMessage(err);
       setError(message);
       showToast('error', message);
-      Alert.alert('Share Error', message);
       return false;
     } finally {
       setLoading(false);
@@ -147,4 +143,3 @@ export const useResourceShare = (resource: ShareableResource | null) => {
     nativeShare,
   };
 };
-

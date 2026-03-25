@@ -9,13 +9,30 @@ import { spacing, borderRadius } from '../../../theme/spacing';
 import { shadows } from '../../../theme/shadows';
 import Icon from '../../../components/ui/Icon';
 import Avatar from '../../../components/ui/Avatar';
-import { courseProgressAPI, resourcesAPI } from '../../../services/api';
+import { courseProgressAPI, resourcesAPI, aiAPI } from '../../../services/api';
 import { localDownloadsService } from '../../../services/local-downloads.service';
 import ShareResourceButton from '../../../components/resources/ShareResourceButton';
 import ResourceShareSheet from '../../../components/modals/ResourceShareSheet';
 import { useResourceShare } from '../../../hooks/useResourceShare';
 import { bookmarksService } from '../../../services/bookmarks.service';
 import { favoritesService } from '../../../services/favorites.service';
+
+const formatNumber = (value: number) => {
+  try {
+    return new Intl.NumberFormat().format(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const formatDateLocale = (iso: string) => {
+  if (!iso) return '';
+  try {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+};
 
 // Types
 interface Comment {
@@ -61,6 +78,9 @@ interface Resource {
   tags: string[];
   is_bookmarked: boolean;
   is_favorited: boolean;
+  is_in_my_library?: boolean;
+  default_library_folder_name?: string;
+  library_folder_name?: string;
   share_count?: number;
   can_share?: boolean;
 }
@@ -77,6 +97,9 @@ const ResourceDetailScreen: React.FC = () => {
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [savingToLibrary, setSavingToLibrary] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
   const trackedProgressKeyRef = useRef<string | null>(null);
   const share = useResourceShare(
     resource
@@ -139,44 +162,29 @@ const ResourceDetailScreen: React.FC = () => {
     setRefreshing(false);
   };
 
+  const fetchSummary = async () => {
+    if (!resource || loadingSummary) return;
+    setLoadingSummary(true);
+    try {
+      const response = await aiAPI.summarizeResource(resource.id, { max_length: 180, summary_type: 'auto' });
+      const payload = response?.data?.data || response?.data || {};
+      setSummary(payload?.summary || 'No summary available yet.');
+    } catch (err: any) {
+      setSummary('Could not generate summary. Please try again.');
+    } finally {
+      setLoadingSummary(false);
+    }
+  };
+
   const formatFileSize = (bytes: number) => {
     if (!bytes) return '0 B';
     if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / 1024).toFixed(0)} KB`;
   };
 
-  const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffDays = Math.floor(diffMs / 86400000);
-      
-      if (diffDays < 1) return 'Today';
-      if (diffDays < 7) return `${diffDays} days ago`;
-      if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-      return date.toLocaleDateString();
-    } catch {
-      return dateString;
-    }
-  };
+  const formatDate = (dateString: string) => formatDateLocale(dateString);
 
-  const formatCommentDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-      
-      if (diffHours < 1) return 'Just now';
-      if (diffHours < 24) return `${diffHours} hours ago`;
-      if (diffDays < 7) return `${diffDays} days ago`;
-      return date.toLocaleDateString();
-    } catch {
-      return dateString;
-    }
-  };
+  const formatCommentDate = (dateString: string) => formatDateLocale(dateString);
 
   const handleDownload = useCallback(async () => {
     if (!resource) return;
@@ -279,13 +287,41 @@ const ResourceDetailScreen: React.FC = () => {
     await share.openShareSheet();
   };
 
-  const handleSaveToLibraryFromSheet = async () => {
-    if (!resource) return;
+  const handleAddToLibrary = async () => {
+    if (!resource || savingToLibrary) return;
+
+    if (resource.is_in_my_library) {
+      const existingFolder =
+        resource.library_folder_name || resource.default_library_folder_name || 'Library';
+      Alert.alert('Already in Library', `This resource is already in your ${existingFolder} folder.`);
+      return;
+    }
+
+    setSavingToLibrary(true);
     try {
-      await resourcesAPI.saveToLibrary(resource.id);
-      Alert.alert('Saved', 'Resource saved to your library.');
+      const response = await resourcesAPI.saveToLibrary(resource.id);
+      const payload = response.data?.data || response.data || {};
+      const folderName =
+        payload?.folder?.name ||
+        resource.default_library_folder_name ||
+        resource.library_folder_name ||
+        'Library';
+
+      setResource({
+        ...resource,
+        is_in_my_library: true,
+        library_folder_name: folderName,
+      });
+      Alert.alert(
+        payload?.already_saved ? 'Already in Library' : 'Added to Library',
+        payload?.already_saved
+          ? `This resource is already in your ${folderName} folder.`
+          : `Saved to your ${folderName} folder.`
+      );
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to save to library');
+    } finally {
+      setSavingToLibrary(false);
     }
   };
 
@@ -337,15 +373,16 @@ const ResourceDetailScreen: React.FC = () => {
             <Icon name="chevron-back" size={24} color={colors.text.primary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Resource</Text>
-          <ShareResourceButton
-            onPress={handleSharePress}
-            disabled={!resource?.can_share}
-            loading={share.loading}
-            label="Share"
-            style={styles.shareButton}
-          />
+          <View style={styles.placeholder} />
         </View>
-        {renderLoading()}
+        <View style={{ padding: spacing[4], gap: spacing[4] }}>
+          {[1, 2, 3].map((key) => (
+            <View key={key} style={[styles.skeletonCard, { opacity: 0.35 }]}>
+              <View style={{ height: 16, width: '60%', backgroundColor: colors.gray[200], borderRadius: 6 }} />
+              <View style={{ height: 12, width: '40%', backgroundColor: colors.gray[100], borderRadius: 6, marginTop: 8 }} />
+            </View>
+          ))}
+        </View>
       </View>
     );
   }
@@ -364,6 +401,9 @@ const ResourceDetailScreen: React.FC = () => {
       </View>
     );
   }
+
+  const targetLibraryFolderName =
+    resource.library_folder_name || resource.default_library_folder_name || 'Library';
 
   return (
     <View style={styles.container}>
@@ -399,16 +439,30 @@ const ResourceDetailScreen: React.FC = () => {
           {/* Title */}
           <Text style={styles.title}>{resource.title}</Text>
 
+          {/* AI Summary */}
+          <TouchableOpacity style={styles.summaryButton} onPress={fetchSummary} disabled={loadingSummary}>
+            <Icon name="sparkles" size={18} color={colors.primary[500]} />
+            <Text style={styles.summaryButtonText}>
+              {loadingSummary ? 'Summarizing…' : summary ? 'Refresh AI summary' : 'Get AI summary'}
+            </Text>
+          </TouchableOpacity>
+          {summary && (
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>AI Summary</Text>
+              <Text style={styles.summaryText}>{summary}</Text>
+            </View>
+          )}
+
           {/* Meta */}
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
               <Icon name="star" size={14} color={colors.warning} />
               <Text style={styles.metaText}>{resource.average_rating?.toFixed(1) || '0'} ({resource.rating_count || 0})</Text>
             </View>
-            <View style={styles.metaItem}>
-              <Icon name="download" size={14} color={colors.primary[500]} />
-              <Text style={styles.metaText}>{resource.download_count || 0}</Text>
-            </View>
+          <View style={styles.metaItem}>
+            <Icon name="download" size={14} color={colors.primary[500]} />
+            <Text style={styles.metaText}>{formatNumber(resource.download_count || 0)}</Text>
+          </View>
             <View style={styles.metaItem}>
               <Icon name="document" size={14} color={colors.text.secondary} />
               <Text style={styles.metaText}>{formatFileSize(resource.file_size)}</Text>
@@ -472,6 +526,36 @@ const ResourceDetailScreen: React.FC = () => {
               </Text>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity
+            style={[
+              styles.libraryActionBtn,
+              resource.is_in_my_library && styles.libraryActionBtnSaved,
+              savingToLibrary && styles.libraryActionBtnDisabled,
+            ]}
+            onPress={handleAddToLibrary}
+            disabled={savingToLibrary}
+          >
+            <View style={styles.libraryActionCopy}>
+              <Text style={styles.libraryActionTitle}>
+                {resource.is_in_my_library ? 'In Library' : 'Add to Library'}
+              </Text>
+              <Text style={styles.libraryActionSubtitle}>
+                {resource.is_in_my_library
+                  ? `Stored in ${targetLibraryFolderName}`
+                  : `Save to ${targetLibraryFolderName}`}
+              </Text>
+            </View>
+            {savingToLibrary ? (
+              <ActivityIndicator size="small" color={colors.text.inverse} />
+            ) : (
+              <Icon
+                name={resource.is_in_my_library ? 'checkmark-circle' : 'folder-open'}
+                size={20}
+                color={colors.text.inverse}
+              />
+            )}
+          </TouchableOpacity>
 
           {/* Rating */}
           <Text style={styles.sectionTitle}>Rate this Resource</Text>
@@ -578,7 +662,7 @@ const ResourceDetailScreen: React.FC = () => {
         onClose={share.closeShareSheet}
         onCopyLink={share.copyLink}
         onNativeShare={share.nativeShare}
-        onSaveToLibrary={handleSaveToLibraryFromSheet}
+        onSaveToLibrary={handleAddToLibrary}
         onFavorite={handleFavorite}
         loading={share.loading}
         canShare={share.isShareable}
@@ -625,12 +709,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
   },
   placeholder: { width: 40 },
+  skeletonCard: {
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    ...shadows.sm,
+  },
   content: { padding: spacing[6], paddingBottom: 100 },
   typeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing[3] },
   badge: { backgroundColor: colors.primary[100], paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, marginRight: spacing[3] },
   badgeText: { fontSize: 12, fontWeight: '600', color: colors.primary[700] },
   course: { fontSize: 14, color: colors.primary[600] },
   title: { fontSize: 24, fontWeight: '700', color: colors.text.primary, lineHeight: 32, marginBottom: spacing[4] },
+  summaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    backgroundColor: colors.background.secondary,
+    paddingVertical: spacing[2],
+    paddingHorizontal: spacing[3],
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing[2],
+  },
+  summaryButtonText: { color: colors.primary[500], fontWeight: '700' },
+  summaryCard: {
+    marginBottom: spacing[4],
+    backgroundColor: colors.card.light,
+    padding: spacing[3],
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  summaryLabel: { fontSize: 13, fontWeight: '700', color: colors.text.secondary, marginBottom: spacing[1] },
+  summaryText: { fontSize: 14, color: colors.text.primary, lineHeight: 20 },
   metaRow: { flexDirection: 'row', marginBottom: spacing[6], gap: spacing[4] },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 13, color: colors.text.secondary },
@@ -676,6 +789,37 @@ const styles = StyleSheet.create({
   actionLabel: { fontSize: 13, fontWeight: '500', color: colors.text.secondary },
   actionLabelBookmarked: { color: colors.accent[500] },
   actionLabelFavorite: { color: colors.error },
+  libraryActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.primary[500],
+    borderRadius: 16,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[4],
+    marginBottom: spacing[6],
+  },
+  libraryActionBtnSaved: {
+    backgroundColor: colors.success,
+  },
+  libraryActionBtnDisabled: {
+    opacity: 0.8,
+  },
+  libraryActionCopy: {
+    flex: 1,
+    paddingRight: spacing[3],
+  },
+  libraryActionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text.inverse,
+  },
+  libraryActionSubtitle: {
+    fontSize: 13,
+    color: colors.text.inverse,
+    opacity: 0.9,
+    marginTop: 2,
+  },
   ratingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing[6], gap: spacing[1] },
   ratingText: { marginLeft: spacing[3], fontSize: 14, color: colors.text.secondary },
   submitRatingBtn: {

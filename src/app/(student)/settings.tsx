@@ -292,6 +292,12 @@ const SettingsScreen: React.FC = () => {
           subtitle: 'Manage your account security', 
           onPress: () => router.push('/(student)/security' as any) 
         },
+        { 
+          icon: 'card', 
+          title: 'Billing', 
+          subtitle: 'Plans, payments, receipts', 
+          onPress: () => router.push('/(student)/billing' as any) 
+        },
       ]
     },
     {

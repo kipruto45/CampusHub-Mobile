@@ -456,6 +456,8 @@ class NotificationService {
     listener: RealtimeNotificationListener
   ): () => void {
     this.realtimeListeners.add(listener);
+    // Immediately connect if not connected
+    this.connectRealtimeNotifications();
     return () => {
       this.realtimeListeners.delete(listener);
     };

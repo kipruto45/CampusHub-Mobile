@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,17 +7,46 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
-  Alert,
+  Platform,
+  Linking,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Sharing from 'expo-sharing';
+import NetInfo from '@react-native-community/netinfo';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
+import { useToast } from '../../components/ui/Toast';
 import ErrorState from '../../components/ui/ErrorState';
 import { downloadsAPI, resourcesAPI } from '../../services/api';
-import { localDownloadsService } from '../../services/local-downloads.service';
+import { localDownloadsService, LocalDownloadRecord } from '../../services/local-downloads.service';
 import { libraryService } from '../../services/library.service';
+import { strings } from '../../constants/strings';
+
+const formatNumber = (value: number) => {
+  try {
+    return new Intl.NumberFormat().format(value);
+  } catch {
+    return String(value);
+  }
+};
+
+  const formatDateLocale = (value: string) => {
+    if (!value) return '';
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(value));
+    } catch {
+      return value;
+    }
+  };
 
 interface DownloadItem {
   id: string;
@@ -29,6 +58,8 @@ interface DownloadItem {
   file_type: string;
   file_url: string;
   created_at: string;
+  isLocal?: boolean;
+  localRecord?: LocalDownloadRecord;
 }
 
 interface DownloadStats {
@@ -38,6 +69,7 @@ interface DownloadStats {
 
 const DownloadsScreen: React.FC = () => {
   const router = useRouter();
+  const { showToast } = useToast();
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [stats, setStats] = useState<DownloadStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +79,9 @@ const DownloadsScreen: React.FC = () => {
   const [hasMore, setHasMore] = useState(false);
   const [nextPage, setNextPage] = useState(2);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
-  const [activeAction, setActiveAction] = useState<'open' | 'save' | null>(null);
+  const [activeAction, setActiveAction] = useState<'open' | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
+  const [search, setSearch] = useState('');
 
   const applyDownloadPage = (payload: any, append: boolean) => {
     const results = (payload?.downloads || payload?.results || []) as DownloadItem[];
@@ -59,19 +93,85 @@ const DownloadsScreen: React.FC = () => {
   const fetchInitialData = useCallback(async () => {
     try {
       setError(null);
-      const [downloadsResponse, statsResponse] = await Promise.all([
+      
+      // Fetch both server downloads and local downloads in parallel
+      const [downloadsResponse, statsResponse, localRecords] = await Promise.all([
         downloadsAPI.list({ page: 1, page_size: 20 }),
         downloadsAPI.stats(),
+        localDownloadsService.getAllRecords(),
       ]);
 
-      applyDownloadPage(downloadsResponse.data.data, false);
+      // Process server downloads
+      const serverData = downloadsResponse.data.data;
+      const serverDownloads: DownloadItem[] = (serverData?.downloads || serverData?.results || []).map(
+        (item: any) => ({
+          id: item.id?.toString() || item.resource_id?.toString() || '',
+          download_type: item.download_type || 'resource',
+          title: item.title || item.resource_title || 'Untitled',
+          resource_id: item.resource_id?.toString() || '',
+          personal_file_id: item.personal_file_id?.toString() || '',
+          resource_type: item.resource_type || 'file',
+          file_type: item.file_type || 'pdf',
+          file_url: item.file_url || item.url || '',
+          created_at: item.created_at || new Date().toISOString(),
+          isLocal: false,
+        })
+      );
+
+      // Process local downloads
+      const localDownloads: DownloadItem[] = localRecords.map((record) => ({
+        id: `local_${record.key}`,
+        download_type: 'local',
+        title: record.fileName,
+        resource_id: '',
+        personal_file_id: '',
+        resource_type: record.mimeType?.split('/')[0] || 'file',
+        file_type: record.fileName?.split('.').pop() || 'pdf',
+        file_url: record.localUri,
+        created_at: record.createdAt,
+        isLocal: true,
+        localRecord: record,
+      }));
+
+      // Combine local and server downloads
+      const allDownloads = [...localDownloads, ...serverDownloads];
+      
+      // Sort by last opened then created, newest first
+      allDownloads.sort((a, b) => {
+        const aTime = new Date((a.localRecord?.lastOpenedAt || a.created_at)).getTime();
+        const bTime = new Date((b.localRecord?.lastOpenedAt || b.created_at)).getTime();
+        return bTime - aTime;
+      });
+
+      setDownloads(allDownloads);
       setStats({
-        total_downloads: downloadsResponse.data.data.count || statsResponse.data.data.total_downloads || 0,
+        total_downloads: localRecords.length + (serverData?.count || statsResponse.data.data.total_downloads || 0),
         unique_resources: statsResponse.data.data.unique_resources || 0,
       });
     } catch (err: any) {
       console.error('Failed to load downloads:', err);
       setError(err.response?.data?.message || 'Failed to load your downloads');
+      
+      // Fallback: try to load local downloads only
+      try {
+        const localRecords = await localDownloadsService.getAllRecords();
+        const localDownloads: DownloadItem[] = localRecords.map((record) => ({
+          id: `local_${record.key}`,
+          download_type: 'local',
+          title: record.fileName,
+          resource_id: '',
+          personal_file_id: '',
+          resource_type: record.mimeType?.split('/')[0] || 'file',
+          file_type: record.fileName?.split('.').pop() || 'pdf',
+          file_url: record.localUri,
+          created_at: record.createdAt,
+          isLocal: true,
+          localRecord: record,
+        }));
+        setDownloads(localDownloads);
+      } catch (localErr) {
+        console.error('Failed to load local downloads:', localErr);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -80,12 +180,22 @@ const DownloadsScreen: React.FC = () => {
 
   useEffect(() => {
     fetchInitialData();
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOffline(state.isConnected === false);
+    });
+    return () => unsubscribe();
   }, [fetchInitialData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchInitialData();
   }, [fetchInitialData]);
+
+  const filteredDownloads = useMemo(() => {
+    if (!search.trim()) return downloads;
+    const term = search.trim().toLowerCase();
+    return downloads.filter((d) => d.title.toLowerCase().includes(term));
+  }, [downloads, search]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loadingMore || loading) {
@@ -150,19 +260,20 @@ const DownloadsScreen: React.FC = () => {
     try {
       const downloadKey = buildDownloadKey(item);
       const existingRecord = await localDownloadsService.getRecord(downloadKey);
-      if (existingRecord) {
-        await localDownloadsService.openLocalFile(downloadKey);
-        return;
-      }
+      let record = existingRecord;
 
-      if (item.file_url || item.resource_id || item.personal_file_id) {
+      if (!record) {
+        if (!item.file_url && !item.resource_id && !item.personal_file_id) {
+          throw new Error('Missing file URL.');
+        }
+
         let source = await resolveDownloadSource(item);
         if (!source.remoteUrl) {
           throw new Error('Missing file URL.');
         }
 
         try {
-          await localDownloadsService.ensureLocalFile({
+          record = await localDownloadsService.ensureLocalFile({
             key: downloadKey,
             remoteUrl: source.remoteUrl,
             fileName: source.fileName,
@@ -178,7 +289,7 @@ const DownloadsScreen: React.FC = () => {
             if (!source.remoteUrl) {
               throw downloadError;
             }
-            await localDownloadsService.ensureLocalFile({
+            record = await localDownloadsService.ensureLocalFile({
               key: downloadKey,
               remoteUrl: source.remoteUrl,
               fileName: source.fileName,
@@ -189,110 +300,44 @@ const DownloadsScreen: React.FC = () => {
             throw downloadError;
           }
         }
+      }
 
-        await localDownloadsService.openLocalFile(downloadKey);
+      // Offer system chooser so user can open in any app
+      const shareAvailable = await Sharing.isAvailableAsync().catch(() => false);
+      if (shareAvailable) {
+        await Sharing.shareAsync(record.localUri, {
+          mimeType: record.mimeType,
+          dialogTitle: 'Open with…',
+          UTI: record.mimeType,
+        });
+        await localDownloadsService.markOpened(downloadKey).catch(() => null);
         return;
       }
 
-      if (item.resource_id) {
-        router.push(`/(student)/resource/${item.resource_id}` as any);
+      // Web or fallback: open in browser/local
+      if (Platform.OS === 'web') {
+        await Linking.openURL(record.remoteUrl || record.localUri);
+        await localDownloadsService.markOpened(downloadKey).catch(() => null);
         return;
       }
 
-      if (item.personal_file_id) {
-        router.push(`/(student)/file/${item.personal_file_id}` as any);
-        return;
-      }
-
-      Alert.alert('Unavailable', 'This download no longer has an accessible file.');
+      await localDownloadsService.openLocalFile(downloadKey);
+      await localDownloadsService.markOpened(downloadKey).catch(() => null);
+      return;
     } catch (err) {
       console.error('Failed to open download:', err);
-      Alert.alert('Unable to open', 'The selected download could not be opened right now.');
+      showToast(
+        'error',
+        Platform.OS === 'web' ? strings.downloads.openErrorWeb : strings.downloads.openErrorDevice
+      );
     } finally {
       setActiveItemId(null);
       setActiveAction(null);
     }
-  }, [buildDownloadKey, resolveDownloadSource, router]);
-
-  const handleSaveCopy = useCallback(async (item: DownloadItem) => {
-    if (!item.file_url && !item.resource_id && !item.personal_file_id) {
-      Alert.alert('Unavailable', 'This download no longer has an accessible file.');
-      return;
-    }
-
-    setActiveItemId(item.id);
-    setActiveAction('save');
-    try {
-      const downloadKey = buildDownloadKey(item);
-      const existingRecord = await localDownloadsService.getRecord(downloadKey);
-      if (!existingRecord) {
-        let source = await resolveDownloadSource(item);
-        if (!source.remoteUrl) {
-          throw new Error('Missing file URL.');
-        }
-
-        try {
-          await localDownloadsService.ensureLocalFile({
-            key: downloadKey,
-            remoteUrl: source.remoteUrl,
-            fileName: source.fileName,
-            title: item.title,
-            fileType: source.fileType,
-          });
-        } catch (downloadError) {
-          if (
-            source.remoteUrl === item.file_url &&
-            (item.resource_id || item.personal_file_id)
-          ) {
-            source = await resolveDownloadSource(item, true);
-            if (!source.remoteUrl) {
-              throw downloadError;
-            }
-            await localDownloadsService.ensureLocalFile({
-              key: downloadKey,
-              remoteUrl: source.remoteUrl,
-              fileName: source.fileName,
-              title: item.title,
-              fileType: source.fileType,
-            });
-          } else {
-            throw downloadError;
-          }
-        }
-      }
-
-      const result = await localDownloadsService.saveCopyToDevice(downloadKey);
-
-      if (result.status === 'saved') {
-        Alert.alert('Saved', 'A copy of this file has been saved to your phone storage.');
-      } else if (result.status === 'already_saved') {
-        Alert.alert('Already Saved', 'A phone-storage copy already exists for this download.');
-      } else if (result.status === 'shared') {
-        Alert.alert('Save Copy', 'Use the share sheet to save this file to Files.');
-      } else if (result.status === 'cancelled') {
-        Alert.alert('Save Cancelled', 'The file is still available inside CampusHub.');
-      }
-    } catch (err) {
-      console.error('Failed to save copy:', err);
-      Alert.alert('Unable to Save', 'The selected download could not be copied to phone storage.');
-    } finally {
-      setActiveItemId(null);
-      setActiveAction(null);
-    }
-  }, [buildDownloadKey, resolveDownloadSource]);
+  }, [buildDownloadKey, resolveDownloadSource, showToast]);
 
   const formatDateTime = (value: string) => {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return 'Unknown date';
-    }
-    return date.toLocaleString(undefined, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
+    return formatDateLocale(value) || 'Unknown date';
   };
 
   const formatDownloadType = (value: string) =>
@@ -315,24 +360,49 @@ const DownloadsScreen: React.FC = () => {
 
   const renderHeader = () => (
     <View style={styles.summarySection}>
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Icon name="search" size={18} color={colors.text.tertiary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search downloads"
+            placeholderTextColor={colors.text.tertiary}
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search ? (
+            <TouchableOpacity onPress={() => setSearch('')}>
+              <Icon name="close-circle" size={18} color={colors.text.tertiary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        {isOffline && (
+          <View style={styles.offlinePill}>
+            <Icon name="cloud-offline" size={16} color={colors.warning} />
+            <Text style={styles.offlineText}>Offline</Text>
+          </View>
+        )}
+      </View>
       <View style={styles.summaryCard}>
         <View style={[styles.summaryIcon, { backgroundColor: colors.primary[50] }]}>
           <Icon name="download" size={22} color={colors.primary[500]} />
         </View>
-        <Text style={styles.summaryValue}>{stats?.total_downloads || downloads.length}</Text>
+        <Text style={styles.summaryValue}>{formatNumber(stats?.total_downloads || downloads.length)}</Text>
         <Text style={styles.summaryLabel}>Total Downloads</Text>
       </View>
       <View style={styles.summaryCard}>
         <View style={[styles.summaryIcon, { backgroundColor: colors.accent[50] }]}>
           <Icon name="book" size={22} color={colors.accent[500]} />
         </View>
-        <Text style={styles.summaryValue}>{stats?.unique_resources || 0}</Text>
+        <Text style={styles.summaryValue}>{formatNumber(stats?.unique_resources || 0)}</Text>
         <Text style={styles.summaryLabel}>Unique Resources</Text>
       </View>
     </View>
   );
 
-  const renderItem = ({ item }: { item: DownloadItem }) => (
+  const renderItem = ({ item }: { item: DownloadItem }) => {
+    const isWeb = Platform.OS === 'web';
+    return (
     <View style={styles.card}>
       <View style={[styles.iconBox, { backgroundColor: colors.primary[50] }]}>
         <Icon name={getDownloadIcon(item) as any} size={22} color={colors.primary[500]} />
@@ -365,20 +435,17 @@ const DownloadsScreen: React.FC = () => {
             <Icon name="eye" size={18} color={colors.primary[500]} />
           )}
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => void handleSaveCopy(item)}
-          disabled={activeItemId === item.id}
-        >
-          {activeItemId === item.id && activeAction === 'save' ? (
-            <ActivityIndicator size="small" color={colors.primary[500]} />
-          ) : (
-            <Icon name="download" size={18} color={colors.primary[500]} />
-          )}
-        </TouchableOpacity>
+        {isWeb && (
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => Linking.openURL(item.file_url || item.localRecord?.localUri || '')}
+          >
+            <Icon name="link" size={18} color={colors.accent[500]} />
+          </TouchableOpacity>
+        )}
       </View>
     </View>
-  );
+  );};
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
@@ -394,8 +461,18 @@ const DownloadsScreen: React.FC = () => {
 
   if (loading && !refreshing) {
     return (
-      <View style={[styles.container, styles.centerContent]}>
-        <ActivityIndicator size="large" color={colors.primary[500]} />
+      <View style={[styles.container, { padding: spacing[4] }]}>
+        {[1, 2, 3, 4].map((key) => (
+          <View key={key} style={[styles.card, { opacity: 0.3 }]}>
+            <View style={[styles.iconBox, { backgroundColor: colors.gray[200] }]} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <View style={{ height: 12, width: '70%', backgroundColor: colors.gray[200], borderRadius: 6 }} />
+              <View style={{ height: 10, width: '40%', backgroundColor: colors.gray[100], borderRadius: 6 }} />
+              <View style={{ height: 10, width: '50%', backgroundColor: colors.gray[100], borderRadius: 6 }} />
+            </View>
+            <View style={[styles.cardActions, { width: 80 }]} />
+          </View>
+        ))}
       </View>
     );
   }
@@ -425,7 +502,7 @@ const DownloadsScreen: React.FC = () => {
       </View>
 
       <FlatList
-        data={downloads}
+        data={filteredDownloads}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         ListHeaderComponent={renderHeader}
@@ -529,6 +606,40 @@ const styles = StyleSheet.create({
   summaryLabel: {
     fontSize: 13,
     color: colors.text.secondary,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing[3],
+    gap: spacing[2],
+  },
+  searchBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    backgroundColor: colors.background.primary,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.text.primary,
+  },
+  offlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.warning + '15',
+  },
+  offlineText: {
+    color: colors.warning,
+    fontSize: 12,
+    fontWeight: '600',
   },
   card: {
     flexDirection: 'row',

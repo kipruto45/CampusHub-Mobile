@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -18,6 +17,7 @@ import { adminManagementAPI } from '../../services/api';
 import { colors } from '../../theme/colors';
 import { shadows } from '../../theme/shadows';
 import { borderRadius, spacing } from '../../theme/spacing';
+import { useToast } from '../../components/ui/Toast';
 
 type ResourceStatus = 'pending' | 'approved' | 'rejected' | 'flagged' | 'archived';
 type ReasonAction = 'reject' | 'flag' | null;
@@ -72,6 +72,7 @@ const formatFileSize = (bytes: number) => {
 const ResourceDetailScreen: React.FC = () => {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,60 +129,40 @@ const ResourceDetailScreen: React.FC = () => {
       setSubmitting(true);
       await adminManagementAPI.approveResource(resource.id);
       updateLocalStatus('approved', '');
-      Alert.alert('Success', 'Resource approved.');
+      showToast('success', 'Resource approved.');
     } catch {
-      Alert.alert('Error', 'Failed to approve resource.');
+      showToast('error', 'Failed to approve resource.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleArchive = () => {
+  const handleArchive = async () => {
     if (!resource) return;
-
-    Alert.alert('Archive Resource', 'Archive this resource?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Archive',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            setSubmitting(true);
-            await adminManagementAPI.archiveResource(resource.id, 'Archived by admin');
-            updateLocalStatus('archived');
-            Alert.alert('Success', 'Resource archived.');
-          } catch {
-            Alert.alert('Error', 'Failed to archive resource.');
-          } finally {
-            setSubmitting(false);
-          }
-        },
-      },
-    ]);
+    try {
+      setSubmitting(true);
+      await adminManagementAPI.archiveResource(resource.id, 'Archived by admin');
+      updateLocalStatus('archived');
+      showToast('success', 'Resource archived.');
+    } catch {
+      showToast('error', 'Failed to archive resource.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!resource) return;
-
-    Alert.alert('Delete Resource', 'Delete this resource permanently?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            setSubmitting(true);
-            await adminManagementAPI.deleteResource(resource.id);
-            Alert.alert('Success', 'Resource deleted.');
-            router.back();
-          } catch {
-            Alert.alert('Error', 'Failed to delete resource.');
-          } finally {
-            setSubmitting(false);
-          }
-        },
-      },
-    ]);
+    try {
+      setSubmitting(true);
+      await adminManagementAPI.deleteResource(resource.id);
+      showToast('success', 'Resource deleted.');
+      router.back();
+    } catch {
+      showToast('error', 'Failed to delete resource.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const openReasonModal = (action: Exclude<ReasonAction, null>) => {
@@ -199,7 +180,7 @@ const ResourceDetailScreen: React.FC = () => {
 
     const trimmedReason = reason.trim();
     if (reasonAction === 'reject' && !trimmedReason) {
-      Alert.alert('Reason Required', 'Enter a rejection reason.');
+      showToast('error', 'Enter a rejection reason.');
       return;
     }
 
@@ -208,15 +189,15 @@ const ResourceDetailScreen: React.FC = () => {
       if (reasonAction === 'reject') {
         await adminManagementAPI.rejectResource(resource.id, trimmedReason);
         updateLocalStatus('rejected', trimmedReason);
-        Alert.alert('Success', 'Resource rejected.');
+        showToast('success', 'Resource rejected.');
       } else {
         await adminManagementAPI.flagResource(resource.id, trimmedReason || 'Flagged by admin');
         updateLocalStatus('flagged');
-        Alert.alert('Success', 'Resource flagged.');
+        showToast('success', 'Resource flagged.');
       }
       closeReasonModal();
     } catch {
-      Alert.alert('Error', `Failed to ${reasonAction} resource.`);
+      showToast('error', `Failed to ${reasonAction} resource.`);
     } finally {
       setSubmitting(false);
     }

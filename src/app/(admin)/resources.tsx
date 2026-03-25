@@ -2,14 +2,15 @@
 // Review, moderate, and manage resources
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Modal, TextInput, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
 import ErrorState from '../../components/ui/ErrorState';
-import { adminManagementAPI } from '../../services/api';
+import { adminManagementAPI, coursesAPI, publicAcademicAPI } from '../../services/api';
 
 type ResourceStatus = 'pending' | 'approved' | 'rejected' | 'flagged' | 'archived';
 
@@ -49,6 +50,21 @@ const ResourcesScreen: React.FC = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState<ResourceStatus | 'all'>('all');
+  
+  // Upload state
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadType, setUploadType] = useState<'single' | 'bulk'>('single');
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [selectedFiles, setSelectedFiles] = useState<any[]>([]);
+  
+  // Upload form state
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [resourceType, setResourceType] = useState('notes');
+  const [courseId, setCourseId] = useState('');
+  const [courses, setCourses] = useState<any[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(false);
 
   const fetchResources = useCallback(async (pageNum: number = 1, isRefresh: boolean = false) => {
     try {
@@ -165,6 +181,142 @@ const ResourcesScreen: React.FC = () => {
     }
   };
 
+  // Upload functions
+  const loadCourses = async () => {
+    try {
+      setLoadingCourses(true);
+      const response = await coursesAPI.list();
+      const results = response.data?.data?.results || response.data?.data || [];
+      setCourses(results);
+    } catch (err) {
+      console.error('Failed to load courses:', err);
+    } finally {
+      setLoadingCourses(false);
+    }
+  };
+
+  const handleSelectFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const file = result.assets[0];
+        setSelectedFile(file);
+        // Auto-generate title from filename
+        if (!title) {
+          const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
+          setTitle(nameWithoutExt.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim());
+        }
+      }
+    } catch (err) {
+      console.error('File selection error:', err);
+    }
+  };
+
+  const handleSelectMultipleFiles = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'],
+        copyToCacheDirectory: true,
+      });
+
+      // Handle multiple selection by calling picker multiple times if needed
+      if (!result.canceled && result.assets) {
+        // For bulk upload, we'll use the single picker and let users add more
+        setSelectedFiles(result.assets);
+      }
+    } catch (err) {
+      console.error('File selection error:', err);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (uploadType === 'single') {
+      if (!selectedFile) {
+        Alert.alert('Error', 'Please select a file');
+        return;
+      }
+      if (!title.trim()) {
+        Alert.alert('Error', 'Please enter a title');
+        return;
+      }
+    } else {
+      if (selectedFiles.length === 0) {
+        Alert.alert('Error', 'Please select files');
+        return;
+      }
+    }
+
+    try {
+      setUploading(true);
+
+      if (uploadType === 'single') {
+        const formData = new FormData();
+        formData.append('file', {
+          uri: selectedFile.uri,
+          name: selectedFile.name,
+          type: selectedFile.mimeType || 'application/octet-stream',
+        } as any);
+        formData.append('title', title);
+        formData.append('description', description);
+        formData.append('resource_type', resourceType);
+        if (courseId) {
+          formData.append('course_id', courseId);
+        }
+
+        await adminManagementAPI.uploadResource(formData);
+        Alert.alert('Success', 'Resource uploaded successfully');
+      } else {
+        // Bulk upload
+        const formData = new FormData();
+        selectedFiles.forEach((file, index) => {
+          formData.append(`files[${index}]`, {
+            uri: file.uri,
+            name: file.name,
+            type: file.mimeType || 'application/octet-stream',
+          } as any);
+        });
+        formData.append('resource_type', resourceType);
+        if (courseId) {
+          formData.append('course_id', courseId);
+        }
+
+        await adminManagementAPI.bulkUploadResources(formData);
+        Alert.alert('Success', `${selectedFiles.length} resources uploaded successfully`);
+      }
+
+      // Reset form
+      setSelectedFile(null);
+      setSelectedFiles([]);
+      setTitle('');
+      setDescription('');
+      setCourseId('');
+      setShowUploadModal(false);
+      
+      // Refresh list
+      fetchResources(1, true);
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      Alert.alert('Error', err.response?.data?.message || 'Failed to upload resource');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const openUploadModal = (type: 'single' | 'bulk') => {
+    setUploadType(type);
+    setSelectedFile(null);
+    setSelectedFiles([]);
+    setTitle('');
+    setDescription('');
+    setCourseId('');
+    loadCourses();
+    setShowUploadModal(true);
+  };
+
   const getStatusColor = (status: ResourceStatus) => {
     switch (status) {
       case 'approved':
@@ -276,6 +428,22 @@ const ResourcesScreen: React.FC = () => {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Resources Management</Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            style={styles.uploadBtn}
+            onPress={() => openUploadModal('single')}
+          >
+            <Icon name="cloud-upload" size={20} color={colors.text.inverse} />
+            <Text style={styles.uploadBtnText}>Upload</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.uploadBtn, styles.bulkUploadBtn]}
+            onPress={() => openUploadModal('bulk')}
+          >
+            <Icon name="layers" size={20} color={colors.text.inverse} />
+            <Text style={styles.uploadBtnText}>Bulk</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Stats Summary */}
@@ -331,6 +499,30 @@ const ResourcesScreen: React.FC = () => {
           </View>
         }
       />
+
+      {/* Upload Modal */}
+      <UploadModal
+        visible={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        uploadType={uploadType}
+        selectedFile={selectedFile}
+        selectedFiles={selectedFiles}
+        title={title}
+        description={description}
+        resourceType={resourceType}
+        courseId={courseId}
+        courses={courses}
+        loadingCourses={loadingCourses}
+        uploading={uploading}
+        onSelectFile={handleSelectFile}
+        onSelectMultipleFiles={handleSelectMultipleFiles}
+        onTitleChange={setTitle}
+        onDescriptionChange={setDescription}
+        onTypeChange={setResourceType}
+        onCourseChange={setCourseId}
+        onUpload={handleUpload}
+        onClearFile={() => setSelectedFile(null)}
+      />
     </View>
   );
 };
@@ -347,7 +539,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     padding: spacing[4],
     paddingTop: spacing[8],
     backgroundColor: colors.primary[500],
@@ -356,6 +548,27 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: colors.text.inverse,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: spacing[2],
+  },
+  uploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary[600],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.md,
+    gap: spacing[1],
+  },
+  bulkUploadBtn: {
+    backgroundColor: colors.accent[500],
+  },
+  uploadBtnText: {
+    color: colors.text.inverse,
+    fontSize: 14,
+    fontWeight: '600',
   },
   statsContainer: {
     flexDirection: 'row',
@@ -478,6 +691,353 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     marginTop: spacing[2],
   },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.background.primary,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    padding: spacing[5],
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing[4],
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: spacing[4],
+  },
+  formGroup: {
+    marginBottom: spacing[4],
+  },
+  formLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: spacing[2],
+  },
+  formInput: {
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+    fontSize: 15,
+    color: colors.text.primary,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  formSelect: {
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+    fontSize: 15,
+    color: colors.text.primary,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  fileSelectBtn: {
+    backgroundColor: colors.primary[50],
+    borderRadius: borderRadius.lg,
+    padding: spacing[6],
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.primary[500],
+    borderStyle: 'dashed',
+  },
+  fileSelectBtnText: {
+    fontSize: 14,
+    color: colors.primary[500],
+    fontWeight: '600',
+    marginTop: spacing[2],
+  },
+  selectedFile: {
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing[2],
+  },
+  selectedFileName: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.text.primary,
+    marginLeft: spacing[2],
+  },
+  uploadBtnFull: {
+    backgroundColor: colors.primary[500],
+    padding: spacing[4],
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    marginTop: spacing[4],
+  },
+  uploadBtnFullText: {
+    color: colors.text.inverse,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  filesList: {
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+    marginTop: spacing[2],
+    maxHeight: 150,
+  },
+  fileItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing[2],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border.light,
+  },
+  fileItemName: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.text.primary,
+    marginLeft: spacing[2],
+  },
+  typeSelector: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    marginBottom: spacing[4],
+  },
+  typeOption: {
+    flex: 1,
+    padding: spacing[3],
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    backgroundColor: colors.background.secondary,
+    borderWidth: 2,
+    borderColor: colors.border.light,
+  },
+  typeOptionActive: {
+    borderColor: colors.primary[500],
+    backgroundColor: colors.primary[50],
+  },
+  typeOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  typeOptionTextActive: {
+    color: colors.primary[500],
+  },
 });
+
+// Upload Modal Component
+const UploadModal = ({ 
+  visible, 
+  onClose, 
+  uploadType,
+  selectedFile,
+  selectedFiles,
+  title,
+  description,
+  resourceType,
+  courseId,
+  courses,
+  loadingCourses,
+  uploading,
+  onSelectFile,
+  onSelectMultipleFiles,
+  onTitleChange,
+  onDescriptionChange,
+  onTypeChange,
+  onCourseChange,
+  onUpload,
+  onClearFile,
+}: any) => {
+  if (!visible) return null;
+
+  const resourceTypes = [
+    { value: 'notes', label: 'Notes' },
+    { value: 'past_paper', label: 'Past Exam' },
+    { value: 'book', label: 'Book' },
+    { value: 'assignment', label: 'Assignment' },
+    { value: 'slides', label: 'Slides' },
+    { value: 'tutorial', label: 'Tutorial' },
+  ];
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>
+              {uploadType === 'single' ? 'Upload Resource' : 'Bulk Upload'}
+            </Text>
+            <TouchableOpacity onPress={onClose}>
+              <Icon name="close" size={24} color={colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {uploadType === 'single' ? (
+              <>
+                {/* File Selection */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Select File *</Text>
+                  {selectedFile ? (
+                    <View style={styles.selectedFile}>
+                      <Icon name="document" size={24} color={colors.primary[500]} />
+                      <Text style={styles.selectedFileName} numberOfLines={1}>
+                        {selectedFile.name}
+                      </Text>
+                      <TouchableOpacity onPress={onClearFile}>
+                        <Icon name="close-circle" size={20} color={colors.error} />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={styles.fileSelectBtn} onPress={onSelectFile}>
+                      <Icon name="cloud-upload" size={40} color={colors.primary[500]} />
+                      <Text style={styles.fileSelectBtnText}>Tap to select file</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Title */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Title *</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={title}
+                    onChangeText={onTitleChange}
+                    placeholder="Enter resource title"
+                    placeholderTextColor={colors.text.tertiary}
+                  />
+                </View>
+
+                {/* Description */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Description</Text>
+                  <TextInput
+                    style={[styles.formInput, { height: 80, textAlignVertical: 'top' }]}
+                    value={description}
+                    onChangeText={onDescriptionChange}
+                    placeholder="Enter description (optional)"
+                    placeholderTextColor={colors.text.tertiary}
+                    multiline
+                  />
+                </View>
+              </>
+            ) : (
+              <>
+                {/* Bulk File Selection */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Select Files *</Text>
+                  <TouchableOpacity style={styles.fileSelectBtn} onPress={onSelectMultipleFiles}>
+                    <Icon name="layers" size={40} color={colors.primary[500]} />
+                    <Text style={styles.fileSelectBtnText}>Tap to select multiple files</Text>
+                  </TouchableOpacity>
+                  
+                  {selectedFiles.length > 0 && (
+                    <View style={styles.filesList}>
+                      {selectedFiles.map((file: any, index: number) => (
+                        <View key={index} style={styles.fileItem}>
+                          <Icon name="document" size={18} color={colors.text.secondary} />
+                          <Text style={styles.fileItemName} numberOfLines={1}>
+                            {file.name}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </>
+            )}
+
+            {/* Resource Type */}
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Resource Type *</Text>
+              <View style={styles.typeSelector}>
+                {resourceTypes.slice(0, 3).map((type) => (
+                  <TouchableOpacity
+                    key={type.value}
+                    style={[
+                      styles.typeOption,
+                      resourceType === type.value && styles.typeOptionActive
+                    ]}
+                    onPress={() => onTypeChange(type.value)}
+                  >
+                    <Text style={[
+                      styles.typeOptionText,
+                      resourceType === type.value && styles.typeOptionTextActive
+                    ]}>
+                      {type.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.typeSelector}>
+                {resourceTypes.slice(3).map((type) => (
+                  <TouchableOpacity
+                    key={type.value}
+                    style={[
+                      styles.typeOption,
+                      resourceType === type.value && styles.typeOptionActive
+                    ]}
+                    onPress={() => onTypeChange(type.value)}
+                  >
+                    <Text style={[
+                      styles.typeOptionText,
+                      resourceType === type.value && styles.typeOptionTextActive
+                    ]}>
+                      {type.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Course */}
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Course (Optional)</Text>
+              <View style={styles.formSelect}>
+                {loadingCourses ? (
+                  <ActivityIndicator size="small" color={colors.primary[500]} />
+                ) : (
+                  <TextInput
+                    style={{ color: colors.text.primary, fontSize: 15 }}
+                    value={courseId}
+                    onChangeText={onCourseChange}
+                    placeholder="Select course"
+                    placeholderTextColor={colors.text.tertiary}
+                  />
+                )}
+              </View>
+            </View>
+
+            {/* Upload Button */}
+            <TouchableOpacity
+              style={[styles.uploadBtnFull, uploading && { opacity: 0.6 }]}
+              onPress={onUpload}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <ActivityIndicator size="small" color={colors.text.inverse} />
+              ) : (
+                <Text style={styles.uploadBtnFullText}>
+                  {uploadType === 'single' ? 'Upload Resource' : `Upload ${selectedFiles.length} Files`}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 export default ResourcesScreen;

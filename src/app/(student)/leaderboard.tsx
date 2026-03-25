@@ -295,9 +295,9 @@ const styles = StyleSheet.create({
   },
   firstPlace: {
     paddingTop: spacing[6],
-    backgroundColor: colors.warning[50],
+    backgroundColor: colors.warning + '14',
     borderWidth: 2,
-    borderColor: colors.warning[400],
+    borderColor: colors.warning,
   },
   secondPlace: {
     paddingTop: spacing[4],
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
   crownIcon: {
     position: 'absolute',
     top: -12,
-    backgroundColor: colors.warning[50],
+    backgroundColor: colors.warning + '14',
     borderRadius: borderRadius.full,
     padding: spacing[1],
   },
@@ -419,7 +419,7 @@ const styles = StyleSheet.create({
   pointsValue: {
     fontSize: 18,
     fontWeight: '700',
-    color: colors.warning[600],
+    color: colors.warning,
   },
   pointsLabel: {
     fontSize: 11,

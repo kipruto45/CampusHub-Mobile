@@ -1,63 +1,37 @@
 {
+  "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "allowJs": true,
-    "customConditions": [
-      "react-native"
-    ],
-    "esModuleInterop": true,
-    "jsx": "react-native",
-    "lib": [
-      "DOM",
-      "ESNext"
-    ],
-    "module": "esnext",
-    "moduleDetection": "force",
-    "moduleResolution": "bundler",
-    "noEmit": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
     "strict": true,
-    "target": "ESNext",
     "baseUrl": ".",
     "paths": {
       "@/*": [
-        "./*"
+        "src/*"
       ],
-      "@/components/*": [
+      "@api/*": [
+        "src/api/*"
+      ],
+      "@components/*": [
         "src/components/*"
       ],
-      "@/services/*": [
-        "src/services/*"
+      "@constants/*": [
+        "src/constants/*"
       ],
-      "@/store/*": [
-        "src/store/*"
-      ],
-      "@/hooks/*": [
+      "@hooks/*": [
         "src/hooks/*"
       ],
-      "@/types/*": [
+      "@services/*": [
+        "src/services/*"
+      ],
+      "@types/*": [
         "src/types/*"
       ],
-      "@/utils/*": [
+      "@utils/*": [
         "src/utils/*"
-      ],
-      "@/theme/*": [
-        "src/theme/*"
       ]
     }
   },
   "include": [
     "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "babel.config.js",
-    "metro.config.js",
-    "android",
-    "ios"
-  ],
-  "extends": "expo/tsconfig.base"
+    "**/*.tsx"
+  ]
 }

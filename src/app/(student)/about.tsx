@@ -71,7 +71,7 @@ const AboutScreen: React.FC = () => {
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={styles.contentContainerStyle}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.heroCard}>

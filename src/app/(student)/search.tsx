@@ -1,191 +1,220 @@
-import React, { useMemo } from 'react';
+// AI + keyword search screen for CampusHub
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
   View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-
-import RecentSearchList from '../../components/search/RecentSearchList';
-import SearchBar from '../../components/search/SearchBar';
-import SearchFiltersSheet from '../../components/search/SearchFiltersSheet';
-import SearchResultCard from '../../components/search/SearchResultCard';
-import SearchSuggestionList from '../../components/search/SearchSuggestionList';
-import { useSearch } from '../../hooks/useSearch';
-import { bookmarksService } from '../../services/bookmarks.service';
-import { favoritesService } from '../../services/favorites.service';
 import { colors } from '../../theme/colors';
-import { spacing } from '../../theme/spacing';
+import { spacing, borderRadius } from '../../theme/spacing';
+import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
+import Badge from '../../components/ui/Badge';
+import ErrorState from '../../components/ui/ErrorState';
+import { aiAPI, resourcesAPI } from '../../services/api';
+import { useToast } from '../../components/ui/Toast';
 
-const SearchScreen: React.FC = () => {
+type SearchMode = 'hybrid' | 'semantic' | 'keyword';
+
+interface SearchResultItem {
+  id: string;
+  title: string;
+  description?: string;
+  type?: string;
+  score?: number;
+  metadata?: Record<string, any>;
+}
+
+const MODE_OPTIONS: { label: string; value: SearchMode }[] = [
+  { label: 'Hybrid', value: 'hybrid' },
+  { label: 'Semantic', value: 'semantic' },
+  { label: 'Keyword', value: 'keyword' },
+];
+
+export default function SearchScreen() {
   const router = useRouter();
-  const {
-    query,
-    setQuery,
-    filters,
-    setFilters,
-    results,
-    suggestions,
-    recentSearches,
-    loading,
-    error,
-    runSearch,
-    updateResult,
-    clearQuery,
-    clearFilters,
-    removeRecentSearch,
-    clearRecentSearches,
-    isFilterSheetOpen,
-    openFilterSheet,
-    closeFilterSheet,
-    activeFiltersCount,
-    minQueryLength,
-  } = useSearch();
+  const { showToast } = useToast();
+  const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<SearchMode>('hybrid');
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<SearchResultItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const showRecent = query.trim().length < minQueryLength;
+  const inputRef = useRef<TextInput>(null);
 
-  const onToggleBookmark = async (resourceId: string, isBookmarked: boolean) => {
-    const nextValue = !isBookmarked;
-    updateResult(resourceId, { is_bookmarked: nextValue });
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (query.trim().length >= 2) {
+        void runSearch(query);
+      } else {
+        setResults([]);
+        setError(null);
+      }
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [query, mode]);
 
+  const runSearch = async (text: string) => {
+    const q = text.trim();
+    if (!q) return;
+
+    setLoading(true);
+    setError(null);
     try {
-      await bookmarksService.toggleResourceBookmark(resourceId);
+      const response = await aiAPI.search(q, { type: mode, limit: 25 });
+      const payload = response?.data?.data || response?.data || {};
+      const items: SearchResultItem[] = (payload.results || payload || []).map((item: any) => ({
+        id: String(item.id || item.slug || Math.random()),
+        title: item.title || 'Untitled',
+        description: item.description,
+        type: item.type,
+        score: item.score,
+        metadata: item.metadata,
+      }));
+      setResults(items);
+      if (!items.length) {
+        showToast('info', 'No matches found. Try a different phrase.');
+      }
     } catch (err: any) {
-      updateResult(resourceId, { is_bookmarked: isBookmarked });
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to update bookmark');
+      // Fallback to keyword search on resources API
+      try {
+        const fallback = await resourcesAPI.list({ search: q, limit: 20 });
+        const list = fallback?.data?.data?.results || fallback?.data?.data || [];
+        const items: SearchResultItem[] = list.map((item: any) => ({
+          id: String(item.id),
+          title: item.title,
+          description: item.description,
+          type: item.resource_type,
+          metadata: item,
+        }));
+        setResults(items);
+        setError('Semantic search unavailable, showing keyword results.');
+      } catch (fallbackErr: any) {
+        setError(
+          fallbackErr?.response?.data?.message || fallbackErr?.message || 'Search failed. Please try again.'
+        );
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
-  const onToggleFavorite = async (resourceId: string, isFavorited: boolean) => {
-    const nextValue = !isFavorited;
-    updateResult(resourceId, { is_favorited: nextValue });
-
-    try {
-      await favoritesService.toggleResourceFavorite(resourceId);
-    } catch (err: any) {
-      updateResult(resourceId, { is_favorited: isFavorited });
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to update favorite');
-    }
-  };
-
-  const emptyState = useMemo(() => {
-    if (loading) {
-      return (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary[500]} />
-          <Text style={styles.helperText}>Searching...</Text>
-        </View>
-      );
-    }
-    if (error) {
-      return (
-        <View style={styles.center}>
-          <Icon name="alert-circle" size={36} color={colors.error} />
-          <Text style={styles.helperText}>{error}</Text>
-        </View>
-      );
-    }
-    if (!showRecent) {
-      return (
-        <View style={styles.center}>
-          <Icon name="search" size={40} color={colors.text.tertiary} />
-          <Text style={styles.helperText}>No results found. Try other keywords or filters.</Text>
-        </View>
-      );
-    }
-    return null;
-  }, [error, loading, showRecent]);
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Icon name="chevron-back" size={22} color={colors.text.primary} />
-        </TouchableOpacity>
-        <View style={styles.searchWrap}>
-          <SearchBar
-            value={query}
-            onChangeText={setQuery}
-            onOpenFilters={openFilterSheet}
-            onClear={clearQuery}
-            loading={loading}
-            activeFiltersCount={activeFiltersCount}
-          />
-        </View>
-      </View>
-
-      <View style={styles.content}>
-        {query.trim().length >= minQueryLength ? (
-          <SearchSuggestionList
-            suggestions={suggestions}
-            onSelect={(value) => {
-              setQuery(value);
-              runSearch(value);
-            }}
-          />
-        ) : null}
-
-        {showRecent ? (
-          <RecentSearchList
-            items={recentSearches}
-            onSelect={(value) => {
-              setQuery(value);
-              runSearch(value);
-            }}
-            onRemove={removeRecentSearch}
-            onClearAll={clearRecentSearches}
-          />
-        ) : (
-          <FlatList
-            data={results}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <SearchResultCard
-                item={item}
-                onPress={() => router.push(`/(student)/resource/${item.id}`)}
-                onToggleBookmark={() =>
-                  onToggleBookmark(item.id, Boolean(item.is_bookmarked))
-                }
-                onToggleFavorite={() =>
-                  onToggleFavorite(item.id, Boolean(item.is_favorited))
-                }
-              />
-            )}
-            ListHeaderComponent={
-              results.length > 0 ? (
-                <Text style={styles.resultCount}>{results.length} results</Text>
-              ) : null
-            }
-            ListEmptyComponent={emptyState}
-            refreshControl={
-              <RefreshControl
-                refreshing={loading}
-                onRefresh={() => runSearch()}
-                tintColor={colors.primary[500]}
-              />
-            }
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
+  const renderItem = ({ item }: { item: SearchResultItem }) => (
+    <TouchableOpacity
+      style={styles.resultCard}
+      onPress={() => router.push(`/(student)/resource/${item.id}` as any)}
+    >
+      <View style={styles.resultHeader}>
+        <Text style={styles.resultTitle}>{item.title}</Text>
+        {typeof item.score === 'number' && (
+          <Badge label={`${(item.score * 100).toFixed(0)}%`} variant="info" size="sm" />
         )}
       </View>
-
-      <SearchFiltersSheet
-        visible={isFilterSheetOpen}
-        filters={filters}
-        onClose={closeFilterSheet}
-        onReset={clearFilters}
-        onApply={(next) => setFilters(next)}
-      />
-    </View>
+      {item.description ? (
+        <Text numberOfLines={3} style={styles.resultDescription}>
+          {item.description}
+        </Text>
+      ) : null}
+      <View style={styles.metaRow}>
+        <Badge label={item.type || 'resource'} variant="secondary" size="sm" />
+        {item.metadata?.course && (
+          <Badge label={item.metadata.course?.name || item.metadata.course} variant="outline" size="sm" />
+        )}
+      </View>
+    </TouchableOpacity>
   );
-};
+
+  if (error && !results.length) {
+    return (
+      <ErrorState
+        type="server"
+        title="Search unavailable"
+        message={error}
+        onRetry={() => runSearch(query)}
+      />
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Icon name="chevron-back" size={22} color={colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Search</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <View style={styles.searchInputContainer}>
+        <Icon name="search" size={18} color={colors.text.tertiary} />
+        <TextInput
+          ref={inputRef}
+          placeholder="Search resources, topics, or questions"
+          placeholderTextColor={colors.text.tertiary}
+          value={query}
+          onChangeText={setQuery}
+          style={styles.searchInput}
+          autoFocus
+          returnKeyType="search"
+          onSubmitEditing={() => runSearch(query)}
+        />
+        {query ? (
+          <TouchableOpacity onPress={() => { setQuery(''); setResults([]); setError(null); }}>
+            <Icon name="close-circle" size={18} color={colors.text.tertiary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      <View style={styles.modeRow}>
+        {MODE_OPTIONS.map((option) => (
+          <TouchableOpacity
+            key={option.value}
+            style={[styles.modeChip, mode === option.value && styles.modeChipActive]}
+            onPress={() => setMode(option.value)}
+          >
+            <Text style={[styles.modeChipText, mode === option.value && styles.modeChipTextActive]}>
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary[500]} />
+          <Text style={styles.loadingText}>Searching {mode}…</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.resultsList}
+          ListEmptyComponent={
+            query.length >= 2 ? (
+              <View style={styles.emptyState}>
+                <Icon name="search" size={32} color={colors.text.tertiary} />
+                <Text style={styles.emptyText}>No results yet</Text>
+                <Text style={styles.emptySub}>Try another phrase or switch mode.</Text>
+              </View>
+            ) : null
+          }
+        />
+      )}
+    </KeyboardAvoidingView>
+  );
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -193,49 +222,126 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.secondary,
   },
   header: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[12],
-    paddingBottom: spacing[3],
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing[3],
-    backgroundColor: colors.background.secondary,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[9],
+    paddingBottom: spacing[4],
   },
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.background.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    ...shadows.sm,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card.light,
+    marginHorizontal: spacing[4],
+    borderRadius: borderRadius.xl,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    ...shadows.sm,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: spacing[3],
+    color: colors.text.primary,
+    fontSize: 15,
+  },
+  modeRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[3],
+    gap: spacing[2],
+  },
+  modeChip: {
+    paddingVertical: spacing[2],
+    paddingHorizontal: spacing[4],
+    borderRadius: borderRadius.lg,
     backgroundColor: colors.card.light,
   },
-  searchWrap: {
-    flex: 1,
+  modeChipActive: {
+    backgroundColor: colors.primary[50],
+    borderColor: colors.primary[200],
+    borderWidth: 1,
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: spacing[4],
-  },
-  resultCount: {
+  modeChipText: {
     color: colors.text.secondary,
-    fontSize: 13,
-    marginBottom: spacing[3],
+    fontWeight: '600',
   },
-  listContent: {
-    paddingBottom: spacing[16],
-    flexGrow: 1,
+  modeChipTextActive: {
+    color: colors.primary[600],
   },
-  center: {
+  loadingContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: spacing[12],
-    paddingHorizontal: spacing[6],
   },
-  helperText: {
-    marginTop: spacing[2],
-    textAlign: 'center',
+  loadingText: {
+    marginTop: spacing[3],
     color: colors.text.secondary,
+  },
+  resultsList: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[3],
+    paddingBottom: spacing[8],
+  },
+  resultCard: {
+    backgroundColor: colors.background.primary,
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    marginBottom: spacing[3],
+    ...shadows.sm,
+  },
+  resultHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing[2],
+  },
+  resultTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text.primary,
+    flex: 1,
+    marginRight: spacing[2],
+  },
+  resultDescription: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginBottom: spacing[2],
+    lineHeight: 18,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    alignItems: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    marginTop: spacing[12],
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginTop: spacing[2],
+  },
+  emptySub: {
+    color: colors.text.secondary,
+    fontSize: 13,
+    marginTop: spacing[1],
   },
 });
 
-export default SearchScreen;

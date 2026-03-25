@@ -4,7 +4,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useIsFocused } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -16,7 +15,7 @@ import {
   Share,
   Image,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { colors } from '../../../theme/colors';
 import { spacing, borderRadius } from '../../../theme/spacing';
 import { shadows } from '../../../theme/shadows';
@@ -28,7 +27,7 @@ import BookmarkButton from '../../../components/resources/BookmarkButton';
 import FavoriteButton from '../../../components/resources/FavoriteButton';
 import { notificationService } from '../../../services/notifications';
 import { useAuthStore } from '../../../store/auth.store';
-import { analyticsAPI, resourcesAPI } from '../../../services/api';
+import { analyticsAPI, resourcesAPI, aiAPI } from '../../../services/api';
 import { announcementsApi } from '../../../services/announcements.service';
 import { bookmarksService } from '../../../services/bookmarks.service';
 import { favoritesService } from '../../../services/favorites.service';
@@ -136,7 +135,6 @@ const formatBadgeCount = (count: number): string => (count > 99 ? '99+' : String
 const HomeScreen: React.FC = () => {
   const router = useRouter();
   const { user } = useAuthStore();
-  const isFocused = useIsFocused();
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -153,6 +151,7 @@ const HomeScreen: React.FC = () => {
     trending: DashboardRecommendation[];
     course_related: DashboardRecommendation[];
   }>({ for_you: [], trending: [], course_related: [] });
+  const [aiPicks, setAiPicks] = useState<DashboardRecommendation[]>([]);
   const [recentlyViewed, setRecentlyViewed] = useState<Resource[]>([]);
   const [recentlyUploaded, setRecentlyUploaded] = useState<Resource[]>([]);
   
@@ -260,6 +259,7 @@ const HomeScreen: React.FC = () => {
         recommendationsRes,
         recentlyUploadedRes,
         userGroupsRes,
+        aiRecsRes,
       ] = await Promise.all([
         analyticsAPI.getDashboard(),
         bookmarksService.getBookmarks({ limit: 3 }),
@@ -267,6 +267,7 @@ const HomeScreen: React.FC = () => {
         dashboardApi.getRecommendations(),
         resourcesAPI.list({ sort: 'newest', limit: 5 }).catch(() => ({ results: [] })),
         resourcesAPI.getUserStudyGroups().catch(() => ({ data: { data: [] } })),
+        aiAPI.recommendations({ limit: 8, include_popular: true }).catch(() => ({ data: { data: { recommendations: [] } } })),
       ]);
       const favoritesPagination = (favoritesRes as any)?.pagination;
       
@@ -287,6 +288,12 @@ const HomeScreen: React.FC = () => {
       lastQuickActionBadgeRefreshAtRef.current = Date.now();
       
       setRecommendations(recommendationsRes);
+      const aiList =
+        aiRecsRes?.data?.data?.recommendations ||
+        aiRecsRes?.data?.data ||
+        aiRecsRes?.data ||
+        [];
+      setAiPicks(Array.isArray(aiList) ? aiList : []);
       setRecentlyViewed(data.recent_resources || []);
       setRecentlyUploaded(extractResults<Resource>(recentlyUploadedRes));
 
@@ -325,27 +332,28 @@ const HomeScreen: React.FC = () => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  useEffect(() => {
-    if (isFocused && !loading) {
-      void Promise.all([refreshHeaderBadges(), refreshQuickActionBadges()]);
-    }
-  }, [isFocused, loading, refreshHeaderBadges, refreshQuickActionBadges]);
-
-  useEffect(() => {
-    if (!isFocused) {
-      return;
-    }
-
-    const unsubscribe = notificationService.subscribeToRealtimeNotifications((notification) => {
-      void refreshHeaderBadges(true);
-
-      if (notification.notification_type === 'new_resource') {
-        void refreshRecentlyUploaded();
+  useFocusEffect(
+    useCallback(() => {
+      if (!loading) {
+        void Promise.all([refreshHeaderBadges(), refreshQuickActionBadges()]);
       }
-    });
+      return undefined;
+    }, [loading, refreshHeaderBadges, refreshQuickActionBadges])
+  );
 
-    return unsubscribe;
-  }, [isFocused, refreshHeaderBadges, refreshRecentlyUploaded]);
+  useFocusEffect(
+    useCallback(() => {
+      const unsubscribe = notificationService.subscribeToRealtimeNotifications((notification) => {
+        void refreshHeaderBadges(true);
+
+        if (notification.notification_type === 'new_resource') {
+          void refreshRecentlyUploaded();
+        }
+      });
+
+      return unsubscribe;
+    }, [refreshHeaderBadges, refreshRecentlyUploaded])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -625,94 +633,6 @@ const HomeScreen: React.FC = () => {
           </View>
         </TouchableOpacity>
 
-        {/* 4. Quick Action Buttons */}
-        <View style={styles.section}>
-          <View style={styles.quickActionsGrid}>
-            {QUICK_ACTIONS.map((action) => {
-              const badgeCount = getQuickActionBadgeCount(action.id);
-              return (
-              <TouchableOpacity
-                key={action.id}
-                style={styles.quickActionItem}
-                onPress={() => handleQuickActionPress(action)}
-              >
-                <View style={[styles.quickActionIcon, { backgroundColor: action.color + '15' }]}>
-                  <Icon name={action.icon as any} size={22} color={action.color} />
-                  {badgeCount > 0 && (
-                    <View style={styles.quickActionBadge}>
-                      <Text style={styles.quickActionBadgeText}>
-                        {formatBadgeCount(badgeCount)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.quickActionLabel}>{action.name}</Text>
-              </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* 4B. Gamification / Progress Section */}
-        {gamificationStats && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Your Progress</Text>
-              <TouchableOpacity onPress={() => router.push('/(student)/leaderboard')}>
-                <Text style={styles.viewAll}>Leaderboard</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.gamificationCard}>
-              <View style={styles.gamificationTopRow}>
-                {/* Points */}
-                <View style={styles.gamificationStat}>
-                  <View style={[styles.gamificationIcon, { backgroundColor: '#FEF3C7' }]}>
-                    <Icon name="star" size={20} color="#F59E0B" />
-                  </View>
-                  <Text style={styles.gamificationValue}>{gamificationStats.total_points}</Text>
-                  <Text style={styles.gamificationLabel}>Points</Text>
-                </View>
-                
-                {/* Streak */}
-                <View style={styles.gamificationStat}>
-                  <View style={[styles.gamificationIcon, { backgroundColor: '#FEE2E2' }]}>
-                    <Icon name="flame" size={20} color="#EF4444" />
-                  </View>
-                  <Text style={styles.gamificationValue}>{gamificationStats.consecutive_login_days}</Text>
-                  <Text style={styles.gamificationLabel}>Day Streak</Text>
-                </View>
-                
-                {/* Rank */}
-                <View style={styles.gamificationStat}>
-                  <View style={[styles.gamificationIcon, { backgroundColor: '#DBEAFE' }]}>
-                    <Icon name="flag" size={20} color="#3B82F6" />
-                  </View>
-                  <Text style={styles.gamificationValue}>#{gamificationStats.leaderboard_rank || '-'}</Text>
-                  <Text style={styles.gamificationLabel}>Rank</Text>
-                </View>
-              </View>
-              
-              {/* Badges Preview */}
-              {gamificationStats.earned_badges.length > 0 && (
-                <View style={styles.badgesPreview}>
-                  <Text style={styles.badgesPreviewTitle}>Badges Earned</Text>
-                  <View style={styles.badgesPreviewRow}>
-                    {gamificationStats.earned_badges.map((badge) => (
-                      <View key={badge.id} style={styles.badgePreviewItem}>
-                        <View style={styles.badgePreviewIcon}>
-                          <Icon name="star" size={16} color="#8B5CF6" />
-                        </View>
-                        <Text style={styles.badgePreviewName} numberOfLines={1}>{badge.name}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-
         {/* 5. Recently Uploaded Files */}
         {recentlyUploaded.length > 0 && (
           <View style={styles.section}>
@@ -766,34 +686,6 @@ const HomeScreen: React.FC = () => {
           </View>
         )}
 
-        {/* 6. Categories / Explore Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Explore</Text>
-            <TouchableOpacity onPress={() => router.push('/(student)/tabs/resources')}>
-              <Text style={styles.viewAll}>Browse All</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesScroll}
-          >
-            {CATEGORIES.map((category) => (
-              <TouchableOpacity
-                key={category.id}
-                style={styles.categoryChip}
-                onPress={() => handleCategoryPress(category)}
-              >
-                <View style={[styles.categoryIcon, { backgroundColor: category.color + '20' }]}>
-                  <Icon name={category.icon as any} size={18} color={category.color} />
-                </View>
-                <Text style={styles.categoryName}>{category.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
         {/* 6. Continue Studying Section */}
         {recentlyViewed.length > 0 && (
           <View style={styles.section}>
@@ -831,7 +723,7 @@ const HomeScreen: React.FC = () => {
                         onPress={() => handleToggleBookmark(resource.id)}
                       />
                       <TouchableOpacity
-                        onPress={() => handleShare(resource.id, resource.title)}
+                        onPress={() => handleShare(resource.id, resource.title || 'Resource')}
                         style={[styles.cardActionButton, { backgroundColor: colors.primary[50], padding: 6, borderRadius: 8 }]}
                       >
                         <Icon name="share-social" size={18} color={colors.primary[500]} />
@@ -920,13 +812,91 @@ const HomeScreen: React.FC = () => {
                     </TouchableOpacity>
                     <TouchableOpacity 
                       style={styles.quickActionBtn}
-                      onPress={() => handleShare(resource.id, resource.title)}
+                      onPress={() => handleShare(resource.id, resource.title || 'Resource')}
                     >
                       <Icon name="share-social" size={18} color={colors.primary[500]} />
                     </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
               ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* AI Picks (Semantic) */}
+        {aiPicks.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>AI Picks</Text>
+              <TouchableOpacity onPress={() => router.push('/(student)/recommendations')}>
+                <Text style={styles.viewAll}>View All</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalScroll}
+            >
+              {aiPicks.slice(0, 5).map((resource) => {
+                const resourceType = resource.file_type || resource.resource_type || 'resource';
+                const resourceTypeColor = getResourceTypeColor(resourceType);
+
+                return (
+                  <TouchableOpacity 
+                    key={resource.id} 
+                    style={styles.resourceCard}
+                    onPress={() => router.push(`/(student)/resource/${resource.id}`)}
+                  >
+                    <View style={styles.resourceCardHeader}>
+                      <View style={[styles.resourceTypeTag, { backgroundColor: resourceTypeColor + '20' }]}>
+                        <Text style={[styles.resourceTypeText, { color: resourceTypeColor }]}>
+                          {resourceType}
+                        </Text>
+                      </View>
+                    </View>
+                  <Text style={styles.resourceTitle} numberOfLines={2}>{resource.title}</Text>
+                  <Text style={styles.resourceMeta}>
+                    {resource.course_name || 'General'}
+                  </Text>
+                  <View style={styles.resourceCardFooter}>
+                    <View style={styles.ratingContainer}>
+                      <Icon name="star" size={14} color={colors.warning} />
+                      <Text style={styles.ratingText}>{resource.average_rating?.toFixed(1) || '0.0'}</Text>
+                    </View>
+                    <View style={styles.downloadContainer}>
+                      <Icon name="download" size={14} color={colors.text.tertiary} />
+                      <Text style={styles.downloadText}>{resource.download_count || 0}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.cardQuickActions}>
+                    <TouchableOpacity 
+                      style={styles.quickActionBtn}
+                      onPress={() => handleToggleFavorite(resource.id)}
+                    >
+                      <Icon name="heart-outline" size={18} color={colors.text.tertiary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.quickActionBtn}
+                      onPress={() => handleToggleBookmark(resource.id)}
+                    >
+                      <Icon name="bookmark-outline" size={18} color={colors.text.tertiary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.quickActionBtn}
+                    >
+                      <Icon name="download" size={18} color={colors.text.tertiary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.quickActionBtn}
+                      onPress={() => handleShare(resource.id, resource.title || 'Resource')}
+                    >
+                      <Icon name="share-social" size={18} color={colors.primary[500]} />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           </View>
         )}
@@ -966,7 +936,7 @@ const HomeScreen: React.FC = () => {
                     </View>
                     <View style={styles.trendingIndicator}>
                       <TouchableOpacity
-                        onPress={() => handleShare(resource.id, resource.title)}
+                        onPress={() => handleShare(resource.id, resource.title || 'Resource')}
                         style={[styles.cardActionButton, { backgroundColor: colors.primary[50], padding: 6, borderRadius: 8 }]}
                       >
                         <Icon name="share-social" size={16} color={colors.primary[500]} />
@@ -1107,46 +1077,6 @@ const HomeScreen: React.FC = () => {
                     </Text>
                   </View>
                   <Icon name="heart" size={18} color={colors.error} />
-                </TouchableOpacity>
-              ))}
-            </Card>
-          </View>
-        )}
-
-        {/* 12. Announcements Preview */}
-        {announcements.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Announcements</Text>
-              <TouchableOpacity onPress={() => router.push('/(student)/announcements')}>
-                <Text style={styles.viewAll}>View All</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <Card style={styles.announcementCard}>
-              {announcements.slice(0, 3).map((announcement, index) => (
-                <TouchableOpacity 
-                  key={announcement.id} 
-                  style={[
-                    styles.announcementItem,
-                    index < Math.min(announcements.length, 3) - 1 && styles.announcementBorder
-                  ]}
-                  onPress={() => router.push('/(student)/announcements')}
-                >
-                  <View style={styles.announcementContent}>
-                    <View style={[styles.announcementIconBox, { backgroundColor: announcement.type === 'urgent' ? colors.error + '20' : colors.warning + '20' }]}>
-                      <Icon name="megaphone" size={16} color={announcement.type === 'urgent' ? colors.error : colors.warning} />
-                    </View>
-                    <View style={styles.announcementTextContainer}>
-                      <Text style={styles.announcementTitle} numberOfLines={1}>
-                        {announcement.title}
-                      </Text>
-                      <Text style={styles.announcementTime}>
-                        {formatDate(announcement.published_at || announcement.created_at)}
-                      </Text>
-                    </View>
-                  </View>
-                  <Icon name="chevron-forward" size={16} color={colors.text.tertiary} />
                 </TouchableOpacity>
               ))}
             </Card>

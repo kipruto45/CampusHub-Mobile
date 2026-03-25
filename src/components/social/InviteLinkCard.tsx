@@ -2,13 +2,14 @@
 // CampusHub Mobile App
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Share } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Share } from 'react-native';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../ui/Icon';
 import { studyGroupsAPI } from '../../services/api';
 import { copyToClipboard, openNativeShareSheet } from '../../utils/share';
+import { useToast } from '../ui/Toast';
 
 interface InviteLink {
   id: string;
@@ -32,6 +33,7 @@ interface InviteLinkCardProps {
 
 export default function InviteLinkCard({ link, onRevoke, onUpdate }: InviteLinkCardProps) {
   const [copying, setCopying] = useState(false);
+  const { showToast } = useToast();
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Never';
@@ -68,9 +70,9 @@ export default function InviteLinkCard({ link, onRevoke, onUpdate }: InviteLinkC
     setCopying(true);
     try {
       await copyToClipboard(link.invite_link);
-      Alert.alert('Success', 'Invite link copied to clipboard!');
+      showToast('success', 'Invite link copied to clipboard!');
     } catch (error) {
-      Alert.alert('Error', 'Failed to copy link');
+      showToast('error', 'Failed to copy link');
     } finally {
       setCopying(false);
     }
@@ -84,23 +86,13 @@ export default function InviteLinkCard({ link, onRevoke, onUpdate }: InviteLinkC
         url: link.invite_link,
       });
     } catch (error) {
-      Alert.alert('Error', 'Failed to share link');
+      showToast('error', 'Failed to share link');
     }
   };
 
   const handleRevoke = () => {
-    Alert.alert(
-      'Revoke Invite Link',
-      'Are you sure you want to revoke this invite link? Anyone with this link will no longer be able to join.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Revoke', 
-          style: 'destructive',
-          onPress: () => onRevoke(link.token)
-        },
-      ]
-    );
+    onRevoke(link.token);
+    showToast('info', 'Invite link revoked');
   };
 
   return (

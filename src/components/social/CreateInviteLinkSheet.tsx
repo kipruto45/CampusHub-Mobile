@@ -2,11 +2,12 @@
 // CampusHub Mobile App
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, Alert, ScrollView, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Switch, ScrollView, Modal, TextInput } from 'react-native';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Icon from '../ui/Icon';
+import { useToast } from '../ui/Toast';
 
 interface CreateInviteLinkSheetProps {
   visible: boolean;
@@ -47,6 +48,7 @@ export default function CreateInviteLinkSheet({ visible, onClose, onCreate }: Cr
   const [maxUses, setMaxUses] = useState(0);
   const [allowAutoJoin, setAllowAutoJoin] = useState(true);
   const [notes, setNotes] = useState('');
+  const { showToast } = useToast();
 
   const handleCreate = async () => {
     setLoading(true);
@@ -62,7 +64,7 @@ export default function CreateInviteLinkSheet({ visible, onClose, onCreate }: Cr
       resetForm();
       onClose();
     } catch (error) {
-      Alert.alert('Error', 'Failed to create invite link');
+      showToast('error', 'Failed to create invite link');
     } finally {
       setLoading(false);
     }

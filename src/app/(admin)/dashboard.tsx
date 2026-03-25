@@ -187,14 +187,16 @@ const AdminDashboard: React.FC = () => {
   const quickActions = [
     { id: '1', title: 'Review Flagged', subtitle: 'Check auto-held resources', icon: 'flag', route: '/(admin)/resources', color: colors.warning },
     { id: '2', title: 'Manage Users', subtitle: 'View & manage users', icon: 'people', route: '/(admin)/users', color: colors.primary[500] },
-    { id: '3', title: 'View Reports', subtitle: 'Review user reports', icon: 'flag', route: '/(admin)/reports', color: colors.error },
-    { id: '4', title: 'Create Announcement', subtitle: 'Post to all users', icon: 'megaphone', route: '/(admin)/announcements', color: colors.warning },
-    { id: '5', title: 'Analytics', subtitle: 'Platform insights', icon: 'stats-chart', route: '/(admin)/analytics', color: colors.info },
-    { id: '6', title: 'System Health', subtitle: 'Server & storage', icon: 'hardware-chip', route: '/(admin)/system-health', color: colors.accent[500] },
+    { id: '3', title: 'Role Invites', subtitle: 'Send and track invites', icon: 'mail-unread', route: '/(admin)/invitations', color: colors.accent[500] },
+    { id: '4', title: 'View Reports', subtitle: 'Review user reports', icon: 'flag', route: '/(admin)/reports', color: colors.error },
+    { id: '5', title: 'Create Announcement', subtitle: 'Post to all users', icon: 'megaphone', route: '/(admin)/announcements', color: colors.warning },
+    { id: '6', title: 'Analytics', subtitle: 'Platform insights', icon: 'stats-chart', route: '/(admin)/analytics', color: colors.info },
+    { id: '7', title: 'System Health', subtitle: 'Server & storage', icon: 'hardware-chip', route: '/(admin)/system-health', color: colors.accent[500] },
   ];
 
   const menuItems = [
     { id: 'users', title: 'Users', subtitle: 'Manage users & roles', icon: 'people', route: '/(admin)/users', color: colors.primary[500] },
+    { id: 'invitations', title: 'Invitations', subtitle: 'Role invites & CSV batches', icon: 'mail-unread', route: '/(admin)/invitations', color: colors.primary[700] },
     { id: 'resources', title: 'Resources', subtitle: 'Review & moderate', icon: 'document-text', route: '/(admin)/resources', color: colors.accent[500] },
     { id: 'faculties', title: 'Academic', subtitle: 'Faculties & courses', icon: 'school', route: '/(admin)/faculties', color: colors.info },
     { id: 'courses', title: 'Courses', subtitle: 'Manage courses', icon: 'book', route: '/(admin)/courses', color: colors.warning },

@@ -92,16 +92,23 @@ const CollectionsScreen: React.FC = () => {
 
       // Fetch bookmarks and favorites counts
       const [bookmarksRes, favoritesRes] = await Promise.all([
-        bookmarksService.getBookmarks({ page: 1, limit: 1 }).catch(() => ({ results: [], bookmarks: [] })),
-        favoritesService.getFavorites({ page: 1, limit: 1 }).catch(() => ({ results: [], favorites: [] })),
+        bookmarksService
+          .getBookmarks({ page: 1, limit: 1 })
+          .catch(() => ({ results: [], bookmarks: [], pagination: null })),
+        favoritesService
+          .getFavorites({ page: 1, limit: 1 })
+          .catch(() => ({ results: [], favorites: [], pagination: null })),
       ]);
 
       const bookmarkItems = bookmarksRes?.bookmarks || bookmarksRes?.results || [];
       const favoriteItems = favoritesRes?.favorites || favoritesRes?.results || [];
+
+      const bookmarkPagination = (bookmarksRes as any)?.pagination;
+      const favoritePagination = (favoritesRes as any)?.pagination;
       const bookmarkTotal =
-        Number(bookmarksRes?.pagination?.total ?? bookmarksRes?.pagination?.count ?? bookmarkItems.length) || 0;
+        Number(bookmarkPagination?.total ?? bookmarkPagination?.count ?? bookmarkItems.length) || 0;
       const favoriteTotal =
-        Number(favoritesRes?.pagination?.total ?? favoritesRes?.pagination?.count ?? favoriteItems.length) || 0;
+        Number(favoritePagination?.total ?? favoritePagination?.count ?? favoriteItems.length) || 0;
 
       const collectionsData: CollectionItem[] = [
         {
@@ -140,14 +147,8 @@ const CollectionsScreen: React.FC = () => {
       }
       setSelectedCollection(collectionId);
 
-      let response;
       if (collectionId === 'bookmarks') {
-        response = await bookmarksService.getBookmarks({ page: 1, limit: 50 });
-      } else if (collectionId === 'favorites') {
-        response = await favoritesService.getFavorites({ page: 1, limit: 50, type: 'resources' });
-      }
-
-      if (collectionId === 'bookmarks') {
+        const response = await bookmarksService.getBookmarks({ page: 1, limit: 50 });
         const bookmarks = response?.bookmarks || response?.results || [];
         const resources = bookmarks
           .map((item: any) => item?.resource)
@@ -156,7 +157,11 @@ const CollectionsScreen: React.FC = () => {
             normalizeCollectionResource(resource, { is_bookmarked: true })
           );
         setCollectionResources(resources);
-      } else if (collectionId === 'favorites') {
+        return;
+      }
+
+      if (collectionId === 'favorites') {
+        const response = await favoritesService.getFavorites({ page: 1, limit: 50, type: 'resources' });
         const favorites = response?.favorites || response?.results || [];
         const resources = favorites
           .map((item: any) => item?.resource)
@@ -165,9 +170,10 @@ const CollectionsScreen: React.FC = () => {
             normalizeCollectionResource(resource, { is_favorited: true })
           );
         setCollectionResources(resources);
-      } else {
-        setCollectionResources([]);
+        return;
       }
+
+      setCollectionResources([]);
     } catch (err: any) {
       console.error('Failed to fetch collection resources:', err);
       Alert.alert('Error', 'Failed to load resources');

@@ -54,18 +54,21 @@ const NotificationsScreen: React.FC = () => {
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
   const [undoTimeoutMs, setUndoTimeoutMs] = useState(getDefaultNotificationUndoMs());
 
-  type PendingAction =
-    | {
-        type: 'single';
-        notification: Notification;
-        index: number;
-        timer: ReturnType<typeof setTimeout>;
-      }
-    | {
-        type: 'bulk';
-        notifications: Notification[];
-        timer: ReturnType<typeof setTimeout>;
-      };
+  type PendingActionSingle = {
+    type: 'single';
+    notification: Notification;
+    index: number;
+    timer: ReturnType<typeof setTimeout>;
+  };
+  type PendingActionBulk = {
+    type: 'bulk';
+    notifications: Notification[];
+    timer: ReturnType<typeof setTimeout>;
+  };
+  type PendingAction = PendingActionSingle | PendingActionBulk;
+  type PendingActionDraft =
+    | Omit<PendingActionSingle, 'timer'>
+    | Omit<PendingActionBulk, 'timer'>;
   const pendingActionRef = useRef<PendingAction | null>(null);
 
   const commitPendingAction = useCallback(async (pending: PendingAction) => {
@@ -114,7 +117,7 @@ const NotificationsScreen: React.FC = () => {
   }, [showToast]);
 
   const schedulePendingAction = useCallback(
-    (pending: Omit<PendingAction, 'timer'>) => {
+    (pending: PendingActionDraft) => {
       const timer = setTimeout(() => {
         const current = pendingActionRef.current;
         if (!current || current.timer !== timer) return;
@@ -122,7 +125,10 @@ const NotificationsScreen: React.FC = () => {
         void commitPendingAction(current);
       }, undoTimeoutMs);
 
-      pendingActionRef.current = { ...pending, timer };
+      pendingActionRef.current =
+        pending.type === 'single'
+          ? { ...pending, timer }
+          : { ...pending, timer };
     },
     [commitPendingAction, undoTimeoutMs]
   );

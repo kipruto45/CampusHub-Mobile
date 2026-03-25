@@ -25,13 +25,16 @@ interface GroupInfo {
 export default function GroupInviteScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const router = useRouter();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [groupInfo, setGroupInfo] = useState<GroupInfo | null>(null);
   const [validation, setValidation] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Check if user is active
+  const isUserActive = user?.is_active !== false;
 
   useEffect(() => {
     if (token) {
@@ -67,6 +70,16 @@ export default function GroupInviteScreen() {
           { text: 'Cancel', style: 'cancel' },
           { text: 'Login', onPress: () => router.push('/(auth)/login') },
         ]
+      );
+      return;
+    }
+
+    // Check if user is active
+    if (!isUserActive) {
+      Alert.alert(
+        'Account Inactive',
+        'Your account is not active. Please contact support.',
+        [{ text: 'OK' }]
       );
       return;
     }

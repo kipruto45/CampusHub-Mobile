@@ -223,6 +223,8 @@ const ProfileScreen: React.FC = () => {
     { id: '5', icon: 'cloud-upload', label: 'My Uploads', route: '/(student)/my-uploads' },
     { id: '10', icon: 'document-text', label: 'Resource Requests', route: '/(student)/resource-requests' },
     { id: '11', icon: 'trending-up', label: 'My Progress', route: '/(student)/my-progress' },
+    { id: '14', icon: 'diamond', label: 'Achievements', route: '/(student)/gamification' },
+    { id: '15', icon: 'gift', label: 'Referrals', route: '/(student)/referrals' },
     { id: '12', icon: 'people', label: 'Study Groups', route: '/(student)/study-groups' },
     { id: '13', icon: 'star', label: 'Leaderboard', route: '/(student)/leaderboard' },
     { id: '6', icon: 'notifications', label: 'Notifications', route: '/(student)/notifications' },
@@ -432,7 +434,11 @@ const ProfileScreen: React.FC = () => {
               </View>
             ) : null}
           </View>
-          <View style={styles.gamificationCard}>
+          <TouchableOpacity
+            style={styles.gamificationCard}
+            activeOpacity={0.9}
+            onPress={() => router.push('/(student)/gamification' as any)}
+          >
             {/* Points */}
             <View style={styles.pointsRow}>
               <View style={styles.pointsItem}>
@@ -476,7 +482,7 @@ const ProfileScreen: React.FC = () => {
                 </View>
               </View>
             )}
-          </View>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -912,7 +918,7 @@ const styles = StyleSheet.create({
   pointsValue: {
     fontSize: 24,
     fontWeight: '700',
-    color: colors.warning[600],
+    color: colors.warning,
     marginTop: spacing[1],
   },
   pointsLabel: {

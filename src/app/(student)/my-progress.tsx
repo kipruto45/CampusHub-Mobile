@@ -8,8 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useIsFocused } from '@react-navigation/native';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState from '../../components/ui/ErrorState';
@@ -216,7 +215,6 @@ const getBadgeIcon = (category?: string): React.ComponentProps<typeof Icon>['nam
 
 const MyProgressScreen: React.FC = () => {
   const router = useRouter();
-  const isFocused = useIsFocused();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -286,13 +284,12 @@ const MyProgressScreen: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => {
-    if (!isFocused) {
-      return;
-    }
-
-    void fetchData({ silent: hasLoadedOnce });
-  }, [fetchData, hasLoadedOnce, isFocused]);
+  useFocusEffect(
+    useCallback(() => {
+      void fetchData({ silent: hasLoadedOnce });
+      return undefined;
+    }, [fetchData, hasLoadedOnce])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

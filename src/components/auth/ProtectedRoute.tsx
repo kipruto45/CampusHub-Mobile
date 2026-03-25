@@ -24,8 +24,8 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     // Check auth state after initialization
     if (!isLoading) {
       if (!isAuthenticated || !accessToken) {
-        // Not authenticated, redirect to login
-        router.replace('/(auth)/login');
+        // Not authenticated, redirect to login with session flag
+        router.replace('/(auth)/login?reason=session_expired');
       }
     }
   }, [isAuthenticated, isLoading, accessToken]);

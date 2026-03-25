@@ -45,6 +45,7 @@ export interface LocalDownloadRecord {
   createdAt: string;
   updatedAt: string;
   savedToDeviceAt?: string;
+  lastOpenedAt?: string;
 }
 
 export interface EnsureLocalDownloadParams {
@@ -178,6 +179,31 @@ class LocalDownloadsService {
     return record;
   }
 
+  // Get all local downloads
+  async getAllRecords(): Promise<LocalDownloadRecord[]> {
+    const records = await this.loadRecords();
+    const validRecords: LocalDownloadRecord[] = [];
+    
+    for (const [key, record] of Object.entries(records)) {
+      // Verify file still exists
+      if (Platform.OS !== 'web' && record.localUri.startsWith('file://')) {
+        const info = await FileSystem.getInfoAsync(record.localUri);
+        if (!info.exists) {
+          delete records[key];
+          continue;
+        }
+      }
+      validRecords.push(record);
+    }
+    
+    // Save cleaned records
+    if (Object.keys(records).length !== validRecords.length) {
+      await this.saveRecords(records);
+    }
+    
+    return validRecords;
+  }
+
   async ensureLocalFile(params: EnsureLocalDownloadParams): Promise<LocalDownloadRecord> {
     const existing = await this.getRecord(params.key);
     if (existing) {
@@ -237,6 +263,7 @@ class LocalDownloadsService {
       fileSize: info.exists ? Number(info.size || 0) : 0,
       createdAt: timestamp,
       updatedAt: timestamp,
+      lastOpenedAt: null as any,
     };
 
     const records = await this.loadRecords();
@@ -250,6 +277,7 @@ class LocalDownloadsService {
     if (!record) {
       throw new Error('Downloaded file not found.');
     }
+    await this.markOpened(key).catch(() => null);
 
     if (Platform.OS === 'web') {
       await Linking.openURL(record.remoteUrl);
@@ -286,6 +314,14 @@ class LocalDownloadsService {
     }
 
     throw new Error('No application is available to open this file.');
+  }
+
+  async markOpened(key: string) {
+    const records = await this.loadRecords();
+    if (records[key]) {
+      records[key] = { ...records[key], lastOpenedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      await this.saveRecords(records);
+    }
   }
 
   async saveCopyToDevice(key: string): Promise<SaveCopyResult> {
@@ -348,6 +384,32 @@ class LocalDownloadsService {
       UTI: record.mimeType,
     });
     return { status: 'shared', uri: record.localUri };
+  }
+
+  // Remove all locally cached downloads and metadata
+  async clearAll(): Promise<{ deleted: number; bytes: number }> {
+    const records = await this.loadRecords();
+    let deleted = 0;
+    let bytes = 0;
+
+    // Delete files on device
+    if (Platform.OS !== 'web' && DOWNLOADS_DIR) {
+      await this.ensureDownloadsDirectory();
+      const info = await FileSystem.readDirectoryAsync(DOWNLOADS_DIR).catch(() => []);
+      for (const file of info) {
+        const path = `${DOWNLOADS_DIR}${file}`;
+        const stat = await FileSystem.getInfoAsync(path).catch(() => null);
+        if (stat?.exists) {
+          bytes += Number(stat.size || 0);
+          await FileSystem.deleteAsync(path, { idempotent: true }).catch(() => null);
+          deleted += 1;
+        }
+      }
+    }
+
+    // Clear metadata
+    await this.saveRecords({});
+    return { deleted, bytes };
   }
 }
 

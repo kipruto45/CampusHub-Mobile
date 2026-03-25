@@ -1,98 +1,12 @@
 {
   "expo": {
     "name": "CampusHub",
-    "slug": "campus-hub",
-    "version": "1.0.1",
-    "orientation": "portrait",
-    "icon": "./assets/icon-512.png",
-    "userInterfaceStyle": "light",
-    "scheme": "campushub",
-    "splash": {
-      "image": "./assets/icon-512.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0D7377"
-    },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.campushub.app",
-      "infoPlist": {
-        "NSCameraUsageDescription": "Camera access is needed to take photos for profile pictures",
-        "NSPhotoLibraryUsageDescription": "Photo library access is needed to upload resource files"
-      }
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/icon-512.png",
-        "backgroundColor": "#FFFFFF"
-      },
-      "roundIcon": "./assets/icon-512.png",
-      "package": "com.campushub",
-      "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE",
-        "android.permission.POST_NOTIFICATIONS",
-        "android.permission.RECORD_AUDIO"
-      ],
-      "bundleInRelease": true
-    },
-    "web": {
-      "favicon": "./assets/icon-512.png",
-      "bundler": "metro",
-      "output": "single",
-      "meta": {
-        "name": "CampusHub",
-        "description": "CampusHub - Academic Resource Management App",
-        "theme_color": "#0D7377",
-        "background_color": "#0D7377"
-      },
-      "pwa": {
-        "themeColor": "#0D7377",
-        "backgroundColor": "#0D7377",
-        "display": "standalone",
-        "orientation": "portrait",
-        "startUrl": "/",
-        "icons": {
-          "512x512": "./assets/icon-512.png",
-          "192x192": "./assets/icon-512.png"
-        }
-      }
-    },
-    "plugins": [
-      "expo-router",
-      "expo-font",
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "The app accesses your photos to let you upload resources."
-        }
-      ],
-      [
-        "expo-document-picker",
-        {
-          "iCloudContainerEnvironment": "Production"
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/icon-512.png",
-          "color": "#0D7377"
-        }
-      ]
-    ],
-    "experiments": {
-      "typedRoutes": true
-    },
+    "slug": "campushub-mobile",
+    "version": "1.0.0",
+    "owner": "kiprutovictor45",
     "extra": {
-      "router": {},
       "eas": {
-        "projectId": "c21d7cd4-b659-4916-89b9-7ca6d5f7ecf7"
+        "projectId": "campushub-mobile"
       }
     }
   }

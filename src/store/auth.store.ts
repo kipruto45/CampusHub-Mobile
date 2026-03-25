@@ -2,6 +2,10 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import {
   authAPI,
   setAuthToken,
@@ -30,15 +34,25 @@ const memoryStorage = (() => {
 })();
 
 const getPersistStorage = () => {
+  // On native platforms, use AsyncStorage so auth persists across app restarts.
+  // On web, fall back to localStorage; otherwise keep an in-memory store.
+  if (Platform.OS !== 'web' && AsyncStorage) {
+    return AsyncStorage;
+  }
+
   const webStorage = (globalThis as any)?.localStorage;
   if (webStorage) {
     return webStorage;
   }
+
   return memoryStorage;
 };
 
 const APP_CACHE_KEYS = ['auth-storage'];
 const CURRENT_USER_FRESH_MS = 60_000;
+const SECURE_REFRESH_TOKEN_KEY = 'campushub.refresh_token';
+const MIN_REFRESH_LEAD_MS = 5 * 60 * 1000; // refresh 5 minutes before expiry
+const FALLBACK_ACCESS_TTL_MS = 55 * 60 * 1000; // fallback if exp missing
 
 const EMPTY_AUTH_STATE = {
   user: null,
@@ -79,6 +93,78 @@ const normalizeStoredName = (value: any): string => {
   return cleaned;
 };
 
+const decodeBase64 = (value: string): string | null => {
+  try {
+    if (typeof globalThis.atob === 'function') {
+      return globalThis.atob(value);
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
+const decodeJwtExp = (token?: string | null): number | null => {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length < 2) return null;
+  const payload = decodeBase64(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+  if (!payload) return null;
+  try {
+    const parsed = JSON.parse(payload);
+    return typeof parsed.exp === 'number' ? parsed.exp : null;
+  } catch {
+    return null;
+  }
+};
+
+const storeRefreshTokenSecure = async (token?: string | null) => {
+  if (Platform.OS === 'web') return;
+  try {
+    if (!token) {
+      await SecureStore.deleteItemAsync(SECURE_REFRESH_TOKEN_KEY);
+    } else {
+      await SecureStore.setItemAsync(SECURE_REFRESH_TOKEN_KEY, token);
+    }
+  } catch {
+    // best effort
+  }
+};
+
+const loadRefreshTokenSecure = async (): Promise<string | null> => {
+  if (Platform.OS === 'web') return null;
+  try {
+    const value = await SecureStore.getItemAsync(SECURE_REFRESH_TOKEN_KEY);
+    return value || null;
+  } catch {
+    return null;
+  }
+};
+
+let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
+
+const clearRefreshTimer = () => {
+  if (refreshTimeout) {
+    clearTimeout(refreshTimeout);
+    refreshTimeout = null;
+  }
+};
+
+const scheduleRefresh = (get: () => AuthState, accessToken?: string | null) => {
+  clearRefreshTimer();
+  const exp = decodeJwtExp(accessToken);
+  const nowMs = Date.now();
+  const targetMs = exp ? exp * 1000 : nowMs + FALLBACK_ACCESS_TTL_MS;
+  const delay = Math.max(30_000, targetMs - nowMs - MIN_REFRESH_LEAD_MS);
+  refreshTimeout = setTimeout(() => {
+    get()
+      .refreshAccessToken()
+      .catch(() => {
+        // handled inside refreshAccessToken
+      });
+  }, delay);
+};
+
 const sanitizeStoredUser = (user: User | null): User | null => {
   if (!user) return user;
   const first = normalizeStoredName((user as any).first_name);
@@ -106,6 +192,7 @@ interface User {
   faculty?: string;
   course?: string;
   auth_provider?: string;
+  is_active?: boolean;
 }
 
 interface AuthState {
@@ -124,6 +211,8 @@ interface AuthState {
     twoFactorCode?: string
   ) => Promise<string>;
   loginWithBiometric: (refreshToken: string) => Promise<string>;
+  loginWithMagicLink: (token: string) => Promise<string>;
+  requestMagicLink: (email: string) => Promise<void>;
   register: (data: {
     email: string;
     password: string;
@@ -157,6 +246,7 @@ export const useAuthStore = create<AuthState>()(
       let currentUserRequest: Promise<void> | null = null;
       let lastCurrentUserFetchAt = 0;
       let lastInitializedToken: string | null = null;
+      let netinfoUnsubscribe: (() => void) | null = null;
 
       const resetInitializationState = () => {
         currentUserRequest = null;
@@ -187,13 +277,19 @@ export const useAuthStore = create<AuthState>()(
       const clearSessionState = () => {
         resetInitializationState();
         void clearBiometricToken();
+        clearRefreshTimer();
+        void storeRefreshTokenSecure(null);
         set(EMPTY_AUTH_STATE);
         clearClientCache();
       };
 
       const registerSessionInvalidationCallback = () => {
-        setSessionInvalidationCallback(() => {
+        setSessionInvalidationCallback((reason?: string) => {
+          clearRefreshTimer();
           clearSessionState();
+          if (reason) {
+            set({ error: 'Session expired. Please sign in again.' });
+          }
         });
       };
 
@@ -202,15 +298,29 @@ export const useAuthStore = create<AuthState>()(
           const nextRefresh = refreshToken ?? get().refreshToken;
           if (nextRefresh) {
             void syncBiometricToken(nextRefresh);
+            void storeRefreshTokenSecure(nextRefresh);
           }
           set((state) => ({
             accessToken,
             refreshToken: refreshToken ?? state.refreshToken,
           }));
+          scheduleRefresh(get, accessToken);
         });
       };
 
       registerSessionInvalidationCallback();
+
+      // Reschedule refresh when connectivity returns
+      if (!netinfoUnsubscribe) {
+        netinfoUnsubscribe = NetInfo.addEventListener((state) => {
+          if (state.isConnected && state.isInternetReachable !== false) {
+            const token = get().accessToken;
+            if (token) {
+              scheduleRefresh(get, token);
+            }
+          }
+        });
+      }
 
       return {
       ...EMPTY_AUTH_STATE,
@@ -241,6 +351,7 @@ export const useAuthStore = create<AuthState>()(
           // Store tokens
           setAuthToken(access_token);
           setRefreshToken(refresh_token);
+          void storeRefreshTokenSecure(refresh_token);
           registerRefreshTokenCallback();
           
           set({
@@ -253,10 +364,72 @@ export const useAuthStore = create<AuthState>()(
           void syncBiometricToken(refresh_token);
           lastCurrentUserFetchAt = Date.now();
           lastInitializedToken = access_token;
+          scheduleRefresh(get, access_token);
 
           return resolveHomeRouteByRole(user?.role) || STUDENT_HOME_ROUTE;
         } catch (error: any) {
           const message = error.response?.data?.error?.message || error.response?.data?.message || 'Login failed. Please try again.';
+          set({ error: message, isLoading: false });
+          throw error;
+        }
+      },
+
+      requestMagicLink: async (email: string) => {
+        set({ isLoading: true, error: null });
+        try {
+          await authAPI.requestMagicLink(email.trim().toLowerCase());
+          set({ isLoading: false });
+        } catch (error: any) {
+          const message =
+            error?.response?.data?.detail ||
+            error?.response?.data?.message ||
+            error?.message ||
+            'Unable to send magic link. Please try again.';
+          set({ error: message, isLoading: false });
+          throw error;
+        }
+      },
+
+      loginWithMagicLink: async (token: string) => {
+        set({ isLoading: true, error: null });
+        try {
+          const response = await authAPI.consumeMagicLink(token);
+          const payload = response?.data?.data ?? response?.data ?? {};
+          const accessToken = payload?.access_token || payload?.access;
+          const refreshToken = payload?.refresh_token || payload?.refresh;
+
+          if (!accessToken || !refreshToken) {
+            throw new Error('Magic link is invalid or expired.');
+          }
+
+          setAuthToken(accessToken);
+          setRefreshToken(refreshToken);
+          void storeRefreshTokenSecure(refreshToken);
+          registerRefreshTokenCallback();
+
+          const profileResponse = await authAPI.getCurrentUser();
+          const userData = profileResponse.data.data || profileResponse.data;
+
+          set({
+            accessToken,
+            refreshToken,
+            user: userData,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+          void syncBiometricToken(refreshToken);
+          lastCurrentUserFetchAt = Date.now();
+          lastInitializedToken = accessToken;
+          scheduleRefresh(get, accessToken);
+
+          return resolveHomeRouteByRole(userData?.role) || STUDENT_HOME_ROUTE;
+        } catch (error: any) {
+          const message =
+            error?.response?.data?.detail ||
+            error?.response?.data?.error?.message ||
+            error?.response?.data?.message ||
+            error?.message ||
+            'Magic link login failed. Please try again.';
           set({ error: message, isLoading: false });
           throw error;
         }
@@ -276,6 +449,7 @@ export const useAuthStore = create<AuthState>()(
 
           setAuthToken(accessToken);
           setRefreshToken(refreshToken);
+          void storeRefreshTokenSecure(refreshToken);
           registerRefreshTokenCallback();
 
           const profileResponse = await authAPI.getCurrentUser();
@@ -291,6 +465,7 @@ export const useAuthStore = create<AuthState>()(
           void syncBiometricToken(refreshToken);
           lastCurrentUserFetchAt = Date.now();
           lastInitializedToken = accessToken;
+          scheduleRefresh(get, accessToken);
 
           return resolveHomeRouteByRole(userData?.role) || STUDENT_HOME_ROUTE;
         } catch (error: any) {
@@ -335,6 +510,8 @@ export const useAuthStore = create<AuthState>()(
           // Ignore logout API errors
         } finally {
           clearAuthToken();
+          clearRefreshTimer();
+          void storeRefreshTokenSecure(null);
           clearSessionState();
         }
       },
@@ -349,6 +526,7 @@ export const useAuthStore = create<AuthState>()(
           setAuthToken(accessToken);
           if (refreshToken) {
             setRefreshToken(refreshToken);
+            void storeRefreshTokenSecure(refreshToken);
           }
           registerRefreshTokenCallback();
 
@@ -368,6 +546,7 @@ export const useAuthStore = create<AuthState>()(
           }
           lastCurrentUserFetchAt = Date.now();
           lastInitializedToken = accessToken;
+          scheduleRefresh(get, accessToken);
 
           return resolveHomeRouteByRole(userData?.role) || STUDENT_HOME_ROUTE;
         } catch (error: any) {
@@ -388,11 +567,14 @@ export const useAuthStore = create<AuthState>()(
           const { access_token, refresh_token } = response.data.data;
           setAuthToken(access_token);
           setRefreshToken(refresh_token);
+          void storeRefreshTokenSecure(refresh_token);
           set({ accessToken: access_token, refreshToken: refresh_token });
           void syncBiometricToken(refresh_token || refreshToken);
           lastInitializedToken = access_token;
+          scheduleRefresh(get, access_token);
         } catch {
           // Token refresh failed - logout
+          set({ error: 'Session expired. Please sign in again.' });
           get().logout();
           throw new Error('Session expired');
         }
@@ -438,21 +620,74 @@ export const useAuthStore = create<AuthState>()(
           set({ user: sanitizeStoredUser(user) });
         }
 
-        if (accessToken) {
-          setAuthToken(accessToken);
-          setRefreshToken(refreshToken);
-          registerRefreshTokenCallback();
-
-          const isFreshSession =
-            lastInitializedToken === accessToken &&
-            Boolean(user) &&
-            Date.now() - lastCurrentUserFetchAt < CURRENT_USER_FRESH_MS;
-
-          if (!currentUserRequest && !isFreshSession) {
-            lastInitializedToken = accessToken;
-            void get().fetchCurrentUser();
+        void (async () => {
+          const shouldToggleLoading = !get().isLoading;
+          if (shouldToggleLoading) {
+            set({ isLoading: true });
           }
-        }
+
+          let hydratedRefresh = refreshToken;
+          if (!hydratedRefresh) {
+            hydratedRefresh = await loadRefreshTokenSecure();
+            if (hydratedRefresh) {
+              // Gate stored sessions behind biometric if enabled
+              try {
+                const requiresBiometric = await biometricService.shouldUseBiometric();
+                if (requiresBiometric) {
+                  const authResult = await biometricService.authenticate('Unlock your session');
+                  if (!authResult.success) {
+                    await storeRefreshTokenSecure(null);
+                    await clearBiometricToken();
+                    hydratedRefresh = null;
+                    set({ error: authResult.error || 'Authentication required to unlock session.' });
+                  }
+                }
+              } catch {
+                // If biometric check fails, fall back to allowing refresh token
+              }
+
+              if (hydratedRefresh) {
+                set({ refreshToken: hydratedRefresh });
+                setRefreshToken(hydratedRefresh);
+                void syncBiometricToken(hydratedRefresh);
+              }
+            }
+          }
+
+          if (accessToken) {
+            setAuthToken(accessToken);
+            setRefreshToken(hydratedRefresh);
+            registerRefreshTokenCallback();
+
+            const isFreshSession =
+              lastInitializedToken === accessToken &&
+              Boolean(user) &&
+              Date.now() - lastCurrentUserFetchAt < CURRENT_USER_FRESH_MS;
+
+            lastInitializedToken = accessToken;
+            scheduleRefresh(get, accessToken);
+            if (!currentUserRequest && !isFreshSession) {
+              void get().fetchCurrentUser();
+            }
+            if (shouldToggleLoading) {
+              set({ isLoading: false });
+            }
+            return;
+          }
+
+          if (hydratedRefresh) {
+            try {
+              await get().refreshAccessToken();
+              await get().fetchCurrentUser();
+            } catch {
+              // handled in refreshAccessToken
+            }
+          }
+
+          if (shouldToggleLoading) {
+            set({ isLoading: false });
+          }
+        })();
       },
 
       getHomeRoute: () => resolveHomeRouteByRole(get().user?.role) || STUDENT_HOME_ROUTE,
@@ -487,8 +722,8 @@ export const useAuthStore = create<AuthState>()(
       storage: createJSONStorage(getPersistStorage),
       partialize: (state) => ({
         user: state.user,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
+        accessToken: Platform.OS === 'web' ? state.accessToken : null,
+        refreshToken: Platform.OS === 'web' ? state.refreshToken : null,
         isAuthenticated: state.isAuthenticated,
       }),
     }

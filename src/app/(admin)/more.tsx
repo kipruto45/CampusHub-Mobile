@@ -53,6 +53,8 @@ const MoreScreen: React.FC = () => {
     { id: '26', title: 'API Keys', icon: 'key', route: '/(admin)/api-keys', color: colors.accent[600] },
     { id: '27', title: 'Webhooks', icon: 'link', route: '/(admin)/webhooks', color: colors.info },
     { id: '28', title: 'Workflows', icon: 'git-branch', route: '/(admin)/workflows', color: colors.warning },
+    // Groups
+    { id: '29', title: 'Study Groups', icon: 'people', route: '/(admin)/study-groups', color: colors.primary[500] },
     // Account
     { id: '12', title: 'Settings', icon: 'settings', route: '/(admin)/settings', color: colors.text.secondary },
     { id: '13', title: 'Profile', icon: 'person', route: '/(admin)/profile', color: colors.primary[500] },
@@ -60,7 +62,7 @@ const MoreScreen: React.FC = () => {
 
   const academicTools = tools.filter((tool) => ['0', '1', '2', '3', '4'].includes(tool.id));
   const platformTools = tools.filter((tool) =>
-    ['5', '6', '7', '8', '9', '10', '11', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28'].includes(tool.id)
+    ['5', '6', '7', '8', '9', '10', '11', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29'].includes(tool.id)
   );
   const accountTools = tools.filter((tool) => ['12', '13'].includes(tool.id));
 

@@ -88,6 +88,8 @@ const signInWithGoogleNative = async (): Promise<NativeAuthResult> => {
   let GoogleSignin: any;
   let statusCodes: any;
   try {
+    // Optional dependency (native module). Falls back to web auth if not installed.
+    // eslint-disable-next-line import/no-unresolved
     const googleModule = (await import('@react-native-google-signin/google-signin')) as any;
     GoogleSignin = googleModule.GoogleSignin;
     statusCodes = googleModule.statusCodes;
@@ -157,6 +159,8 @@ const signInWithMicrosoftNative = async (): Promise<NativeAuthResult> => {
   let PublicClientApplication: any;
   let MSALPromptType: any;
   try {
+    // Optional dependency (native module). Falls back to web auth if not installed.
+    // eslint-disable-next-line import/no-unresolved
     const msalModule = (await import('react-native-msal')) as any;
     PublicClientApplication =
       msalModule.default ?? msalModule.PublicClientApplication;

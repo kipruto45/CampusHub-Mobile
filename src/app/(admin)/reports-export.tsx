@@ -14,7 +14,10 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  Switch,
+  Modal,
 } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '../../store/auth.store';
 import { getApiBaseUrl } from '../../services/api';
 
@@ -28,11 +31,22 @@ interface Report {
 
 export default function ReportsExportScreen() {
   const { accessToken: token } = useAuthStore();
+  const params = useLocalSearchParams<{ ids?: string }>();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [reports, setReports] = useState<Report[]>([]);
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [bulkModalVisible, setBulkModalVisible] = useState(false);
+  const [bulkMode, setBulkMode] = useState<'update' | 'delete' | 'moderate' | 'notify' | null>(null);
+  const [idsInput, setIdsInput] = useState('');
+  const [statusInput, setStatusInput] = useState('approved');
+  const [moderationAction, setModerationAction] = useState<'approve' | 'reject' | 'flag'>('approve');
+  const [reason, setReason] = useState('');
+  const [softDelete, setSoftDelete] = useState(true);
+  const [notifyTitle, setNotifyTitle] = useState('Bulk update');
+  const [notifyMessage, setNotifyMessage] = useState('We applied a bulk change.');
+  const [submittingBulk, setSubmittingBulk] = useState(false);
 
   const fetchReports = useCallback(async () => {
     try {
@@ -65,7 +79,11 @@ export default function ReportsExportScreen() {
 
   useEffect(() => {
     fetchReports();
-  }, [fetchReports]);
+    // Prefill IDs from deep link or navigation params
+    if (params?.ids) {
+      setIdsInput(String(params.ids));
+    }
+  }, [fetchReports, params?.ids]);
 
   const generateReport = async (reportId: string, format: string) => {
     setGenerating(true);
@@ -100,6 +118,93 @@ export default function ReportsExportScreen() {
       Alert.alert('Error', 'Failed to generate report');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const openBulk = (mode: 'update' | 'delete' | 'moderate' | 'notify') => {
+    setBulkMode(mode);
+    setBulkModalVisible(true);
+  };
+
+  const parseIds = () =>
+    Array.from(
+      new Set(
+        idsInput
+          .split(/[\s,]+/)
+          .map((id) => id.trim())
+          .filter(Boolean)
+      )
+    );
+
+  const isValidId = (id: string) =>
+    /^[0-9a-fA-F-]{8,}$/.test(id) || /^\d+$/.test(id);
+
+  const submitBulk = async () => {
+    if (!bulkMode) return;
+    const resource_ids = parseIds();
+    if (resource_ids.length === 0 && bulkMode !== 'notify') {
+      Alert.alert('Add resource IDs', 'Enter one or more resource IDs separated by commas or spaces.');
+      return;
+    }
+    const invalid = resource_ids.filter((id) => !isValidId(id));
+    if (invalid.length) {
+      Alert.alert(
+        'Invalid IDs',
+        `These IDs look invalid:\n${invalid.slice(0, 5).join(', ')}${invalid.length > 5 ? '…' : ''}`
+      );
+      return;
+    }
+    setSubmittingBulk(true);
+    try {
+      const base = getApiBaseUrl();
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
+
+      if (bulkMode === 'update') {
+        const res = await fetch(`${base}/api/admin-management/bulk/resources/update/`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ resource_ids, updates: { status: statusInput } }),
+        });
+        if (!res.ok) throw new Error('Bulk update failed');
+        Alert.alert('Bulk Update', 'Resources updated.');
+      } else if (bulkMode === 'delete') {
+        const res = await fetch(`${base}/api/admin-management/bulk/resources/delete/`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ resource_ids, soft: softDelete }),
+        });
+        if (!res.ok) throw new Error('Bulk delete failed');
+        Alert.alert('Bulk Delete', softDelete ? 'Resources moved to trash.' : 'Resources deleted.');
+      } else if (bulkMode === 'moderate') {
+        const res = await fetch(`${base}/api/admin-management/bulk/moderation/`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ resource_ids, action: moderationAction, reason }),
+        });
+        if (!res.ok) throw new Error('Bulk moderation failed');
+        Alert.alert('Bulk Moderation', `Action "${moderationAction}" applied.`);
+      } else if (bulkMode === 'notify') {
+        const res = await fetch(`${base}/api/announcements/admin/`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            title: notifyTitle,
+            content: notifyMessage,
+            announcement_type: 'system',
+            status: 'published',
+          }),
+        });
+        if (!res.ok) throw new Error('Bulk notification failed');
+        Alert.alert('Notification sent', 'Announcement broadcast successfully.');
+      }
+      setBulkModalVisible(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Bulk operation failed');
+    } finally {
+      setSubmittingBulk(false);
     }
   };
 
@@ -213,7 +318,7 @@ export default function ReportsExportScreen() {
         <View style={styles.bulkOperations}>
           <TouchableOpacity
             style={styles.bulkOperationCard}
-            onPress={() => Alert.alert('Coming Soon', 'Bulk update feature coming soon')}
+            onPress={() => openBulk('update')}
           >
             <Text style={styles.bulkOperationIcon}>✏️</Text>
             <Text style={styles.bulkOperationLabel}>Bulk Update</Text>
@@ -224,7 +329,7 @@ export default function ReportsExportScreen() {
 
           <TouchableOpacity
             style={styles.bulkOperationCard}
-            onPress={() => Alert.alert('Coming Soon', 'Bulk delete feature coming soon')}
+            onPress={() => openBulk('delete')}
           >
             <Text style={styles.bulkOperationIcon}>🗑️</Text>
             <Text style={styles.bulkOperationLabel}>Bulk Delete</Text>
@@ -235,7 +340,7 @@ export default function ReportsExportScreen() {
 
           <TouchableOpacity
             style={styles.bulkOperationCard}
-            onPress={() => Alert.alert('Coming Soon', 'Bulk moderation feature coming soon')}
+            onPress={() => openBulk('moderate')}
           >
             <Text style={styles.bulkOperationIcon}>✅</Text>
             <Text style={styles.bulkOperationLabel}>Bulk Moderate</Text>
@@ -246,7 +351,7 @@ export default function ReportsExportScreen() {
 
           <TouchableOpacity
             style={styles.bulkOperationCard}
-            onPress={() => Alert.alert('Coming Soon', 'Bulk notification feature coming soon')}
+            onPress={() => openBulk('notify')}
           >
             <Text style={styles.bulkOperationIcon}>📧</Text>
             <Text style={styles.bulkOperationLabel}>Bulk Notify</Text>
@@ -277,6 +382,116 @@ export default function ReportsExportScreen() {
           <Text style={styles.generatingText}>Generating report...</Text>
         </View>
       )}
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={bulkModalVisible}
+        onRequestClose={() => setBulkModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {bulkMode === 'update' && 'Bulk Update'}
+              {bulkMode === 'delete' && 'Bulk Delete'}
+              {bulkMode === 'moderate' && 'Bulk Moderation'}
+              {bulkMode === 'notify' && 'Bulk Notify'}
+            </Text>
+
+            {bulkMode !== 'notify' && (
+              <>
+                <Text style={styles.modalLabel}>Resource IDs (comma or space separated)</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="id1,id2,id3"
+                  value={idsInput}
+                  onChangeText={setIdsInput}
+                  multiline
+                />
+              </>
+            )}
+
+            {bulkMode === 'update' && (
+              <>
+                <Text style={styles.modalLabel}>Status</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="approved | pending | rejected | archived"
+                  value={statusInput}
+                  onChangeText={setStatusInput}
+                />
+              </>
+            )}
+
+            {bulkMode === 'delete' && (
+              <View style={styles.switchRow}>
+                <Text style={styles.modalLabel}>Soft delete (move to trash)</Text>
+                <Switch value={softDelete} onValueChange={setSoftDelete} />
+              </View>
+            )}
+
+            {bulkMode === 'moderate' && (
+              <>
+                <Text style={styles.modalLabel}>Action</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="approve | reject | flag"
+                  value={moderationAction}
+                  onChangeText={(v) => setModerationAction((v as any) || 'approve')}
+                />
+                <Text style={styles.modalLabel}>Reason (optional)</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Reason"
+                  value={reason}
+                  onChangeText={setReason}
+                />
+              </>
+            )}
+
+            {bulkMode === 'notify' && (
+              <>
+                <Text style={styles.modalLabel}>Title</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Announcement title"
+                  value={notifyTitle}
+                  onChangeText={setNotifyTitle}
+                />
+                <Text style={styles.modalLabel}>Message</Text>
+                <TextInput
+                  style={[styles.modalInput, { height: 100 }]}
+                  placeholder="Message to send to users"
+                  value={notifyMessage}
+                  onChangeText={setNotifyMessage}
+                  multiline
+                />
+              </>
+            )}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalCancel]}
+                onPress={() => setBulkModalVisible(false)}
+                disabled={submittingBulk}
+              >
+                <Text style={styles.modalBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalPrimary]}
+                onPress={submitBulk}
+                disabled={submittingBulk}
+              >
+                {submittingBulk ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={[styles.modalBtnText, styles.modalBtnTextPrimary]}>Run</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -440,5 +655,67 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     color: '#3B82F6',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  modalLabel: {
+    fontSize: 13,
+    color: '#4B5563',
+    marginBottom: 6,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 14,
+    color: '#111827',
+    marginBottom: 12,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  modalCancel: {
+    backgroundColor: '#E5E7EB',
+  },
+  modalPrimary: {
+    backgroundColor: '#2563EB',
+  },
+  modalBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  modalBtnTextPrimary: {
+    color: '#FFFFFF',
   },
 });

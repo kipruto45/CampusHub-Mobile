@@ -11,13 +11,15 @@ import { mobileAutomationService } from '../services/mobileAutomation.service';
 import { notificationService } from '../services/notifications';
 import { ensureApiBaseUrl } from '../services/api';
 import { useAuthStore } from '../store/auth.store';
-import { ToastProvider } from '../components/ui/Toast';
+import { ToastProvider, useToast } from '../components/ui/Toast';
 import { OfflineBanner } from '../components/OfflineBanner';
 
-export default function RootLayout() {
+function RootLayoutInner() {
   const router = useRouter();
   const appState = useRef(AppState.currentState);
-  const { isAuthenticated, initializeAuth, user } = useAuthStore();
+  const { isAuthenticated, initializeAuth, user, error, clearError } = useAuthStore();
+  const { showToast } = useToast();
+  const toastListenerRef = useRef<(() => void) | null>(null);
   // Always use light mode - dark mode disabled
   const themeColors = lightColors;
 
@@ -42,6 +44,21 @@ export default function RootLayout() {
           mobileAutomationService.initialize(),
         ]);
         notificationService.setupNotificationListeners();
+        if (!toastListenerRef.current) {
+          toastListenerRef.current = notificationService.subscribeToRealtimeNotifications(
+            (notif) => {
+              if (notif.notification_type === 'resource_approved' || notif.notification_type === 'group_invite') {
+                const link = notif.link || '';
+                showToast('info', notif.message || notif.title || 'New update', {
+                  actionLabel: 'Open',
+                  onAction: () => {
+                    if (link) router.push(link as any);
+                  },
+                });
+              }
+            }
+          );
+        }
       } catch (error) {
         console.error('Failed to initialize app services:', error);
       }
@@ -68,6 +85,7 @@ export default function RootLayout() {
       isMounted = false;
       subscription.remove();
       notificationService.removeNotificationListeners();
+      toastListenerRef.current?.();
     };
   }, []);
 
@@ -79,6 +97,24 @@ export default function RootLayout() {
       const path = (parsed.path || '').replace(/^\/+/, '');
       const segments = path.split('/').filter(Boolean);
       const qp = parsed.queryParams || {};
+
+      const magicLinkToken =
+        (segments[0] === 'magic-link' && typeof qp.token === 'string' && qp.token) ||
+        (segments[0] === 'magic-link' && segments[1]) ||
+        (typeof qp.magic_link === 'string' && qp.magic_link);
+      if (magicLinkToken) {
+        router.push(`/(auth)/magic-link?token=${magicLinkToken}`);
+        return;
+      }
+
+      const roleInviteToken =
+        (segments[0] === 'role-invite' && segments[1]) ||
+        (segments[0] === 'role-invite' && typeof qp.token === 'string' && qp.token) ||
+        (typeof qp.role_invite === 'string' && qp.role_invite);
+      if (roleInviteToken) {
+        router.push(`/role-invite?token=${roleInviteToken}`);
+        return;
+      }
 
       // Study group invites
       const inviteToken =
@@ -148,32 +184,46 @@ export default function RootLayout() {
     }
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (error) {
+      showToast('error', error);
+      clearError();
+    }
+  }, [error, showToast, clearError]);
+
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background.secondary }]}>
       <StatusBar style="dark" />
       <OfflineBanner />
-      <ToastProvider>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: themeColors.background.secondary },
-            animation: 'slide_from_right',
-          }}
-        >
-          {/* Index redirect */}
-          <Stack.Screen name="index" options={{ animation: 'fade' }} />
-          
-          {/* Auth Group - routes are auto-discovered from (auth)/ folder */}
-          <Stack.Screen name="(auth)" options={{ gestureEnabled: false }} />
-          
-          {/* Student Group - routes are auto-discovered from (student)/ folder */}
-          <Stack.Screen name="(student)" options={{ gestureEnabled: false }} />
-          
-          {/* Admin Group - routes are auto-discovered from (admin)/ folder */}
-          <Stack.Screen name="(admin)" options={{ gestureEnabled: false }} />
-        </Stack>
-      </ToastProvider>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: themeColors.background.secondary },
+          animation: 'slide_from_right',
+        }}
+      >
+        {/* Index redirect */}
+        <Stack.Screen name="index" options={{ animation: 'fade' }} />
+        <Stack.Screen name="role-invite" options={{ animation: 'fade_from_bottom' }} />
+        
+        {/* Auth Group - routes are auto-discovered from (auth)/ folder */}
+        <Stack.Screen name="(auth)" options={{ gestureEnabled: false }} />
+        
+        {/* Student Group - routes are auto-discovered from (student)/ folder */}
+        <Stack.Screen name="(student)" options={{ gestureEnabled: false }} />
+        
+        {/* Admin Group - routes are auto-discovered from (admin)/ folder */}
+        <Stack.Screen name="(admin)" options={{ gestureEnabled: false }} />
+      </Stack>
     </View>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ToastProvider>
+      <RootLayoutInner />
+    </ToastProvider>
   );
 }
 

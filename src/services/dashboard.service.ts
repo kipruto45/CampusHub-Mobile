@@ -56,6 +56,7 @@ export interface DashboardRecommendation {
   id: string;
   title: string;
   description: string;
+  resource_type?: string;
   file_type: string;
   file_size: number;
   download_count: number;
@@ -153,6 +154,7 @@ const normalizeRecommendation = (raw: any): DashboardRecommendation => ({
   id: toStringValue(raw?.id),
   title: toStringValue(raw?.title),
   description: toStringValue(raw?.description),
+  resource_type: toStringValue(raw?.resource_type || raw?.file_type),
   file_type: toStringValue(raw?.file_type),
   file_size: toNumberValue(raw?.file_size),
   download_count: toNumberValue(raw?.download_count),

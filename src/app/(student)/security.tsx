@@ -143,7 +143,7 @@ const SecurityScreen: React.FC = () => {
       const response = await securityAPI.enableTwoFactor(twoFactorCode.trim());
       const payload = response?.data?.data ?? response?.data ?? {};
       const codes = Array.isArray(payload?.backup_codes) ? payload.backup_codes : [];
-      setBackupCodes(codes.map((code) => String(code)));
+      setBackupCodes(codes.map((code: unknown) => String(code)));
       setTwoFactor({ enabled: true, method: 'totp', verified_at: new Date().toISOString() });
       setTwoFactorSetupOpen(false);
       if (codes.length > 0) {
@@ -186,7 +186,7 @@ const SecurityScreen: React.FC = () => {
         const response = await securityAPI.recoveryCodes(promptValue.trim());
         const payload = response?.data?.data ?? response?.data ?? {};
         const codes = Array.isArray(payload?.backup_codes) ? payload.backup_codes : [];
-        setBackupCodes(codes.map((code) => String(code)));
+        setBackupCodes(codes.map((code: unknown) => String(code)));
         setBackupCodesOpen(true);
       } else if (promptType === 'delete-account') {
         await securityAPI.deleteAccount(promptValue.trim());

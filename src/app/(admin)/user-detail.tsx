@@ -2,7 +2,8 @@
 // Detailed view of a user account
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
@@ -10,6 +11,8 @@ import { shadows } from '../../theme/shadows';
 import Icon from '../../components/ui/Icon';
 import ErrorState from '../../components/ui/ErrorState';
 import { adminAPI } from '../../services/api';
+import { useToast } from '../../components/ui/Toast';
+import { strings } from '../../constants/strings';
 
 interface UserDetail {
   id: string;
@@ -47,15 +50,30 @@ interface Activity {
   created_at: string;
 }
 
+interface UploadedResource {
+  id: string;
+  title: string;
+  file_type: string;
+  status: string;
+  file_size: number;
+  created_at: string;
+  download_count: number;
+}
+
 const UserDetailScreen: React.FC = () => {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { showToast } = useToast();
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<UserDetail | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [uploads, setUploads] = useState<UploadedResource[]>([]);
+  const [uploadsLoading, setUploadsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'uploads'>('profile');
+  const [activityFilter, setActivityFilter] = useState<'all' | 'uploads' | 'downloads' | 'auth'>('all');
+  const [activityRange, setActivityRange] = useState<'all' | '7d' | '30d'>('all');
 
   const fetchUserDetail = useCallback(async () => {
     try {
@@ -78,14 +96,61 @@ const UserDetailScreen: React.FC = () => {
     fetchUserDetail();
   }, [fetchUserDetail]);
 
+  const fetchUserUploads = useCallback(async () => {
+    if (activeTab !== 'uploads') return;
+    setUploadsLoading(true);
+    try {
+      const response = await adminAPI.getUserUploads(String(id), { page_size: 50 });
+      setUploads(response.data?.data?.results || []);
+    } catch (err) {
+      console.error('Failed to fetch user uploads:', err);
+    } finally {
+      setUploadsLoading(false);
+    }
+  }, [id, activeTab]);
+
+  useEffect(() => {
+    fetchUserUploads();
+  }, [fetchUserUploads]);
+
+  const filteredActivities = activities.filter((activity) => {
+    const action = (activity.action || '').toLowerCase();
+    if (activityFilter === 'uploads' && !action.includes('upload')) return false;
+    if (activityFilter === 'downloads' && !action.includes('download')) return false;
+    if (activityFilter === 'auth' && !(action.includes('login') || action.includes('auth'))) return false;
+
+    if (activityRange !== 'all' && activity.created_at) {
+      const created = new Date(activity.created_at).getTime();
+      const now = Date.now();
+      const diffDays = (now - created) / (1000 * 60 * 60 * 24);
+      if (activityRange === '7d' && diffDays > 7) return false;
+      if (activityRange === '30d' && diffDays > 30) return false;
+    }
+    return true;
+  });
+
   const handleToggleStatus = async () => {
     if (!user) return;
     try {
       await adminAPI.updateUserStatus(String(id), !user.is_active);
       setUser(prev => prev ? { ...prev, is_active: !prev.is_active } : null);
-      Alert.alert('Success', `User ${user.is_active ? 'deactivated' : 'activated'} successfully`);
+      showToast('success', user.is_active ? strings.users.deactivate : strings.users.activate);
     } catch (err: any) {
-      Alert.alert('Error', 'Failed to update user status');
+      showToast('error', strings.users.updateFailed);
+    }
+  };
+
+  const handleImpersonate = async () => {
+    try {
+      const resp = await adminAPI.impersonateUser(String(id));
+      if (resp?.access) {
+        await Clipboard.setStringAsync(resp.access);
+        showToast('success', 'Impersonation token copied (30 min).');
+      } else {
+        showToast('error', 'No token returned.');
+      }
+    } catch (err) {
+      showToast('error', 'Failed to generate impersonation token.');
     }
   };
 
@@ -287,6 +352,15 @@ const UserDetailScreen: React.FC = () => {
                     {user.is_active ? 'Deactivate' : 'Activate'} User
                   </Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: colors.primary[500] + '15' }]}
+                  onPress={handleImpersonate}
+                >
+                  <Icon name="person-circle" size={20} color={colors.primary[500]} />
+                  <Text style={[styles.actionText, { color: colors.primary[500] }]}>
+                    Impersonate (copy token)
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           )}
@@ -294,8 +368,34 @@ const UserDetailScreen: React.FC = () => {
           {activeTab === 'activity' && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Recent Activity</Text>
-              {activities.length > 0 ? (
-                activities.map((activity) => (
+              <View style={styles.filterRow}>
+                {(['all', 'uploads', 'downloads', 'auth'] as const).map((f) => (
+                  <TouchableOpacity
+                    key={f}
+                    style={[styles.chip, activityFilter === f && styles.chipActive]}
+                    onPress={() => setActivityFilter(f)}
+                  >
+                    <Text style={[styles.chipText, activityFilter === f && styles.chipTextActive]}>
+                      {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.filterRow}>
+                {(['all', '7d', '30d'] as const).map((range) => (
+                  <TouchableOpacity
+                    key={range}
+                    style={[styles.chipSmall, activityRange === range && styles.chipActive]}
+                    onPress={() => setActivityRange(range)}
+                  >
+                    <Text style={[styles.chipText, activityRange === range && styles.chipTextActive]}>
+                      {range === 'all' ? 'Any time' : range === '7d' ? '7 days' : '30 days'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {filteredActivities.length > 0 ? (
+                filteredActivities.map((activity) => (
                   <View key={activity.id} style={styles.activityItem}>
                     <View style={styles.activityIcon}>
                       <Icon name={'document-text'} size={16} color={colors.primary[500]} />
@@ -313,7 +413,7 @@ const UserDetailScreen: React.FC = () => {
                 ))
               ) : (
                 <View style={styles.emptyState}>
-                  <Text style={styles.emptyText}>No activity yet</Text>
+                  <Text style={styles.emptyText}>No activity for this filter</Text>
                 </View>
               )}
             </View>
@@ -322,10 +422,33 @@ const UserDetailScreen: React.FC = () => {
           {activeTab === 'uploads' && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>User Uploads</Text>
-              <View style={styles.emptyState}>
-                <Icon name={'cloud-upload'} size={48} color={colors.text.tertiary} />
-                <Text style={styles.emptyText}>Uploads feature coming soon</Text>
-              </View>
+              {uploadsLoading ? (
+                <View style={styles.emptyState}>
+                  <ActivityIndicator size="large" color={colors.primary[500]} />
+                </View>
+              ) : uploads.length > 0 ? (
+                <View style={styles.uploadsList}>
+                  {uploads.map((upload) => (
+                    <View key={upload.id} style={styles.uploadItem}>
+                      <View style={styles.uploadInfo}>
+                        <Text style={styles.uploadTitle}>{upload.title}</Text>
+                        <Text style={styles.uploadMeta}>
+                          {upload.file_type} • {formatFileSize(upload.file_size)} • {upload.status}
+                        </Text>
+                      </View>
+                      <View style={styles.uploadStats}>
+                        <Icon name="download" size={16} color={colors.text.tertiary} />
+                        <Text style={styles.uploadCount}>{upload.download_count}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.emptyState}>
+                  <Icon name={'cloud-upload'} size={48} color={colors.text.tertiary} />
+                  <Text style={styles.emptyText}>No uploads yet</Text>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -469,6 +592,36 @@ const styles = StyleSheet.create({
   tabContent: {
     padding: spacing[4],
   },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[2],
+    marginTop: spacing[2],
+    marginBottom: spacing[2],
+  },
+  chip: {
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.background.secondary,
+  },
+  chipSmall: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background.secondary,
+  },
+  chipActive: {
+    backgroundColor: colors.primary[500],
+  },
+  chipText: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    fontWeight: '600',
+  },
+  chipTextActive: {
+    color: colors.text.inverse,
+  },
   section: {
     marginBottom: spacing[4],
   },
@@ -569,6 +722,48 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     marginTop: spacing[2],
   },
+  uploadsList: {
+    gap: spacing[2],
+  },
+  uploadItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+  },
+  uploadInfo: {
+    flex: 1,
+  },
+  uploadTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.text.primary,
+  },
+  uploadMeta: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  uploadStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  uploadCount: {
+    fontSize: 12,
+    color: colors.text.tertiary,
+  },
 });
+
+// Helper function to format file size
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
 
 export default UserDetailScreen;

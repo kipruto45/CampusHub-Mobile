@@ -13,7 +13,8 @@ import {
   Image,
   Linking,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useToast } from '../../components/ui/Toast';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
@@ -28,16 +29,20 @@ import { biometricService } from '../../services/biometric';
 
 const LoginScreen: React.FC = () => {
   const router = useRouter();
+  const { showToast } = useToast();
+  const { redirect, reason } = useLocalSearchParams<{ redirect?: string; reason?: string }>();
   const { login, loginWithBiometric, isLoading } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true); // Default to true - stays logged in for 2 years
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
   const [googleIconLoadError, setGoogleIconLoadError] = useState(false);
   const [biometricReady, setBiometricReady] = useState(false);
   const [biometricLabel, setBiometricLabel] = useState('Biometric');
   const [biometricBusy, setBiometricBusy] = useState(false);
+  const [magicBusy, setMagicBusy] = useState(false);
+  const sessionExpired = reason === 'session_expired';
 
   useEffect(() => {
     const initBiometric = async () => {
@@ -62,27 +67,31 @@ const LoginScreen: React.FC = () => {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showToast('error', 'Please fill in all fields');
       return;
     }
     if (needsTwoFactor && !twoFactorCode.trim()) {
-      Alert.alert('Two-Factor Code', 'Enter your 2FA verification code.');
+      showToast('warning', 'Enter your 2FA verification code');
       return;
     }
     
     try {
+      // Always use remember_me = true for 2-year session persistence (forever-ish)
       const nextRoute = await login(
         email,
         password,
-        rememberMe,
+        true, // Always remember - stays logged in for 2 years
         needsTwoFactor ? twoFactorCode.trim() : undefined
       );
       console.log('Login successful, redirecting to:', nextRoute);
       setNeedsTwoFactor(false);
       setTwoFactorCode('');
       
-      // Navigate to the appropriate dashboard based on role
-      if (nextRoute) {
+      // Navigate to the appropriate dashboard based on role or redirect
+      const redirectPath = redirect ? `/(student)/${redirect}` : null;
+      if (redirectPath) {
+        router.replace(redirectPath as any);
+      } else if (nextRoute) {
         router.replace(nextRoute as any);
       } else {
         // Fallback: try to determine route from stored user
@@ -123,7 +132,38 @@ const LoginScreen: React.FC = () => {
         setNeedsTwoFactor(true);
       }
 
-      Alert.alert('Login Failed', errorMessage);
+      showToast('error', errorMessage);
+    }
+  };
+
+  const handleMagicLink = async () => {
+    if (!email.trim()) {
+      showToast('warning', 'Enter your email to get a magic link');
+      return;
+    }
+
+    // Basic email validation to avoid obvious typos
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      showToast('error', 'Please enter a valid email address');
+      return;
+    }
+
+    try {
+      setMagicBusy(true);
+      await authAPI.requestMagicLink(email.trim().toLowerCase());
+      showToast('success', 'If your account exists, a one-tap link is on the way.');
+      // Offer quick navigation to the magic link screen to paste token if needed
+      router.push('/(auth)/magic-link');
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Unable to send magic link. Please try again.';
+      showToast('error', message);
+    } finally {
+      setMagicBusy(false);
     }
   };
 
@@ -156,10 +196,7 @@ const LoginScreen: React.FC = () => {
         }
 
         if (!nativeResult.fallbackToWeb) {
-          Alert.alert(
-            'Authentication Error',
-            nativeResult.error || `Failed to sign in with ${provider}.`
-          );
+          showToast('error', nativeResult.error || `Failed to sign in with ${provider}`);
           return;
         }
       }
@@ -172,25 +209,19 @@ const LoginScreen: React.FC = () => {
       const payload = response?.data?.data ?? response?.data ?? {};
       const authorizationUrl = payload?.authorization_url;
       if (!authorizationUrl) {
-        Alert.alert('Authentication Error', `Unable to start ${provider} sign in.`);
+        showToast('error', `Unable to start ${provider} sign in`);
         return;
       }
 
       const canOpen = await Linking.canOpenURL(authorizationUrl);
       if (!canOpen) {
-        Alert.alert('Authentication Error', 'Could not open authentication provider.');
+        showToast('error', 'Could not open authentication provider');
         return;
       }
 
       await Linking.openURL(authorizationUrl);
     } catch (error: any) {
-      Alert.alert(
-        'Authentication Error',
-        error?.response?.data?.error ||
-          error?.response?.data?.detail ||
-          error?.message ||
-          `Failed to start ${provider} sign in.`
-      );
+      showToast('error', error?.response?.data?.error || error?.response?.data?.detail || error?.message || `Failed to start ${provider} sign in`);
     }
   };
 
@@ -199,16 +230,13 @@ const LoginScreen: React.FC = () => {
       setBiometricBusy(true);
       const authResult = await biometricService.authenticate(`Log in with ${biometricLabel}`);
       if (!authResult.success) {
-        Alert.alert('Biometric Login', authResult.error || 'Authentication failed.');
+        showToast('error', authResult.error || 'Biometric authentication failed');
         return;
       }
 
       const authKey = await biometricService.getAuthKey();
       if (!authKey) {
-        Alert.alert(
-          'Biometric Login',
-          'Biometric login is enabled but no secure session is stored. Please log in with your password once.'
-        );
+        showToast('warning', 'Biometric login is enabled but no secure session is stored. Please log in with your password once');
         return;
       }
 
@@ -224,7 +252,7 @@ const LoginScreen: React.FC = () => {
         err?.response?.data?.message ||
         err?.message ||
         'Biometric login failed. Please try again.';
-      Alert.alert('Biometric Login Failed', message);
+      showToast('error', message);
     } finally {
       setBiometricBusy(false);
     }
@@ -236,6 +264,11 @@ const LoginScreen: React.FC = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
+        {sessionExpired && (
+          <View style={styles.noticeBanner}>
+            <Text style={styles.noticeText}>Your session expired. Please sign in again.</Text>
+          </View>
+        )}
         {/* Header */}
         <View style={styles.header}>
           <Image
@@ -307,6 +340,17 @@ const LoginScreen: React.FC = () => {
               fullWidth
               size="md"
               style={styles.loginButton}
+            />
+
+            <Button
+              title="Email me a magic link"
+              onPress={handleMagicLink}
+              loading={magicBusy}
+              fullWidth
+              size="md"
+              variant="outline"
+              icon={<Icon name="mail" size={18} color={colors.primary[500]} />}
+              style={styles.magicLinkButton}
             />
 
             {biometricReady ? (
@@ -388,6 +432,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing[3],
   },
+  noticeBanner: {
+    backgroundColor: '#FDE8E8',
+    borderColor: '#F8B4B4',
+    borderWidth: 1,
+    padding: spacing[3],
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing[3],
+  },
+  noticeText: {
+    color: '#9B1C1C',
+    fontSize: 13,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
   logoImage: {
     width: 70,
     height: 70,
@@ -466,6 +524,9 @@ const styles = StyleSheet.create({
   },
   loginButton: {
     marginTop: spacing[1],
+  },
+  magicLinkButton: {
+    marginTop: spacing[2],
   },
   biometricButton: {
     marginTop: spacing[2],

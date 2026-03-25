@@ -3,8 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useIsFocused } from '@react-navigation/native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../../theme/colors';
@@ -108,7 +107,6 @@ const formatAcademicOptionLabel = (code?: string, name?: string): string => {
 
 const UploadResourceScreen: React.FC = () => {
   const router = useRouter();
-  const isFocused = useIsFocused();
   const { showToast } = useToast();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -350,11 +348,12 @@ const UploadResourceScreen: React.FC = () => {
     }
   }, [fetchAcademicData, loadCourses, loadDepartments, loadUnits]);
 
-  useEffect(() => {
-    if (isFocused) {
+  useFocusEffect(
+    useCallback(() => {
       void refreshAcademicHierarchy();
-    }
-  }, [isFocused, refreshAcademicHierarchy]);
+      return undefined;
+    }, [refreshAcademicHierarchy])
+  );
 
   const resetCourseAndUnitSelection = () => {
     setSelectedCourse('');
