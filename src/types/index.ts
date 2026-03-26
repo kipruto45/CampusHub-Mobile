@@ -38,6 +38,7 @@ export interface RegisterResponse {
     user_id: number;
     email: string;
     message: string;
+    requires_email_verification: boolean;
   };
 }
 

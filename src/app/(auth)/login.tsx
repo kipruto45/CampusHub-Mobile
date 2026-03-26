@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Image,
   Linking,
 } from 'react-native';
@@ -130,6 +129,19 @@ const LoginScreen: React.FC = () => {
       const errorCode = responseData?.error?.code || responseData?.code;
       if (errorCode === 'two_factor_required' || /two-factor/i.test(errorMessage)) {
         setNeedsTwoFactor(true);
+      }
+
+      if (errorCode === 'email_not_verified') {
+        const candidate = email.trim();
+        const emailParams = candidate.includes('@')
+          ? { email: candidate.toLowerCase() }
+          : {};
+        showToast('warning', errorMessage);
+        router.push({
+          pathname: '/(auth)/verify-email',
+          params: emailParams,
+        });
+        return;
       }
 
       showToast('error', errorMessage);

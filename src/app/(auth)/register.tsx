@@ -10,7 +10,6 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Image,
   Linking,
 } from 'react-native';
@@ -67,18 +66,25 @@ const RegisterScreen: React.FC = () => {
     const nameParts = fullName.trim().split(' ');
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || '';
+    const normalizedEmail = email.trim().toLowerCase();
 
     try {
-      await register({
-        email,
+      const registration = await register({
+        email: normalizedEmail,
         password,
         password_confirm: confirmPassword,
         first_name: firstName,
         last_name: lastName,
       });
-      
-      showToast('success', 'Registration successful! Please log in to continue');
-      router.replace('/(auth)/login');
+
+      showToast(
+        'success',
+        registration.message || 'Registration successful! Please verify your email to continue.'
+      );
+      router.replace({
+        pathname: '/(auth)/verify-email',
+        params: { email: normalizedEmail },
+      });
     } catch (error: any) {
       console.log('Registration error:', error);
       const message = error?.response?.data?.message || 

@@ -1,6 +1,5 @@
-let refreshCallback:
-  | ((tokens: { accessToken: string; refreshToken?: string | null }) => void)
-  | null = null;
+import { authAPI, setSessionInvalidationCallback } from '../../services/api';
+import { useAuthStore } from '../auth.store';
 
 jest.mock('../../services/api', () => ({
   __esModule: true,
@@ -14,9 +13,7 @@ jest.mock('../../services/api', () => ({
   setAuthToken: jest.fn(),
   clearAuthToken: jest.fn(),
   setRefreshToken: jest.fn(),
-  setRefreshTokenCallback: jest.fn((callback: any) => {
-    refreshCallback = callback;
-  }),
+  setRefreshTokenCallback: jest.fn(),
   setSessionInvalidationCallback: jest.fn((callback: any) => {
     return callback;
   }),
@@ -36,9 +33,6 @@ jest.mock('../../lib/auth-routing', () => ({
   ),
 }));
 
-import { authAPI, setSessionInvalidationCallback } from '../../services/api';
-import { useAuthStore } from '../auth.store';
-
 const emptyState = {
   user: null,
   accessToken: null,
@@ -51,7 +45,6 @@ const emptyState = {
 describe('auth store', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
-    refreshCallback = null;
     await useAuthStore.getState().logout();
     useAuthStore.setState(emptyState);
   });
@@ -84,6 +77,35 @@ describe('auth store', () => {
     expect(useAuthStore.getState().accessToken).toBe('access-token');
     expect(useAuthStore.getState().refreshToken).toBe('refresh-token');
     expect(useAuthStore.getState().user?.registration_number).toBe('CS/2021/001');
+  });
+
+  it('returns verification details after registration without authenticating the user', async () => {
+    (authAPI.register as any).mockResolvedValue({
+      data: {
+        data: {
+          user_id: 'user-2',
+          email: 'new-user@example.com',
+          message: 'Registration successful. Please verify your email before logging in.',
+          requires_email_verification: true,
+        },
+      },
+    });
+
+    const result = await useAuthStore.getState().register({
+      email: 'new-user@example.com',
+      password: 'SecurePass123!',
+      password_confirm: 'SecurePass123!',
+      first_name: 'New',
+      last_name: 'User',
+    });
+
+    expect(result).toEqual({
+      user_id: 'user-2',
+      email: 'new-user@example.com',
+      message: 'Registration successful. Please verify your email before logging in.',
+      requires_email_verification: true,
+    });
+    expect(useAuthStore.getState()).toMatchObject(emptyState);
   });
 
   it('clears auth state when the API invalidates the session', () => {

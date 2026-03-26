@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
+import { spacing } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import { authAPI } from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
@@ -24,46 +24,67 @@ const resolveToken = (value?: string | string[] | null) => {
 
 export const VerifyEmailScreen: React.FC<VerifyEmailScreenProps> = ({ tokenOverride }) => {
   const router = useRouter();
-  const { token: tokenParam } = useLocalSearchParams<{ token?: string | string[] }>();
+  const { token: tokenParam, email: emailParam } = useLocalSearchParams<{
+    token?: string | string[];
+    email?: string | string[];
+  }>();
   const token = resolveToken(tokenOverride ?? tokenParam);
+  const emailFromParams = resolveToken(emailParam)?.trim().toLowerCase() || '';
   const { isAuthenticated, user } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [verified, setVerified] = useState(false);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(emailFromParams);
 
   useEffect(() => {
-    if (token) {
-      void handleVerify(token);
-    }
-  }, [token]);
-
-  const handleVerify = async (tokenValue?: string) => {
-    const activeToken = tokenValue ?? token;
-    if (!activeToken) {
+    if (!token) {
       return;
     }
-    
-    setLoading(true);
-    try {
-      await authAPI.verifyEmail(activeToken);
-      setVerified(true);
-    } catch (error: any) {
-      const message = error.response?.data?.message || 'Failed to verify email. The link may be invalid or expired.';
-      Alert.alert('Verification Failed', message);
-    } finally {
-      setLoading(false);
+
+    let isActive = true;
+
+    const verifyEmail = async () => {
+      setLoading(true);
+      try {
+        await authAPI.verifyEmail(token);
+        if (isActive) {
+          setVerified(true);
+        }
+      } catch (error: any) {
+        if (!isActive) {
+          return;
+        }
+        const message = error.response?.data?.message || 'Failed to verify email. The link may be invalid or expired.';
+        Alert.alert('Verification Failed', message);
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void verifyEmail();
+
+    return () => {
+      isActive = false;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (emailFromParams) {
+      setEmail(emailFromParams);
     }
-  };
+  }, [emailFromParams]);
 
   const handleResend = async () => {
-    if (!email) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
       Alert.alert('Error', 'Please enter your email address');
       return;
     }
     
     setLoading(true);
     try {
-      await authAPI.resendVerificationEmail(email);
+      await authAPI.resendVerificationEmail(normalizedEmail);
       Alert.alert('Success', 'Verification email sent! Please check your inbox.');
     } catch (error: any) {
       const message = error.response?.data?.message || 'Failed to resend verification email.';
@@ -109,7 +130,11 @@ export const VerifyEmailScreen: React.FC<VerifyEmailScreenProps> = ({ tokenOverr
           ) : (
             <>
               <Text style={styles.title}>Verify Your Email</Text>
-              <Text style={styles.subtitle}>We've sent a verification link to your email. Please check your inbox and click the link to verify.</Text>
+              <Text style={styles.subtitle}>
+                {email
+                  ? `We've sent a verification link to ${email}. Please check your inbox and click the link to verify.`
+                  : "We've sent a verification link to your email. Please check your inbox and click the link to verify."}
+              </Text>
             </>
           )}
 

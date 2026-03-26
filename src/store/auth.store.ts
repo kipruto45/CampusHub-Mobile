@@ -195,6 +195,13 @@ interface User {
   is_active?: boolean;
 }
 
+interface RegistrationResult {
+  user_id: string | number | null;
+  email: string;
+  message: string;
+  requires_email_verification: boolean;
+}
+
 interface AuthState {
   user: User | null;
   accessToken: string | null;
@@ -225,7 +232,7 @@ interface AuthState {
     department?: number;
     course?: number;
     year_of_study?: number;
-  }) => Promise<void>;
+  }) => Promise<RegistrationResult>;
   socialLogin: (
     provider: 'google' | 'microsoft',
     tokens: { accessToken: string; refreshToken?: string }
@@ -486,9 +493,18 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null });
         try {
           const response = await authAPI.register(data);
-          // After registration, typically need email verification
-          // Mobile API returns { success: true, data: { user_id, email, message } }
+          const payload = response?.data?.data ?? response?.data ?? {};
+          const result: RegistrationResult = {
+            user_id: payload?.user_id ?? null,
+            email: payload?.email || data.email,
+            message:
+              payload?.message ||
+              'Registration successful. Please verify your email before logging in.',
+            requires_email_verification:
+              payload?.requires_email_verification !== false,
+          };
           set({ isLoading: false });
+          return result;
         } catch (error: any) {
           const message = error.response?.data?.error?.message || error.response?.data?.message || 'Registration failed. Please try again.';
           set({ error: message, isLoading: false });
