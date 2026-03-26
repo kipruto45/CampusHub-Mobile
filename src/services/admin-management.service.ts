@@ -207,6 +207,46 @@ export interface CampaignStats {
   }[];
 }
 
+export interface AdminCommunicationPayload {
+  title: string;
+  email_subject?: string;
+  message: string;
+  sms_message?: string;
+  link?: string;
+  campaign_name?: string;
+  channels: ('email' | 'in_app' | 'sms')[];
+  target_faculties?: string[];
+  target_departments?: string[];
+  target_courses?: string[];
+  target_year_of_study?: number;
+  target_user_roles?: string[];
+}
+
+export interface AdminCommunicationResult {
+  message: string;
+  recipient_count: number;
+  channels: string[];
+  target_filters: Record<string, any>;
+  channel_results: {
+    email?: {
+      campaign_id?: string;
+      sent_count: number;
+      failed_count: number;
+      error?: string;
+    };
+    in_app?: {
+      sent_count: number;
+      failed_count?: number;
+    };
+    sms?: {
+      sent_count: number;
+      failed_count: number;
+      skipped_count: number;
+      error?: string;
+    };
+  };
+}
+
 // Get all campaigns
 export const getEmailCampaigns = async (status?: string, type?: string): Promise<EmailCampaign[]> => {
   const params: Record<string, string> = {};
@@ -263,6 +303,14 @@ export const deleteEmailCampaign = async (id: string): Promise<void> => {
 // Get campaign stats
 export const getCampaignStats = async (): Promise<CampaignStats> => {
   const response = await api.get('/admin-management/email-campaigns/stats/');
+  return response.data;
+};
+
+// Send multi-channel communication
+export const sendAdminCommunication = async (
+  data: AdminCommunicationPayload
+): Promise<AdminCommunicationResult> => {
+  const response = await api.post('/admin-management/communications/send/', data);
   return response.data;
 };
 
@@ -360,6 +408,7 @@ export default {
   cancelEmailCampaign,
   deleteEmailCampaign,
   getCampaignStats,
+  sendAdminCommunication,
   
   // API Usage
   getAPIUsageStats,

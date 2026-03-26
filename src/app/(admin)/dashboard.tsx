@@ -212,7 +212,11 @@ const formatRelativeDate = (value?: string): string => {
 };
 
 const getRouteRequirement = (route: string): AdminFeatureRequirement | undefined => {
-  if (route.startsWith('/(admin)/users') || route === '/(admin)/invitations') {
+  if (
+    route.startsWith('/(admin)/users') ||
+    route === '/(admin)/invitations' ||
+    route === '/(admin)/communications'
+  ) {
     return 'manage_users';
   }
   if (
@@ -503,6 +507,7 @@ const AdminDashboard: React.FC = () => {
       actions: [
         { id: 'users', label: 'Users', route: '/(admin)/users', badge: stats.total_users.toLocaleString(), feature: 'manage_users' },
         { id: 'invitations', label: 'Invitations', route: '/(admin)/invitations', feature: 'manage_users' },
+        { id: 'communications', label: 'Communications', route: '/(admin)/communications', feature: 'manage_users' },
         { id: 'notifications', label: 'Notifications', route: '/(admin)/admin-notifications' },
         { id: 'activity-log', label: 'Activity Log', route: '/(admin)/activity-log', feature: 'moderate_content' },
       ],

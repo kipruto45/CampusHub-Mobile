@@ -46,9 +46,10 @@ const MoreScreen: React.FC = () => {
     { id: '6', title: 'Analytics', icon: 'stats-chart', route: '/(admin)/analytics', color: colors.primary[500], feature: 'view_analytics' },
     { id: '7', title: 'Search', icon: 'search', route: '/(admin)/search', color: colors.accent[500] },
     { id: '8', title: 'Notifications', icon: 'notifications', route: '/(admin)/notifications', color: colors.warning },
-    { id: '9', title: 'Activity Log', icon: 'list', route: '/(admin)/activity-log', color: colors.info, feature: 'moderate_content' },
-    { id: '10', title: 'Storage', icon: 'cloud', route: '/(admin)/storage', color: colors.success, feature: 'system_settings' },
-    { id: '11', title: 'Backup & System', icon: 'archive', route: '/(admin)/backup', color: colors.primary[600], feature: 'export_data' },
+    { id: '9', title: 'Communications', icon: 'send', route: '/(admin)/communications', color: colors.primary[600], feature: 'manage_users' },
+    { id: '10', title: 'Activity Log', icon: 'list', route: '/(admin)/activity-log', color: colors.info, feature: 'moderate_content' },
+    { id: '11', title: 'Storage', icon: 'cloud', route: '/(admin)/storage', color: colors.success, feature: 'system_settings' },
+    { id: '12', title: 'Backup & System', icon: 'archive', route: '/(admin)/backup', color: colors.primary[600], feature: 'export_data' },
     // Engagement & Analytics
     { id: '14', title: 'Gamification', icon: 'trophy', route: '/(admin)/gamification', color: colors.warning, feature: 'view_analytics' },
     { id: '15', title: 'Email Campaigns', icon: 'mail', route: '/(admin)/email-campaigns', color: colors.info, feature: 'view_analytics' },
@@ -78,8 +79,8 @@ const MoreScreen: React.FC = () => {
     { id: '34', title: 'Admin Scope', icon: 'shield-checkmark', route: '/(admin)/scope', color: colors.warning },
     { id: '35', title: 'Feature Access', icon: 'key', route: '/(admin)/feature-access', color: colors.error },
     // Account
-    { id: '12', title: 'Settings', icon: 'settings', route: '/(admin)/settings', color: colors.text.secondary, feature: 'system_settings' },
-    { id: '13', title: 'Profile', icon: 'person', route: '/(admin)/profile', color: colors.primary[500] },
+    { id: '13', title: 'Settings', icon: 'settings', route: '/(admin)/settings', color: colors.text.secondary, feature: 'system_settings' },
+    { id: '36', title: 'Profile', icon: 'person', route: '/(admin)/profile', color: colors.primary[500] },
   ];
   const hasAccess = (requirement?: AdminFeatureRequirement) =>
     hasAdminAccess(featurePermissions, requirement);
@@ -108,10 +109,10 @@ const MoreScreen: React.FC = () => {
   const visibleTools = tools.filter((tool) => hasAccess(tool.feature));
   const academicTools = visibleTools.filter((tool) => ['0', '1', '2', '3', '4'].includes(tool.id));
   const platformTools = visibleTools.filter((tool) =>
-    ['5', '6', '7', '8', '9', '10', '11', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30'].includes(tool.id)
+    ['5', '6', '7', '8', '9', '10', '11', '12', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30'].includes(tool.id)
   );
   const revenueTools = visibleTools.filter((tool) => ['31', '32', '33', '34', '35'].includes(tool.id));
-  const accountTools = visibleTools.filter((tool) => ['12', '13'].includes(tool.id));
+  const accountTools = visibleTools.filter((tool) => ['13', '36'].includes(tool.id));
   const quickStats = [
     { id: 'dashboard', title: 'Dashboard', icon: 'home', route: '/(admin)/dashboard', color: colors.primary[500] },
     { id: 'users', title: 'Users', icon: 'people', route: '/(admin)/users', color: colors.accent[500], feature: 'manage_users' as AdminFeatureRequirement },

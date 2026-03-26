@@ -46,7 +46,7 @@ const ROLE_PRIORITY: Record<string, number> = {
 const TEMPLATE_FALLBACKS = {
   subject: 'CampusHub invitation for {primary_role_name}',
   body:
-    "Hello,\n\nYou've been invited to join CampusHub with the following roles: {role_names_csv}.\n\nInvited by: CampusHub admin\nInvitation email: {invitee_email}\n{note_block}Accept invitation from the CampusHub app.\n",
+    "Hello,\n\nYou've been invited to join CampusHub with the following roles: {role_names_csv}.\n\nInvited by: {invited_by_name}\nInvitation email: {invitee_email}\nInvitation code: {invite_code}\n{note_block}Accept invitation: {landing_url}\nOpen directly in app: {app_url}\n",
 };
 
 const replaceTemplateTokens = (template: string, context: Record<string, string>) => {
@@ -141,7 +141,11 @@ export default function InviteUserScreen() {
     return {
       primary_role_name: primaryRole?.name || 'CampusHub user',
       role_names_csv: selectedRoleObjects.map((role) => role.name).join(', ') || 'Student',
+      invited_by_name: 'CampusHub admin',
       invitee_email: email || 'invitee@campushub.app',
+      invite_code: 'invite-code-here',
+      landing_url: 'https://campushub.app/role-invite/invite-code-here/',
+      app_url: 'https://campushub.app/role-invite?token=invite-code-here',
       note_block: note ? `Note: ${note}\n` : '',
     };
   }, [email, note, primaryRole?.name, selectedRoleObjects]);
@@ -182,7 +186,7 @@ export default function InviteUserScreen() {
         email_subject: emailSubject,
         email_body: emailBody,
       });
-      showToast('success', 'Invitation created and sent');
+      showToast('success', 'Invitation created and emailed with the code and accept link');
       router.replace('/(admin)/invitations');
     } catch (error: any) {
       console.error('Failed to create invitation:', error);
