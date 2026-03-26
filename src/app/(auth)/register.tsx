@@ -331,6 +331,14 @@ const RegisterScreen: React.FC = () => {
             <Text style={styles.loginLink}>Sign In</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Institution Registration Link */}
+        <View style={styles.loginContainer}>
+          <Text style={styles.loginText}>Want to register your institution? </Text>
+          <TouchableOpacity onPress={() => router.push('/(auth)/institution-register')}>
+            <Text style={styles.loginLink}>Register Here</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
