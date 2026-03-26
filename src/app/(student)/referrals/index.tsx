@@ -96,7 +96,10 @@ const ReferralsHome: React.FC = () => {
   const handleCopy = useCallback(async () => {
     const code = referralCode.trim();
     if (!code) {
-      Alert.alert('Referral code', 'No referral code available yet.');
+      Alert.alert(
+        'Referral code',
+        'Your referral code is not ready yet. You can still use a friend\'s code, review rewards, or refresh after your account syncs.'
+      );
       return;
     }
     try {
@@ -110,7 +113,10 @@ const ReferralsHome: React.FC = () => {
   const handleShare = useCallback(async () => {
     const code = referralCode.trim();
     if (!code) {
-      Alert.alert('Referral code', 'No referral code available yet.');
+      Alert.alert(
+        'Referral code',
+        'There is no shareable referral code on this account yet. Pull to refresh after your profile finishes syncing.'
+      );
       return;
     }
     try {
@@ -125,6 +131,7 @@ const ReferralsHome: React.FC = () => {
   const subscribedCount = Number(stats?.subscribed_count ?? 0);
   const nextTierName = String(stats?.next_tier?.name || '').trim();
   const referralsToNext = Number(stats?.referrals_to_next_tier ?? 0);
+  const hasReferralCode = referralCode.trim().length > 0;
   const progress = useMemo(() => {
     const nextMin = Number(stats?.next_tier?.min_referrals ?? 0);
     if (!nextMin || nextMin <= 0) return 1;
@@ -191,10 +198,12 @@ const ReferralsHome: React.FC = () => {
         <View style={styles.hero}>
           <View style={styles.heroAccentA} />
           <View style={styles.heroAccentB} />
-          <Text style={styles.heroKicker}>Your invite code</Text>
-          <Text style={styles.heroCode}>{referralCode || '— — — —'}</Text>
+          <Text style={styles.heroKicker}>{hasReferralCode ? 'Your invite code' : 'Invite setup'}</Text>
+          <Text style={styles.heroCode}>{hasReferralCode ? referralCode : 'Code pending'}</Text>
           <Text style={styles.heroSub}>
-            Share this code with friends. When they subscribe, you unlock tier rewards.
+            {hasReferralCode
+              ? 'Share this code with friends. When they subscribe, you unlock tier rewards.'
+              : 'We could not find a live referral code for this account yet. You can still use a friend\'s code, track rewards, and refresh once your account sync completes.'}
           </Text>
 
           <View style={styles.heroActions}>
@@ -203,6 +212,31 @@ const ReferralsHome: React.FC = () => {
             <Button title="Share" onPress={handleShare} variant="outline" style={{ flex: 1 }} />
           </View>
         </View>
+
+        {!hasReferralCode ? (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>What you can do now</Text>
+            </View>
+            <Text style={styles.cardText}>
+              Referral rewards still work even before a code appears here. If someone invited you, add their code now. Otherwise open rewards to see what each tier unlocks, then refresh after your profile sync completes.
+            </Text>
+            <View style={styles.inlineActions}>
+              <Button
+                title="Use a Code"
+                onPress={() => router.push('/(student)/referrals/use' as any)}
+                style={{ flex: 1 }}
+              />
+              <View style={{ width: spacing[3] }} />
+              <Button
+                title="View Rewards"
+                onPress={() => router.push('/(student)/referrals/rewards' as any)}
+                variant="secondary"
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.grid}>
           <TouchableOpacity
@@ -473,6 +507,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.text.primary,
   },
+  cardText: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.text.secondary,
+  },
+  inlineActions: {
+    flexDirection: 'row',
+    marginTop: spacing[4],
+  },
   statusPill: {
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
@@ -546,4 +589,3 @@ const styles = StyleSheet.create({
 });
 
 export default ReferralsHome;
-

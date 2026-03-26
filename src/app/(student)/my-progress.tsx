@@ -347,6 +347,58 @@ const MyProgressScreen: React.FC = () => {
     .slice(0, 3);
 
   const stats = getOverallStats();
+  const primaryCourse = progressData[0];
+  const progressStatus =
+    progressData.length === 0
+      ? {
+          title: 'Start your learning streak',
+          description: 'Browse resources, open a course, or save materials to begin tracking progress.',
+          color: colors.primary[500],
+        }
+      : stats.avgPercentage < 40
+        ? {
+            title: 'Focus on your active courses',
+            description: 'Your overall completion is still early. Keep momentum by finishing the resources already in progress.',
+            color: colors.warning,
+          }
+        : stats.avgPercentage < 75
+          ? {
+              title: 'You are building momentum',
+              description: 'You have solid progress. Push a few more resources to move your strongest course forward.',
+              color: colors.info,
+            }
+          : {
+              title: 'You are on track',
+              description: 'Your learning progress is strong. Keep reviewing and share helpful resources with peers.',
+              color: colors.success,
+            };
+  const quickStudyActions = [
+    primaryCourse
+      ? {
+          id: 'course',
+          title: 'Open top course',
+          route: `/(student)/course/${primaryCourse.course_id}`,
+          icon: 'school',
+        }
+      : {
+          id: 'browse',
+          title: 'Browse resources',
+          route: '/(student)/tabs/resources',
+          icon: 'search',
+        },
+    {
+      id: 'recommendations',
+      title: 'Recommendations',
+      route: '/(student)/recommendations',
+      icon: 'analytics',
+    },
+    {
+      id: 'leaderboard',
+      title: 'Leaderboard',
+      route: '/(student)/leaderboard',
+      icon: 'ribbon',
+    },
+  ];
 
   if (loading && !hasLoadedOnce) {
     return (
@@ -396,6 +448,39 @@ const MyProgressScreen: React.FC = () => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={styles.content}
       >
+        <View style={[styles.focusCard, { borderColor: `${progressStatus.color}33` }]}>
+          <View style={styles.focusHeader}>
+            <View style={[styles.focusIcon, { backgroundColor: `${progressStatus.color}18` }]}>
+              <Icon name="trending-up" size={20} color={progressStatus.color} />
+            </View>
+            <View style={styles.focusCopy}>
+              <Text style={styles.focusEyebrow}>Next Best Step</Text>
+              <Text style={styles.focusTitle}>{progressStatus.title}</Text>
+              <Text style={styles.focusDescription}>{progressStatus.description}</Text>
+            </View>
+          </View>
+          <View style={styles.focusMetaRow}>
+            <View style={styles.focusMetaPill}>
+              <Text style={styles.focusMetaLabel}>{stats.totalInProgress} in progress</Text>
+            </View>
+            <View style={styles.focusMetaPill}>
+              <Text style={styles.focusMetaLabel}>{gamification.recent_achievements.length} recent achievements</Text>
+            </View>
+          </View>
+          <View style={styles.focusActionsRow}>
+            {quickStudyActions.map((action) => (
+              <TouchableOpacity
+                key={action.id}
+                style={styles.focusActionButton}
+                onPress={() => router.push(action.route as any)}
+              >
+                <Icon name={action.icon as any} size={16} color={colors.primary[500]} />
+                <Text style={styles.focusActionText}>{action.title}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         <View style={styles.statsCard}>
           <Text style={styles.statsTitle}>Overall Progress</Text>
           <View style={styles.statsRow}>
@@ -680,6 +765,85 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   content: { padding: spacing[4], paddingBottom: spacing[8] },
+  focusCard: {
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    marginBottom: spacing[4],
+    borderWidth: 1,
+    ...shadows.sm,
+  },
+  focusHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[3],
+  },
+  focusIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  focusCopy: {
+    flex: 1,
+  },
+  focusEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.text.tertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  focusTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginTop: 4,
+  },
+  focusDescription: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.text.secondary,
+    marginTop: spacing[2],
+  },
+  focusMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[2],
+    marginTop: spacing[3],
+  },
+  focusMetaPill: {
+    backgroundColor: colors.background.secondary,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+  },
+  focusMetaLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    fontWeight: '500',
+  },
+  focusActionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[2],
+    marginTop: spacing[4],
+  },
+  focusActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    backgroundColor: colors.primary[50],
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+  },
+  focusActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary[600],
+  },
   statsCard: {
     backgroundColor: colors.card.light,
     borderRadius: borderRadius.xl,

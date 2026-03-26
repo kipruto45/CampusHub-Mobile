@@ -11,8 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { adminManagementAPI } from '../../services/api';
 
 interface Incident {
   id: string;
@@ -48,7 +47,6 @@ const STATUS_COLORS = {
 
 export default function Incidents() {
   const router = useRouter();
-  const { accessToken } = useAuthStore();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,23 +67,16 @@ export default function Incidents() {
 
   const fetchIncidents = async () => {
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      let url = `${apiBaseUrl}/admin-management/incidents/`;
-      
+      const params: { status?: string } = {};
       if (filter === 'active') {
-        url += '?status=open,investigating,identified,monitoring';
+        params.status = 'open,investigating,identified,monitoring';
       } else if (filter === 'resolved') {
-        url += '?status=resolved,closed';
+        params.status = 'resolved,closed';
       }
 
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setIncidents(data.results || data);
-      }
+      const response = await adminManagementAPI.listIncidents(params);
+      const data = response?.data?.data ?? response?.data ?? {};
+      setIncidents(Array.isArray(data?.results) ? data.results : []);
     } catch (error) {
       console.error('Error fetching incidents:', error);
     } finally {
@@ -106,29 +97,16 @@ export default function Incidents() {
     }
 
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}/admin-management/incidents/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newIncident),
+      await adminManagementAPI.createIncident(newIncident);
+      Alert.alert('Success', 'Incident created successfully');
+      setShowModal(false);
+      setNewIncident({
+        title: '',
+        description: '',
+        incident_type: 'bug',
+        severity: 'medium',
       });
-
-      if (response.ok) {
-        Alert.alert('Success', 'Incident created successfully');
-        setShowModal(false);
-        setNewIncident({
-          title: '',
-          description: '',
-          incident_type: 'bug',
-          severity: 'medium',
-        });
-        fetchIncidents();
-      } else {
-        Alert.alert('Error', 'Failed to create incident');
-      }
+      fetchIncidents();
     } catch (error) {
       Alert.alert('Error', 'Network error');
     }
@@ -136,23 +114,9 @@ export default function Incidents() {
 
   const updateIncidentStatus = async (incidentId: string, newStatus: string) => {
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(
-        `${apiBaseUrl}/admin-management/incidents/${incidentId}/status/`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
-
-      if (response.ok) {
-        Alert.alert('Success', 'Status updated');
-        fetchIncidents();
-      }
+      await adminManagementAPI.updateIncidentStatus(incidentId, newStatus);
+      Alert.alert('Success', 'Status updated');
+      fetchIncidents();
     } catch (error) {
       Alert.alert('Error', 'Failed to update status');
     }

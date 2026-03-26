@@ -15,8 +15,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { notificationsAPI } from '../../services/api';
 
 interface AdminNotification {
   id: number;
@@ -51,7 +50,6 @@ const PRIORITY_COLORS: { [key: string]: string } = {
 
 export default function AdminNotificationsScreen() {
   const router = useRouter();
-  const { accessToken: token } = useAuthStore();
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -59,67 +57,37 @@ export default function AdminNotificationsScreen() {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/notifications/admin/notifications/`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setNotifications(data.results || data);
-      }
+      const response = await notificationsAPI.adminList();
+      const data = response?.data?.data ?? response?.data ?? {};
+      setNotifications(Array.isArray(data?.results) ? data.results : []);
     } catch (error) {
       console.error('Error fetching admin notifications:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token]);
+  }, []);
 
   const fetchStats = useCallback(async () => {
     try {
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/notifications/admin/notifications/stats/`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
+      const response = await notificationsAPI.adminStats();
+      const data = response?.data?.data ?? response?.data ?? {};
+      setStats({
+        total: Number(data?.total || 0),
+        unread: Number(data?.unread || 0),
+        urgent: Number(data?.urgent || 0),
+      });
     } catch (error) {
       console.error('Error fetching notification stats:', error);
     }
-  }, [token]);
+  }, []);
 
   const markAllAsRead = async () => {
     try {
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/notifications/admin/notifications/mark_all_read/`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (response.ok) {
-        await fetchNotifications();
-        await fetchStats();
-        Alert.alert('Success', 'All notifications marked as read');
-      }
+      await notificationsAPI.markAllAdminRead();
+      await fetchNotifications();
+      await fetchStats();
+      Alert.alert('Success', 'All notifications marked as read');
     } catch (error) {
       console.error('Error marking notifications as read:', error);
     }

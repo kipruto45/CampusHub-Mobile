@@ -26,8 +26,28 @@ interface User {
   profile?: {
     avatar?: string;
     department?: string;
+    course?: string;
   };
+  stats?: {
+    total_uploads?: number;
+  };
+  uploads_count?: number;
+  reports_count?: number;
 }
+
+const formatRelativeDate = (value?: string) => {
+  if (!value) return 'Recently';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Recently';
+  const diffMs = Date.now() - date.getTime();
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffHours < 1) return 'Just now';
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+};
 
 const UsersScreen: React.FC = () => {
   const router = useRouter();
@@ -188,6 +208,11 @@ const UsersScreen: React.FC = () => {
             {item.full_name || `${item.first_name} ${item.last_name}`.trim()}
           </Text>
           <Text style={styles.userEmail}>{item.email}</Text>
+          <Text style={styles.userSecondaryMeta}>
+            {[item.profile?.department || item.profile?.course, `Joined ${formatRelativeDate(item.date_joined)}`]
+              .filter(Boolean)
+              .join(' • ')}
+          </Text>
           <View style={styles.userMeta}>
             <View style={[styles.badge, { backgroundColor: getRoleColor(item.role) + '20' }]}>
               <Text style={[styles.badgeText, { color: getRoleColor(item.role) }]}>
@@ -200,6 +225,9 @@ const UsersScreen: React.FC = () => {
               </View>
             )}
           </View>
+          <Text style={styles.userFootnote}>
+            {(item.uploads_count ?? item.stats?.total_uploads ?? 0).toLocaleString()} uploads • {(item.reports_count ?? 0).toLocaleString()} reports
+          </Text>
         </View>
         <TouchableOpacity 
           style={[styles.statusButton, item.is_active ? styles.activeButton : styles.inactiveButton]}
@@ -245,6 +273,12 @@ const UsersScreen: React.FC = () => {
     );
   }
 
+  const totalActive = users.filter((account) => account.is_active).length;
+  const totalVerified = users.filter((account) => account.is_verified).length;
+  const totalPrivileged = users.filter((account) =>
+    ['admin', 'staff', 'instructor'].includes(String(account.role || '').toLowerCase())
+  ).length;
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -261,6 +295,24 @@ const UsersScreen: React.FC = () => {
 
       {/* Search and Filters */}
       <View style={styles.filterContainer}>
+        <View style={styles.summaryGrid}>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>{users.length}</Text>
+            <Text style={styles.summaryLabel}>Loaded</Text>
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>{totalActive}</Text>
+            <Text style={styles.summaryLabel}>Active</Text>
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>{totalVerified}</Text>
+            <Text style={styles.summaryLabel}>Verified</Text>
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>{totalPrivileged}</Text>
+            <Text style={styles.summaryLabel}>Privileged</Text>
+          </View>
+        </View>
         <View style={styles.searchBox}>
           <Icon name="search" size={20} color={colors.text.tertiary} />
           <TextInput
@@ -293,39 +345,41 @@ const UsersScreen: React.FC = () => {
       </View>
 
       {/* Bulk actions */}
-      <View style={styles.bulkBar}>
-        <Text style={styles.bulkText}>{selectedIds.size} selected</Text>
-        <View style={styles.bulkActions}>
-          <TouchableOpacity
-            style={[styles.bulkButton, styles.bulkPrimary, bulkLoading && styles.bulkDisabled]}
-            onPress={() => handleBulkStatus(true)}
-            disabled={bulkLoading}
-          >
-            <Text style={styles.bulkButtonText}>Activate</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.bulkButton, styles.bulkDanger, bulkLoading && styles.bulkDisabled]}
-            onPress={() => handleBulkStatus(false)}
-            disabled={bulkLoading}
-          >
-            <Text style={styles.bulkButtonText}>Deactivate</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.bulkButton, styles.bulkOutline, bulkLoading && styles.bulkDisabled]}
-            onPress={() => handleBulkRole('instructor')}
-            disabled={bulkLoading}
-          >
-            <Text style={[styles.bulkButtonText, styles.bulkTextDark]}>Set Instructor</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.bulkButton, styles.bulkOutline, bulkLoading && styles.bulkDisabled]}
-            onPress={() => handleBulkRole('student')}
-            disabled={bulkLoading}
-          >
-            <Text style={[styles.bulkButtonText, styles.bulkTextDark]}>Set Student</Text>
-          </TouchableOpacity>
+      {selectedIds.size > 0 ? (
+        <View style={styles.bulkBar}>
+          <Text style={styles.bulkText}>{selectedIds.size} selected</Text>
+          <View style={styles.bulkActions}>
+            <TouchableOpacity
+              style={[styles.bulkButton, styles.bulkPrimary, bulkLoading && styles.bulkDisabled]}
+              onPress={() => handleBulkStatus(true)}
+              disabled={bulkLoading}
+            >
+              <Text style={styles.bulkButtonText}>Activate</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bulkButton, styles.bulkDanger, bulkLoading && styles.bulkDisabled]}
+              onPress={() => handleBulkStatus(false)}
+              disabled={bulkLoading}
+            >
+              <Text style={styles.bulkButtonText}>Deactivate</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bulkButton, styles.bulkOutline, bulkLoading && styles.bulkDisabled]}
+              onPress={() => handleBulkRole('instructor')}
+              disabled={bulkLoading}
+            >
+              <Text style={[styles.bulkButtonText, styles.bulkTextDark]}>Set Instructor</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bulkButton, styles.bulkOutline, bulkLoading && styles.bulkDisabled]}
+              onPress={() => handleBulkRole('student')}
+              disabled={bulkLoading}
+            >
+              <Text style={[styles.bulkButtonText, styles.bulkTextDark]}>Set Student</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {/* Users List */}
       <FlatList
@@ -392,6 +446,28 @@ const styles = StyleSheet.create({
   filterContainer: {
     padding: spacing[4],
     backgroundColor: colors.background.primary,
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    marginBottom: spacing[3],
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: colors.background.secondary,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing[3],
+    alignItems: 'center',
+  },
+  summaryValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  summaryLabel: {
+    marginTop: 4,
+    fontSize: 11,
+    color: colors.text.secondary,
   },
   searchBox: {
     flexDirection: 'row',
@@ -521,10 +597,20 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: 2,
   },
+  userSecondaryMeta: {
+    fontSize: 12,
+    color: colors.text.tertiary,
+    marginTop: 4,
+  },
   userMeta: {
     flexDirection: 'row',
     marginTop: spacing[2],
     gap: spacing[2],
+  },
+  userFootnote: {
+    fontSize: 11,
+    color: colors.text.secondary,
+    marginTop: spacing[2],
   },
   badge: {
     paddingHorizontal: spacing[2],

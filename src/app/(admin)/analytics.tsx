@@ -70,6 +70,7 @@ const AnalyticsScreen: React.FC = () => {
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [timeRange, setTimeRange] = useState<'week' | 'month' | 'year'>('month');
   const [eventData, setEventData] = useState<EventAnalytics | null>(null);
+  const [eventAnalyticsError, setEventAnalyticsError] = useState<string | null>(null);
   const eventCache = React.useRef<Record<string, EventAnalytics>>({});
 
   const fetchAnalytics = useCallback(async (isRefresh: boolean = false) => {
@@ -95,6 +96,7 @@ const AnalyticsScreen: React.FC = () => {
     try {
       if (eventCache.current[timeRange]) {
         setEventData(eventCache.current[timeRange]);
+        setEventAnalyticsError(null);
         return;
       }
       const response = await analyticsAPI.getEventAnalytics({ period: timeRange });
@@ -109,44 +111,22 @@ const AnalyticsScreen: React.FC = () => {
       };
       eventCache.current[timeRange] = normalized;
       setEventData(normalized);
-    } catch (err) {
-      // Fallback sample so UI still renders
-      const sample: EventAnalytics = {
-        attendance_trend: [
-          { period: 'W1', registered: 120, attended: 95 },
-          { period: 'W2', registered: 140, attended: 110 },
-          { period: 'W3', registered: 160, attended: 125 },
-          { period: 'W4', registered: 180, attended: 150 },
-        ],
-        type_distribution: [
-          { type: 'Workshop', count: 12 },
-          { type: 'Seminar', count: 8 },
-          { type: 'Career Fair', count: 5 },
-          { type: 'Social', count: 6 },
-        ],
-        demographics: [
-          { label: 'Year 1', count: 120 },
-          { label: 'Year 2', count: 90 },
-          { label: 'Year 3', count: 60 },
-          { label: 'Year 4+', count: 40 },
-        ],
-        registration_vs_attendance: [
-          { event: 'AI Workshop', registered: 80, attended: 68 },
-          { event: 'Career Fair', registered: 120, attended: 95 },
-          { event: 'Hackathon', registered: 200, attended: 170 },
-        ],
-        popular_categories: [
-          { category: 'Tech', count: 14, revenue: 3200 },
-          { category: 'Career', count: 9, revenue: 1800 },
-          { category: 'Wellness', count: 6, revenue: 900 },
-        ],
-        heatmap: Array.from({ length: 21 }).map((_, idx) => ({
-          slot: `D${(idx % 7) + 1}-H${Math.floor(idx / 7)}`,
-          count: Math.floor(Math.random() * 25) + 5,
-        })),
-      };
-      eventCache.current[timeRange] = sample;
-      setEventData(sample);
+      setEventAnalyticsError(null);
+    } catch (err: any) {
+      console.error('Failed to fetch event analytics:', err);
+      setEventData({
+        attendance_trend: [],
+        type_distribution: [],
+        demographics: [],
+        registration_vs_attendance: [],
+        popular_categories: [],
+        heatmap: [],
+      });
+      setEventAnalyticsError(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Event analytics are unavailable right now.'
+      );
     }
   }, [timeRange]);
 
@@ -204,6 +184,12 @@ const AnalyticsScreen: React.FC = () => {
   const typeTotal = typeDistribution.reduce((acc, cur) => acc + cur.count, 0) || 1;
 
   const heatmap = eventData?.heatmap || [];
+  const hasEventAnalyticsData =
+    attendanceTrend.length > 0 ||
+    typeDistribution.length > 0 ||
+    (eventData?.registration_vs_attendance || []).length > 0 ||
+    (eventData?.popular_categories || []).length > 0 ||
+    heatmap.length > 0;
 
   const exportEventData = async () => {
     try {
@@ -438,13 +424,19 @@ const AnalyticsScreen: React.FC = () => {
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Event Analytics</Text>
-            {eventData && (
+            {hasEventAnalyticsData && (
               <TouchableOpacity style={styles.exportBtn} onPress={exportEventData}>
                 <Icon name="download" size={16} color={colors.text.inverse} />
                 <Text style={styles.exportText}>Export</Text>
               </TouchableOpacity>
             )}
           </View>
+          {eventAnalyticsError ? (
+            <View style={styles.inlineNotice}>
+              <Icon name="information-circle" size={16} color={colors.warning} />
+              <Text style={styles.inlineNoticeText}>{eventAnalyticsError}</Text>
+            </View>
+          ) : null}
 
           {/* Attendance trend */}
           <View style={styles.chartContainer}>
@@ -874,6 +866,22 @@ const styles = StyleSheet.create({
     color: colors.text.inverse,
     fontWeight: '600',
     fontSize: 12,
+  },
+  inlineNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    backgroundColor: colors.warning + '12',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    marginBottom: spacing[3],
+  },
+  inlineNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.text.secondary,
+    lineHeight: 18,
   },
   donutRow: {
     flexDirection: 'row',

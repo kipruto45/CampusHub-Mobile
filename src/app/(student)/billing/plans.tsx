@@ -94,6 +94,10 @@ const PlansScreen: React.FC = () => {
   }, [loadPlans]);
 
   const currentPlanId = useMemo(() => String(currentPlan?.id || ''), [currentPlan]);
+  const currentPlanLabel = useMemo(
+    () => String(currentPlan?.name || currentPlan?.tier || '').trim(),
+    [currentPlan]
+  );
 
   const getPriceLabel = (plan: Plan) => {
     const currency = 'USD';
@@ -108,11 +112,28 @@ const PlansScreen: React.FC = () => {
       ? Boolean(plan.stripe_monthly_price_id)
       : Boolean(plan.stripe_yearly_price_id);
 
+  const handleUnavailablePlan = useCallback(
+    (plan: Plan) => {
+      Alert.alert(
+        'Plan Setup Needed',
+        `${plan.name} is not configured for ${billingPeriod} checkout yet. You can contact support and we will help you activate the right option.`,
+        [
+          {
+            text: 'Contact Support',
+            onPress: () => router.push('/(student)/contact-support' as any),
+          },
+          { text: 'Close', style: 'cancel' },
+        ]
+      );
+    },
+    [billingPeriod, router]
+  );
+
   const handleSubscribe = async (plan: Plan) => {
     if (!plan?.id) return;
 
     if (!canPurchase(plan)) {
-      Alert.alert('Not Available', 'This plan is not available for purchase right now.');
+      handleUnavailablePlan(plan);
       return;
     }
 
@@ -222,7 +243,26 @@ const PlansScreen: React.FC = () => {
           <View style={styles.emptyCard}>
             <Icon name="diamond" size={36} color={colors.text.tertiary} />
             <Text style={styles.emptyTitle}>No plans available</Text>
-            <Text style={styles.emptyText}>Try again later.</Text>
+            <Text style={styles.emptyText}>
+              {currentPlanLabel
+                ? `Your account is currently on ${currentPlanLabel}. The plan catalog is unavailable right now, but you can still open billing or contact support for changes.`
+                : 'The plan catalog is unavailable right now. Open billing for your current subscription details or contact support for help with upgrades.'}
+            </Text>
+            <View style={styles.emptyActions}>
+              <Button
+                title="Open Billing"
+                onPress={() => router.replace('/(student)/billing' as any)}
+                fullWidth
+              />
+            </View>
+            <View style={styles.emptyActions}>
+              <Button
+                title="Contact Support"
+                onPress={() => router.push('/(student)/contact-support' as any)}
+                variant="secondary"
+                fullWidth
+              />
+            </View>
           </View>
         ) : (
           plans.map((plan) => {
@@ -282,6 +322,12 @@ const PlansScreen: React.FC = () => {
                   </View>
                 </View>
 
+                {!purchasable ? (
+                  <Text style={styles.planHelperText}>
+                    This plan is not configured for {billingPeriod} checkout yet.
+                  </Text>
+                ) : null}
+
                 <Button
                   title={
                     isCurrent && isActive
@@ -290,18 +336,24 @@ const PlansScreen: React.FC = () => {
                         ? starting
                           ? 'Starting...'
                           : 'Subscribe'
-                        : 'Not Available'
+                        : 'Contact Support'
                   }
                   onPress={() => {
                     if (isCurrent && isActive) {
                       router.replace('/(student)/billing' as any);
                       return;
                     }
+                    if (!purchasable) {
+                      handleUnavailablePlan(plan);
+                      return;
+                    }
                     handleSubscribe(plan);
                   }}
-                  disabled={!purchasable || starting}
+                  disabled={starting}
                   loading={starting}
-                  variant={isCurrent && isActive ? 'secondary' : 'primary'}
+                  variant={
+                    isCurrent && isActive ? 'secondary' : purchasable ? 'primary' : 'outline'
+                  }
                   fullWidth
                 />
               </View>
@@ -389,6 +441,12 @@ const styles = StyleSheet.create({
   featuresList: { marginTop: spacing[3], gap: spacing[2], marginBottom: spacing[4] },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
   featureText: { fontSize: 13, color: colors.text.secondary, fontWeight: '600' },
+  planHelperText: {
+    fontSize: 12,
+    color: colors.warning,
+    marginBottom: spacing[3],
+    lineHeight: 18,
+  },
 
   emptyCard: {
     backgroundColor: colors.card.light,
@@ -399,9 +457,9 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { marginTop: spacing[3], fontSize: 15, fontWeight: '800', color: colors.text.primary },
   emptyText: { marginTop: spacing[2], fontSize: 13, color: colors.text.secondary, textAlign: 'center' },
+  emptyActions: { marginTop: spacing[3], alignSelf: 'stretch' },
 
   bottomSpacing: { height: spacing[4] },
 });
 
 export default PlansScreen;
-

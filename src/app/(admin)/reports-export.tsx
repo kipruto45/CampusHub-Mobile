@@ -18,8 +18,8 @@ import {
   Modal,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { announcementsApi } from '../../services/announcements.service';
+import { adminManagementAPI } from '../../services/api';
 
 interface Report {
   id: string;
@@ -30,7 +30,6 @@ interface Report {
 }
 
 export default function ReportsExportScreen() {
-  const { accessToken: token } = useAuthStore();
   const params = useLocalSearchParams<{ ids?: string }>();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -50,27 +49,22 @@ export default function ReportsExportScreen() {
 
   const fetchReports = useCallback(async () => {
     try {
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/admin/reports/`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setReports(data.reports || []);
-      }
+      const response = await adminManagementAPI.listReportTemplates();
+      const payload = response?.data?.data ?? {};
+      const nextReports = Array.isArray(payload?.reports)
+        ? payload.reports
+        : Array.isArray(payload?.results)
+          ? payload.results
+          : [];
+      setReports(nextReports);
     } catch (error) {
       console.error('Error fetching reports:', error);
+      Alert.alert('Report templates unavailable', 'Unable to load report options right now.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token]);
+  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -88,31 +82,21 @@ export default function ReportsExportScreen() {
   const generateReport = async (reportId: string, format: string) => {
     setGenerating(true);
     try {
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/admin/reports/generate/`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            report_type: reportId,
-            format: format,
-          }),
-        }
-      );
+      const response = await adminManagementAPI.generateReport({
+        report_type: reportId,
+        format,
+      });
+      const payload = response?.data?.data ?? {};
+      const recordCount = Number(payload?.record_count ?? payload?.count ?? 0);
+      const formatLabel = String(payload?.format || format).toUpperCase();
 
-      if (response.ok) {
-        const data = await response.json();
-        Alert.alert(
-          'Report Generated',
-          `Generated ${data.record_count} records\nFormat: ${data.format}`,
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert('Error', 'Failed to generate report');
-      }
+      Alert.alert(
+        'Report Generated',
+        recordCount > 0
+          ? `Generated ${recordCount} records\nFormat: ${formatLabel}`
+          : `Report is ready.\nFormat: ${formatLabel}`,
+        [{ text: 'OK' }]
+      );
     } catch (error) {
       console.error('Error generating report:', error);
       Alert.alert('Error', 'Failed to generate report');
@@ -156,48 +140,48 @@ export default function ReportsExportScreen() {
     }
     setSubmittingBulk(true);
     try {
-      const base = getApiBaseUrl();
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      };
-
       if (bulkMode === 'update') {
-        const res = await fetch(`${base}/api/admin-management/bulk/resources/update/`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ resource_ids, updates: { status: statusInput } }),
+        const response = await adminManagementAPI.bulkUpdateResources(resource_ids, {
+          status: statusInput.trim(),
         });
-        if (!res.ok) throw new Error('Bulk update failed');
-        Alert.alert('Bulk Update', 'Resources updated.');
+        const payload = response?.data?.data ?? {};
+        const updatedCount = Number(payload?.updated_count ?? payload?.success_count ?? resource_ids.length);
+        Alert.alert('Bulk Update', `${updatedCount} resource${updatedCount === 1 ? '' : 's'} updated.`);
       } else if (bulkMode === 'delete') {
-        const res = await fetch(`${base}/api/admin-management/bulk/resources/delete/`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ resource_ids, soft: softDelete }),
-        });
-        if (!res.ok) throw new Error('Bulk delete failed');
-        Alert.alert('Bulk Delete', softDelete ? 'Resources moved to trash.' : 'Resources deleted.');
+        const response = await adminManagementAPI.bulkDeleteResources(resource_ids, softDelete);
+        const payload = response?.data?.data ?? {};
+        const deletedCount = Number(payload?.deleted_count ?? payload?.success_count ?? resource_ids.length);
+        Alert.alert(
+          'Bulk Delete',
+          softDelete
+            ? `${deletedCount} resource${deletedCount === 1 ? '' : 's'} moved to trash.`
+            : `${deletedCount} resource${deletedCount === 1 ? '' : 's'} deleted.`
+        );
       } else if (bulkMode === 'moderate') {
-        const res = await fetch(`${base}/api/admin-management/bulk/moderation/`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ resource_ids, action: moderationAction, reason }),
-        });
-        if (!res.ok) throw new Error('Bulk moderation failed');
-        Alert.alert('Bulk Moderation', `Action "${moderationAction}" applied.`);
+        const response = await adminManagementAPI.bulkModerateResources(
+          resource_ids,
+          moderationAction,
+          reason.trim()
+        );
+        const payload = response?.data?.data ?? {};
+        const moderatedCount = Number(payload?.updated_count ?? payload?.success_count ?? resource_ids.length);
+        Alert.alert(
+          'Bulk Moderation',
+          `${moderatedCount} resource${moderatedCount === 1 ? '' : 's'} set to ${moderationAction}.`
+        );
       } else if (bulkMode === 'notify') {
-        const res = await fetch(`${base}/api/announcements/admin/`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            title: notifyTitle,
-            content: notifyMessage,
-            announcement_type: 'system',
-            status: 'published',
-          }),
-        });
-        if (!res.ok) throw new Error('Bulk notification failed');
+        if (!notifyTitle.trim() || !notifyMessage.trim()) {
+          throw new Error('Add a title and message before sending the announcement.');
+        }
+
+        const payload = new FormData();
+        payload.append('title', notifyTitle.trim());
+        payload.append('content', notifyMessage.trim());
+        payload.append('announcement_type', 'system_notice');
+        payload.append('status', 'published');
+        payload.append('is_pinned', 'false');
+
+        await announcementsApi.createAnnouncement(payload);
         Alert.alert('Notification sent', 'Announcement broadcast successfully.');
       }
       setBulkModalVisible(false);

@@ -118,6 +118,7 @@ const AnnouncementsScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pickingFiles, setPickingFiles] = useState(false);
+  const [actioningSlug, setActioningSlug] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -299,13 +300,56 @@ const AnnouncementsScreen: React.FC = () => {
   };
 
   const handlePublish = async (announcement: Announcement) => {
+    setActioningSlug(announcement.slug);
     try {
       await announcementsApi.publishAnnouncement(announcement.slug);
       Alert.alert('Success', 'Announcement published.');
-      fetchAnnouncements(true);
+      await fetchAnnouncements(true);
     } catch (err: any) {
       console.error('Failed to publish announcement:', err);
       Alert.alert('Error', 'Failed to publish announcement.');
+    } finally {
+      setActioningSlug(null);
+    }
+  };
+
+  const handleArchive = (announcement: Announcement) => {
+    Alert.alert(
+      'Archive Announcement',
+      'This will remove the announcement from active circulation while keeping it in history.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Archive',
+          onPress: async () => {
+            try {
+              setActioningSlug(announcement.slug);
+              await announcementsApi.archiveAnnouncement(announcement.slug);
+              Alert.alert('Success', 'Announcement archived.');
+              await fetchAnnouncements(true);
+            } catch (err: any) {
+              console.error('Failed to archive announcement:', err);
+              Alert.alert('Error', 'Failed to archive announcement.');
+            } finally {
+              setActioningSlug(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleUnpublish = async (announcement: Announcement) => {
+    setActioningSlug(announcement.slug);
+    try {
+      await announcementsApi.unpublishAnnouncement(announcement.slug);
+      Alert.alert('Success', 'Announcement moved back to draft.');
+      await fetchAnnouncements(true);
+    } catch (err: any) {
+      console.error('Failed to unpublish announcement:', err);
+      Alert.alert('Error', 'Failed to unpublish announcement.');
+    } finally {
+      setActioningSlug(null);
     }
   };
 
@@ -361,7 +405,10 @@ const AnnouncementsScreen: React.FC = () => {
     </View>
   );
 
-  const renderAnnouncementItem = ({ item }: { item: Announcement }) => (
+  const renderAnnouncementItem = ({ item }: { item: Announcement }) => {
+    const isActioning = actioningSlug === item.slug;
+
+    return (
     <View style={styles.announcementCard}>
       <View style={styles.cardHeader}>
         <View style={styles.badgeRow}>
@@ -428,19 +475,55 @@ const AnnouncementsScreen: React.FC = () => {
 
       <View style={styles.cardActions}>
         {item.status === 'draft' && (
-          <TouchableOpacity style={styles.actionBtn} onPress={() => handlePublish(item)}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionBtnSuccess, isActioning && styles.actionBtnDisabled]}
+            onPress={() => handlePublish(item)}
+            disabled={isActioning}
+          >
             <Icon name="checkmark-circle" size={18} color={colors.success} />
+            <Text style={[styles.actionBtnText, styles.actionBtnTextSuccess]}>Publish</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity style={styles.actionBtn} onPress={() => handleEdit(item)}>
+        {item.status === 'published' && (
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionBtnMuted, isActioning && styles.actionBtnDisabled]}
+            onPress={() => handleUnpublish(item)}
+            disabled={isActioning}
+          >
+            <Icon name="close-circle" size={18} color={colors.warning} />
+            <Text style={[styles.actionBtnText, styles.actionBtnTextMuted]}>Unpublish</Text>
+          </TouchableOpacity>
+        )}
+        {item.status !== 'archived' && (
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionBtnMuted, isActioning && styles.actionBtnDisabled]}
+            onPress={() => handleArchive(item)}
+            disabled={isActioning}
+          >
+            <Icon name="archive" size={18} color={colors.text.secondary} />
+            <Text style={[styles.actionBtnText, styles.actionBtnTextMuted]}>Archive</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.actionBtnInfo, isActioning && styles.actionBtnDisabled]}
+          onPress={() => handleEdit(item)}
+          disabled={isActioning}
+        >
           <Icon name="pencil" size={18} color={colors.info} />
+          <Text style={[styles.actionBtnText, styles.actionBtnTextInfo]}>Edit</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => handleDelete(item)}>
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.actionBtnDanger, isActioning && styles.actionBtnDisabled]}
+          onPress={() => handleDelete(item)}
+          disabled={isActioning}
+        >
           <Icon name="trash" size={18} color={colors.error} />
+          <Text style={[styles.actionBtnText, styles.actionBtnTextDanger]}>Delete</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
+  };
 
   if (loading && !refreshing) {
     return (
@@ -785,6 +868,7 @@ const styles = StyleSheet.create({
   },
   cardActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'flex-end',
     marginTop: spacing[3],
     gap: spacing[2],
@@ -793,7 +877,48 @@ const styles = StyleSheet.create({
     paddingTop: spacing[3],
   },
   actionBtn: {
-    padding: spacing[2],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  actionBtnSuccess: {
+    backgroundColor: colors.success + '12',
+    borderColor: colors.success + '33',
+  },
+  actionBtnInfo: {
+    backgroundColor: colors.info + '12',
+    borderColor: colors.info + '33',
+  },
+  actionBtnMuted: {
+    backgroundColor: colors.gray[50],
+    borderColor: colors.border.light,
+  },
+  actionBtnDanger: {
+    backgroundColor: colors.error + '10',
+    borderColor: colors.error + '2A',
+  },
+  actionBtnDisabled: {
+    opacity: 0.55,
+  },
+  actionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  actionBtnTextSuccess: {
+    color: colors.success,
+  },
+  actionBtnTextInfo: {
+    color: colors.info,
+  },
+  actionBtnTextMuted: {
+    color: colors.text.secondary,
+  },
+  actionBtnTextDanger: {
+    color: colors.error,
   },
   emptyState: {
     alignItems: 'center',

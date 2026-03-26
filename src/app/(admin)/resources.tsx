@@ -50,6 +50,7 @@ const ResourcesScreen: React.FC = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState<ResourceStatus | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Upload state
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -76,6 +77,9 @@ const ResourcesScreen: React.FC = () => {
       if (selectedFilter !== 'all') {
         params.status = selectedFilter;
       }
+      if (searchQuery.trim()) {
+        params.search = searchQuery.trim();
+      }
 
       const response = await adminManagementAPI.listResources(params);
       const results = response.data?.data?.results || [];
@@ -95,11 +99,11 @@ const ResourcesScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedFilter]);
+  }, [selectedFilter, searchQuery]);
 
   useEffect(() => {
     fetchResources(1, true);
-  }, [selectedFilter]);
+  }, [selectedFilter, searchQuery]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -462,6 +466,24 @@ const ResourcesScreen: React.FC = () => {
         </View>
       </View>
 
+      <View style={styles.searchWrap}>
+        <View style={styles.searchBox}>
+          <Icon name="search" size={18} color={colors.text.tertiary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search resources..."
+            placeholderTextColor={colors.text.tertiary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Icon name="close-circle" size={18} color={colors.text.tertiary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+
       {/* Filter Tabs */}
       <View style={styles.filterContainer}>
         {filters.map((filter) => (
@@ -593,6 +615,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text.secondary,
     marginTop: 2,
+  },
+  searchWrap: {
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[3],
+    backgroundColor: colors.background.primary,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background.secondary,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: spacing[2],
+    fontSize: 15,
+    color: colors.text.primary,
   },
   filterContainer: {
     flexDirection: 'row',

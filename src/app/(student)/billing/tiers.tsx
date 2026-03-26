@@ -252,7 +252,29 @@ const TierScreen: React.FC = () => {
           <View style={styles.emptyCard}>
             <Icon name="layers" size={36} color={colors.text.tertiary} />
             <Text style={styles.emptyTitle}>No tiers available</Text>
-            <Text style={styles.emptyText}>Try again later.</Text>
+            <Text style={styles.emptyText}>
+              {currentTierName
+                ? `Your account is currently on ${currentTierName}. Tier details are unavailable right now, but your current limits still apply and you can open plans for upgrade options.`
+                : 'Tier details are unavailable right now. Open plans for upgrade help or refresh after billing sync completes.'}
+            </Text>
+            <View style={styles.emptyActions}>
+              <Button
+                title="View Plans"
+                onPress={() => router.push('/(student)/billing/plans' as any)}
+                fullWidth
+              />
+            </View>
+            <View style={styles.emptyActions}>
+              <Button
+                title="Refresh"
+                onPress={() => {
+                  setRefreshing(true);
+                  load();
+                }}
+                variant="secondary"
+                fullWidth
+              />
+            </View>
           </View>
         ) : (
           tiers.map((t) => {
@@ -403,6 +425,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { marginTop: spacing[3], fontSize: 15, fontWeight: '900', color: colors.text.primary },
   emptyText: { marginTop: spacing[2], fontSize: 13, color: colors.text.secondary, textAlign: 'center' },
+  emptyActions: { marginTop: spacing[3], alignSelf: 'stretch' },
 
   tierCard: {
     backgroundColor: colors.card.light,
@@ -444,4 +467,3 @@ const styles = StyleSheet.create({
 });
 
 export default TierScreen;
-

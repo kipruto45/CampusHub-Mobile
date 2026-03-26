@@ -14,8 +14,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { adminManagementAPI } from '../../services/api';
 
 interface Widget {
   type: string;
@@ -32,7 +31,6 @@ interface Layout {
 }
 
 export default function DashboardBuilderScreen() {
-  const { accessToken: token } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [widgets, setWidgets] = useState<Widget[]>([]);
@@ -41,44 +39,23 @@ export default function DashboardBuilderScreen() {
 
   const fetchData = useCallback(async () => {
     try {
-      // Fetch widgets
-      const widgetsResponse = await fetch(
-        `${getApiBaseUrl()}/api/admin/dashboard/widgets/`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      const [widgetsResponse, layoutsResponse] = await Promise.all([
+        adminManagementAPI.getDashboardWidgets(),
+        adminManagementAPI.getDashboardLayouts(),
+      ]);
 
-      if (widgetsResponse.ok) {
-        const data = await widgetsResponse.json();
-        setWidgets(data.widgets || []);
-      }
+      const widgetsData = widgetsResponse?.data?.data ?? widgetsResponse?.data ?? {};
+      const layoutsData = layoutsResponse?.data?.data ?? layoutsResponse?.data ?? {};
 
-      // Fetch layouts
-      const layoutsResponse = await fetch(
-        `${getApiBaseUrl()}/api/admin/dashboard/layouts/`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (layoutsResponse.ok) {
-        const data = await layoutsResponse.json();
-        setLayouts(data.layouts || []);
-      }
+      setWidgets(Array.isArray(widgetsData?.widgets) ? widgetsData.widgets : []);
+      setLayouts(Array.isArray(layoutsData?.layouts) ? layoutsData.layouts : []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token]);
+  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

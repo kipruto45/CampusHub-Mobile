@@ -11,8 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { adminManagementAPI } from '../../services/api';
 
 interface Webhook {
   id: string;
@@ -45,7 +44,6 @@ const AVAILABLE_EVENTS = [
 
 export default function Webhooks() {
   const router = useRouter();
-  const { accessToken } = useAuthStore();
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -66,15 +64,9 @@ export default function Webhooks() {
 
   const fetchWebhooks = async () => {
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}/admin-management/webhooks/`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setWebhooks(data.results || data);
-      }
+      const response = await adminManagementAPI.listWebhooks();
+      const data = response?.data?.data ?? response?.data ?? {};
+      setWebhooks(Array.isArray(data?.results) ? data.results : []);
     } catch (error) {
       console.error('Error fetching webhooks:', error);
     } finally {
@@ -95,30 +87,17 @@ export default function Webhooks() {
     }
 
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}/admin-management/webhooks/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newWebhook),
+      await adminManagementAPI.createWebhook(newWebhook);
+      Alert.alert('Success', 'Webhook created successfully');
+      setShowModal(false);
+      setNewWebhook({
+        name: '',
+        description: '',
+        url: '',
+        events: [],
+        auth_type: 'none',
       });
-
-      if (response.ok) {
-        Alert.alert('Success', 'Webhook created successfully');
-        setShowModal(false);
-        setNewWebhook({
-          name: '',
-          description: '',
-          url: '',
-          events: [],
-          auth_type: 'none',
-        });
-        fetchWebhooks();
-      } else {
-        Alert.alert('Error', 'Failed to create webhook');
-      }
+      fetchWebhooks();
     } catch (error) {
       Alert.alert('Error', 'Network error');
     }
@@ -128,23 +107,9 @@ export default function Webhooks() {
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
 
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(
-        `${apiBaseUrl}/admin-management/webhooks/${webhookId}/`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
-
-      if (response.ok) {
-        Alert.alert('Success', `Webhook ${newStatus}`);
-        fetchWebhooks();
-      }
+      await adminManagementAPI.updateWebhook(webhookId, { status: newStatus });
+      Alert.alert('Success', `Webhook ${newStatus}`);
+      fetchWebhooks();
     } catch (error) {
       Alert.alert('Error', 'Failed to update webhook');
     }
@@ -152,17 +117,8 @@ export default function Webhooks() {
 
   const testWebhook = async (webhookId: string) => {
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(
-        `${apiBaseUrl}/admin-management/webhooks/${webhookId}/test/`,
-        { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-
-      if (response.ok) {
-        Alert.alert('Success', 'Test request sent! Check the webhook endpoint for the response.');
-      } else {
-        Alert.alert('Error', 'Test request failed');
-      }
+      await adminManagementAPI.testWebhook(webhookId);
+      Alert.alert('Success', 'Test request sent! Check the webhook endpoint for the response.');
     } catch (error) {
       Alert.alert('Error', 'Network error');
     }
@@ -179,16 +135,9 @@ export default function Webhooks() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const apiBaseUrl = await getApiBaseUrl();
-              const response = await fetch(
-                `${apiBaseUrl}/admin-management/webhooks/${webhookId}/`,
-                { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }
-              );
-
-              if (response.ok) {
-                Alert.alert('Success', 'Webhook deleted');
-                fetchWebhooks();
-              }
+              await adminManagementAPI.deleteWebhook(webhookId);
+              Alert.alert('Success', 'Webhook deleted');
+              fetchWebhooks();
             } catch (error) {
               Alert.alert('Error', 'Failed to delete webhook');
             }

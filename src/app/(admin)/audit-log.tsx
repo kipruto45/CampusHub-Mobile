@@ -14,8 +14,7 @@ import {
   ActivityIndicator,
   TextInput,
 } from 'react-native';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { adminManagementAPI } from '../../services/api';
 
 interface AuditEntry {
   id: number;
@@ -53,7 +52,6 @@ const ACTION_COLORS: { [key: string]: string } = {
 };
 
 export default function AuditLogScreen() {
-  const { accessToken: token } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [entries, setEntries] = useState<AuditEntry[]>([]);
@@ -65,44 +63,29 @@ export default function AuditLogScreen() {
   const fetchAuditLog = useCallback(async (reset: boolean = false) => {
     try {
       const currentPage = reset ? 1 : page;
-      const params = new URLSearchParams({
-        page: currentPage.toString(),
-      });
-      
-      if (selectedFilter) {
-        params.append('action', selectedFilter);
-      }
-      
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/admin/audit/?${params}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
 
-      if (response.ok) {
-        const data = await response.json();
-        const newEntries = data.results || data;
-        
-        if (reset) {
-          setEntries(newEntries);
-        } else {
-          setEntries(prev => [...prev, ...newEntries]);
-        }
-        
-        setHasMore(newEntries.length >= 20);
-        setPage(currentPage + 1);
+      const response = await adminManagementAPI.listAuditLogs({
+        page: currentPage,
+        ...(selectedFilter ? { action: selectedFilter } : {}),
+      });
+      const data = response?.data?.data ?? response?.data ?? {};
+      const newEntries = Array.isArray(data?.results) ? data.results : [];
+
+      if (reset) {
+        setEntries(newEntries);
+      } else {
+        setEntries(prev => [...prev, ...newEntries]);
       }
+
+      setHasMore(Boolean(data?.next) || newEntries.length >= 20);
+      setPage(currentPage + 1);
     } catch (error) {
       console.error('Error fetching audit log:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token, page, selectedFilter]);
+  }, [page, selectedFilter]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

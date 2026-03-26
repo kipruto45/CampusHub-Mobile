@@ -11,8 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { adminManagementAPI } from '../../services/api';
 
 interface Workflow {
   id: string;
@@ -55,7 +54,6 @@ const ACTION_TYPES = [
 
 export default function Workflows() {
   const router = useRouter();
-  const { accessToken } = useAuthStore();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [executions, setExecutions] = useState<WorkflowExecution[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,15 +76,9 @@ export default function Workflows() {
 
   const fetchWorkflows = async () => {
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}/admin-management/workflows/`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setWorkflows(data.results || data);
-      }
+      const response = await adminManagementAPI.listWorkflows();
+      const data = response?.data?.data ?? response?.data ?? {};
+      setWorkflows(Array.isArray(data?.results) ? data.results : []);
     } catch (error) {
       console.error('Error fetching workflows:', error);
     } finally {
@@ -95,20 +87,14 @@ export default function Workflows() {
     }
   };
 
-  const fetchExecutions = async () => {
-    if (!selectedWorkflow) return;
+  const fetchExecutions = async (workflowId?: string) => {
+    const targetWorkflowId = workflowId || selectedWorkflow?.id;
+    if (!targetWorkflowId) return;
     
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(
-        `${apiBaseUrl}/admin-management/workflows/${selectedWorkflow.id}/executions/`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setExecutions(data.results || data);
-      }
+      const response = await adminManagementAPI.listWorkflowExecutions(targetWorkflowId);
+      const data = response?.data?.data ?? response?.data ?? {};
+      setExecutions(Array.isArray(data?.results) ? data.results : []);
     } catch (error) {
       console.error('Error fetching executions:', error);
     }
@@ -134,30 +120,17 @@ export default function Workflows() {
     };
 
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}/admin-management/workflows/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(workflowData),
+      await adminManagementAPI.createWorkflow(workflowData);
+      Alert.alert('Success', 'Workflow created successfully');
+      setShowModal(false);
+      setNewWorkflow({
+        name: '',
+        description: '',
+        trigger_type: 'manual',
+        actions: [],
+        schedule_interval_minutes: 60,
       });
-
-      if (response.ok) {
-        Alert.alert('Success', 'Workflow created successfully');
-        setShowModal(false);
-        setNewWorkflow({
-          name: '',
-          description: '',
-          trigger_type: 'manual',
-          actions: [],
-          schedule_interval_minutes: 60,
-        });
-        fetchWorkflows();
-      } else {
-        Alert.alert('Error', 'Failed to create workflow');
-      }
+      fetchWorkflows();
     } catch (error) {
       Alert.alert('Error', 'Network error');
     }
@@ -167,23 +140,9 @@ export default function Workflows() {
     const newStatus = currentStatus === 'active' ? 'paused' : 'active';
 
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(
-        `${apiBaseUrl}/admin-management/workflows/${workflowId}/`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
-
-      if (response.ok) {
-        Alert.alert('Success', `Workflow ${newStatus}`);
-        fetchWorkflows();
-      }
+      await adminManagementAPI.updateWorkflow(workflowId, { status: newStatus });
+      Alert.alert('Success', `Workflow ${newStatus}`);
+      fetchWorkflows();
     } catch (error) {
       Alert.alert('Error', 'Failed to update workflow');
     }
@@ -191,17 +150,11 @@ export default function Workflows() {
 
   const runWorkflow = async (workflowId: string) => {
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(
-        `${apiBaseUrl}/admin-management/workflows/${workflowId}/run/`,
-        { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-
-      if (response.ok) {
-        Alert.alert('Success', 'Workflow started');
-        fetchWorkflows();
-      } else {
-        Alert.alert('Error', 'Failed to run workflow');
+      await adminManagementAPI.runWorkflow(workflowId);
+      Alert.alert('Success', 'Workflow started');
+      fetchWorkflows();
+      if (selectedWorkflow?.id === workflowId) {
+        fetchExecutions(workflowId);
       }
     } catch (error) {
       Alert.alert('Error', 'Network error');
@@ -219,16 +172,9 @@ export default function Workflows() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const apiBaseUrl = await getApiBaseUrl();
-              const response = await fetch(
-                `${apiBaseUrl}/admin-management/workflows/${workflowId}/`,
-                { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }
-              );
-
-              if (response.ok) {
-                Alert.alert('Success', 'Workflow deleted');
-                fetchWorkflows();
-              }
+              await adminManagementAPI.deleteWorkflow(workflowId);
+              Alert.alert('Success', 'Workflow deleted');
+              fetchWorkflows();
             } catch (error) {
               Alert.alert('Error', 'Failed to delete workflow');
             }
@@ -265,7 +211,7 @@ export default function Workflows() {
       onPress={() => {
         setSelectedWorkflow(workflow);
         setActiveTab('workflows');
-        fetchExecutions();
+        fetchExecutions(workflow.id);
       }}
     >
       <View style={styles.workflowHeader}>

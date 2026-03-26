@@ -9,8 +9,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { adminManagementAPI } from '../../services/api';
 
 interface FunnelData {
   id: string;
@@ -41,7 +40,6 @@ const { width } = Dimensions.get('window');
 
 export default function FunnelAnalytics() {
   const router = useRouter();
-  const { accessToken } = useAuthStore();
   const [funnels, setFunnels] = useState<FunnelData[]>([]);
   const [selectedFunnel, setSelectedFunnel] = useState<FunnelData | null>(null);
   const [dropOffData, setDropOffData] = useState<DropOffData[]>([]);
@@ -55,18 +53,12 @@ export default function FunnelAnalytics() {
 
   const fetchFunnels = async () => {
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}/admin-management/funnels/`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setFunnels(data.results || data);
-        if (data.results?.length > 0 || data.length > 0) {
-          const firstFunnel = data.results?.[0] || data[0];
-          setSelectedFunnel(firstFunnel);
-        }
+      const response = await adminManagementAPI.listFunnels();
+      const data = response?.data?.data ?? response?.data ?? {};
+      const results = Array.isArray(data?.results) ? data.results : [];
+      setFunnels(results);
+      if (results.length > 0) {
+        setSelectedFunnel(results[0]);
       }
     } catch (error) {
       console.error('Error fetching funnels:', error);
@@ -78,16 +70,9 @@ export default function FunnelAnalytics() {
 
   const fetchDropOff = async (funnelId: string) => {
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(
-        `${apiBaseUrl}/admin-management/funnels/${funnelId}/dropoff/`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setDropOffData(data);
-      }
+      const response = await adminManagementAPI.getFunnelDropoff(funnelId);
+      const data = response?.data?.data ?? response?.data ?? {};
+      setDropOffData(Array.isArray(data?.results) ? data.results : []);
     } catch (error) {
       console.error('Error fetching dropoff:', error);
     }

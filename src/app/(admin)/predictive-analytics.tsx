@@ -14,8 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { adminManagementAPI } from '../../services/api';
 
 interface ChurnRisk {
   user_id: number;
@@ -51,7 +50,6 @@ interface PredictiveSummary {
 
 export default function PredictiveAnalyticsScreen() {
   const router = useRouter();
-  const { accessToken: token } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [summary, setSummary] = useState<PredictiveSummary | null>(null);
@@ -61,60 +59,26 @@ export default function PredictiveAnalyticsScreen() {
 
   const fetchPredictiveData = useCallback(async () => {
     try {
-      // Fetch summary
-      const summaryResponse = await fetch(
-        `${getApiBaseUrl()}/api/admin/predictive/summary/`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      const [summaryResponse, churnResponse, trendsResponse] = await Promise.all([
+        adminManagementAPI.getPredictiveSummary(),
+        adminManagementAPI.getPredictiveChurnRisk(),
+        adminManagementAPI.getPredictiveContentTrends(),
+      ]);
 
-      if (summaryResponse.ok) {
-        const data = await summaryResponse.json();
-        setSummary(data);
-      }
+      const summaryData = summaryResponse?.data?.data ?? summaryResponse?.data ?? null;
+      const churnData = churnResponse?.data?.data ?? churnResponse?.data ?? {};
+      const trendsData = trendsResponse?.data?.data ?? trendsResponse?.data ?? null;
 
-      // Fetch churn risks
-      const churnResponse = await fetch(
-        `${getApiBaseUrl()}/api/admin/predictive/churn-risk/`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (churnResponse.ok) {
-        const data = await churnResponse.json();
-        setChurnRisks(data.users || []);
-      }
-
-      // Fetch content trends
-      const trendsResponse = await fetch(
-        `${getApiBaseUrl()}/api/admin/predictive/content-trends/`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (trendsResponse.ok) {
-        const data = await trendsResponse.json();
-        setContentTrends(data);
-      }
+      setSummary(summaryData);
+      setChurnRisks(Array.isArray(churnData?.users) ? churnData.users : []);
+      setContentTrends(trendsData);
     } catch (error) {
       console.error('Error fetching predictive data:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token]);
+  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

@@ -9,7 +9,6 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors } from '../../../theme/colors';
@@ -86,6 +85,7 @@ const PointsScreen: React.FC = () => {
       .sort((a, b) => Number(b?.points ?? 0) - Number(a?.points ?? 0))
       .slice(0, 8);
   }, [actions]);
+  const hasMomentum = totalPoints > 0 || breakdown.some((item) => item.value > 0);
 
   if (loading) {
     return (
@@ -201,8 +201,32 @@ const PointsScreen: React.FC = () => {
         {topActions.length === 0 ? (
           <View style={styles.emptyCard}>
             <Icon name="information-circle" size={28} color={colors.text.tertiary} />
-            <Text style={styles.emptyTitle}>Actions not available</Text>
-            <Text style={styles.emptyText}>We could not load point actions from the server.</Text>
+            <Text style={styles.emptyTitle}>
+              {hasMomentum ? 'Action catalog syncing' : 'Ways to earn are still loading'}
+            </Text>
+            <Text style={styles.emptyText}>
+              {hasMomentum
+                ? 'Your live totals are up to date. The full action list is temporarily unavailable, so use challenges and badges to keep moving.'
+                : 'Once the server shares the latest point actions, they will show up here with their exact values.'}
+            </Text>
+            <View style={styles.emptyActions}>
+              <Button
+                title="Challenges"
+                onPress={() => router.push('/(student)/gamification/achievements' as any)}
+                variant="secondary"
+                style={{ flex: 1 }}
+              />
+              <View style={{ width: spacing[3] }} />
+              <Button
+                title="Refresh"
+                onPress={() => {
+                  setRefreshing(true);
+                  load();
+                }}
+                variant="outline"
+                style={{ flex: 1 }}
+              />
+            </View>
           </View>
         ) : (
           <View style={styles.actionsCard}>
@@ -320,6 +344,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { marginTop: spacing[3], fontSize: 14, fontWeight: '900', color: colors.text.primary },
   emptyText: { marginTop: spacing[2], fontSize: 13, color: colors.text.secondary, textAlign: 'center' },
+  emptyActions: { flexDirection: 'row', marginTop: spacing[4], width: '100%' },
 
   actionsCard: {
     backgroundColor: colors.card.light,
@@ -356,4 +381,3 @@ const styles = StyleSheet.create({
 });
 
 export default PointsScreen;
-

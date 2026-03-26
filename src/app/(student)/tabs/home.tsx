@@ -13,7 +13,6 @@ import {
   RefreshControl,
   TextInput,
   Share,
-  Image,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { colors } from '../../../theme/colors';
@@ -27,11 +26,16 @@ import BookmarkButton from '../../../components/resources/BookmarkButton';
 import FavoriteButton from '../../../components/resources/FavoriteButton';
 import { notificationService } from '../../../services/notifications';
 import { useAuthStore } from '../../../store/auth.store';
-import { analyticsAPI, resourcesAPI, aiAPI } from '../../../services/api';
+import { analyticsAPI, resourcesAPI, aiAPI, paymentsAPI } from '../../../services/api';
 import { announcementsApi } from '../../../services/announcements.service';
 import { bookmarksService } from '../../../services/bookmarks.service';
 import { favoritesService } from '../../../services/favorites.service';
-import { dashboardApi, DashboardRecommendation } from '../../../services/dashboard.service';
+import {
+  dashboardApi,
+  DashboardActivityItem,
+  DashboardData as StudentDashboardPayload,
+  DashboardRecommendation,
+} from '../../../services/dashboard.service';
 import { notificationsApi } from '../../../services/notifications-api.service';
 import { gamificationAPI } from '../../../services/api';
 
@@ -72,7 +76,7 @@ interface DashboardStats {
   total_favorites: number;
 }
 
-interface DashboardData {
+interface MobileDashboardData {
   stats: DashboardStats;
   recent_resources: Resource[];
   announcements: Announcement[];
@@ -106,9 +110,11 @@ interface QuickAction {
 
 const QUICK_ACTIONS: QuickAction[] = [
   { id: 'upload', name: 'Upload', icon: 'cloud-upload', color: colors.success, route: '/(student)/upload-resource' },
-  { id: 'favorites', name: 'Favorites', icon: 'heart', color: colors.error, route: '/(student)/favorites' },
+  { id: 'progress', name: 'Progress', icon: 'stats-chart', color: colors.primary[500], route: '/(student)/my-progress' },
   { id: 'groups', name: 'Groups', icon: 'people', color: colors.accent[500], route: '/(student)/study-groups' },
-  { id: 'announcements', name: 'News', icon: 'megaphone', color: colors.info, route: '/(student)/announcements' },
+  { id: 'announcements', name: 'Updates', icon: 'megaphone', color: colors.info, route: '/(student)/announcements' },
+  { id: 'favorites', name: 'Favorites', icon: 'heart', color: colors.error, route: '/(student)/favorites' },
+  { id: 'storage', name: 'Storage', icon: 'folder-open', color: colors.warning, route: '/(student)/storage' },
 ];
 
 const ANNOUNCEMENT_READ_STORAGE_PREFIX = '@campushub/announcements/read';
@@ -132,6 +138,97 @@ const extractResults = <T,>(response: any): T[] => {
 
 const formatBadgeCount = (count: number): string => (count > 99 ? '99+' : String(count));
 
+const formatSubscriptionStatus = (value?: string): string => {
+  const cleaned = String(value || '').trim().toLowerCase();
+  if (!cleaned) return 'Free';
+  return cleaned.replace(/_/g, ' ').replace(/\b\w/g, (match) => match.toUpperCase());
+};
+
+interface StudentActionCard {
+  id: string;
+  title: string;
+  subtitle: string;
+  route: string;
+  icon: string;
+  color: string;
+}
+
+interface StudentSnapshotCard {
+  id: string;
+  label: string;
+  value: string;
+  hint: string;
+  icon: string;
+  color: string;
+}
+
+interface StudentServiceCard {
+  id: string;
+  title: string;
+  subtitle: string;
+  route: string;
+  icon: string;
+  color: string;
+  badge?: string;
+}
+
+interface ActivityFeedEntry {
+  id: string;
+  title: string;
+  subtitle: string;
+  timestamp: string;
+  route: string;
+  icon: string;
+  color: string;
+}
+
+const buildActivityFeed = (dashboard: StudentDashboardPayload | null): ActivityFeedEntry[] => {
+  if (!dashboard) {
+    return [];
+  }
+
+  const mapItems = (
+    items: DashboardActivityItem[],
+    config: { icon: string; color: string; route: string; emptyLabel: string }
+  ) =>
+    items.map((item) => ({
+      id: `${config.route}-${item.id}`,
+      title: item.title || config.emptyLabel,
+      subtitle: item.description || config.emptyLabel,
+      timestamp: item.timestamp,
+      route: config.route,
+      icon: config.icon,
+      color: config.color,
+    }));
+
+  return [
+    ...mapItems(dashboard.recent_activity.recent_uploads, {
+      icon: 'cloud-upload',
+      color: colors.success,
+      route: '/(student)/my-uploads',
+      emptyLabel: 'Recent upload',
+    }),
+    ...mapItems(dashboard.recent_activity.recent_downloads, {
+      icon: 'download',
+      color: colors.info,
+      route: '/(student)/downloads',
+      emptyLabel: 'Recent download',
+    }),
+    ...mapItems(dashboard.recent_activity.recent_bookmarks, {
+      icon: 'bookmark',
+      color: colors.accent[500],
+      route: '/(student)/tabs/saved',
+      emptyLabel: 'Saved resource',
+    }),
+  ]
+    .sort((left, right) => {
+      const leftTime = new Date(left.timestamp).getTime() || 0;
+      const rightTime = new Date(right.timestamp).getTime() || 0;
+      return rightTime - leftTime;
+    })
+    .slice(0, 5);
+};
+
 const HomeScreen: React.FC = () => {
   const router = useRouter();
   const { user } = useAuthStore();
@@ -139,7 +236,8 @@ const HomeScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [dashboardData, setDashboardData] = useState<MobileDashboardData | null>(null);
+  const [studentDashboard, setStudentDashboard] = useState<StudentDashboardPayload | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadAnnouncementsCount, setUnreadAnnouncementsCount] = useState(0);
   const [favoritesCount, setFavoritesCount] = useState(0);
@@ -154,6 +252,15 @@ const HomeScreen: React.FC = () => {
   const [aiPicks, setAiPicks] = useState<DashboardRecommendation[]>([]);
   const [recentlyViewed, setRecentlyViewed] = useState<Resource[]>([]);
   const [recentlyUploaded, setRecentlyUploaded] = useState<Resource[]>([]);
+  const [billingSnapshot, setBillingSnapshot] = useState<{
+    subscription: any | null;
+    plan: any | null;
+    features: any | null;
+  }>({
+    subscription: null,
+    plan: null,
+    features: null,
+  });
   
   // Gamification state
   const [gamificationStats, setGamificationStats] = useState<{
@@ -254,24 +361,29 @@ const HomeScreen: React.FC = () => {
       // Fetch all data in parallel
       const [
         dashboardRes,
+        studentDashboardRes,
         bookmarksRes,
         favoritesRes,
-        recommendationsRes,
         recentlyUploadedRes,
         userGroupsRes,
         aiRecsRes,
+        billingRes,
+        featureAccessRes,
       ] = await Promise.all([
         analyticsAPI.getDashboard(),
+        dashboardApi.getDashboardData(true),
         bookmarksService.getBookmarks({ limit: 3 }),
         favoritesService.getFavorites({ limit: 3, type: 'resources' }),
-        dashboardApi.getRecommendations(),
         resourcesAPI.list({ sort: 'newest', limit: 5 }).catch(() => ({ results: [] })),
         resourcesAPI.getUserStudyGroups().catch(() => ({ data: { data: [] } })),
         aiAPI.recommendations({ limit: 8, include_popular: true }).catch(() => ({ data: { data: { recommendations: [] } } })),
+        paymentsAPI.getSubscription().catch(() => ({ data: { data: { subscription: null, plan: null } } })),
+        paymentsAPI.getFeatureAccessSummary().catch(() => ({ data: { data: null } })),
       ]);
       const favoritesPagination = (favoritesRes as any)?.pagination;
       
-      const data = dashboardRes.data.data as DashboardData;
+      const data = dashboardRes.data.data as MobileDashboardData;
+      setStudentDashboard(studentDashboardRes);
       setDashboardData(data);
       setSavedPreview(bookmarksRes.bookmarks || bookmarksRes.results || []);
       setFavoritesPreview(favoritesRes.favorites || favoritesRes.results || []);
@@ -285,9 +397,14 @@ const HomeScreen: React.FC = () => {
         )
       );
       setGroupsCount(extractResults(userGroupsRes).length);
+      setBillingSnapshot({
+        subscription: billingRes?.data?.data?.subscription ?? billingRes?.data?.subscription ?? null,
+        plan: billingRes?.data?.data?.plan ?? billingRes?.data?.plan ?? null,
+        features: featureAccessRes?.data?.data ?? featureAccessRes?.data ?? null,
+      });
       lastQuickActionBadgeRefreshAtRef.current = Date.now();
       
-      setRecommendations(recommendationsRes);
+      setRecommendations(studentDashboardRes.recommendations);
       const aiList =
         aiRecsRes?.data?.data?.recommendations ||
         aiRecsRes?.data?.data ||
@@ -410,6 +527,9 @@ const HomeScreen: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      return 'Recently';
+    }
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     const hours = Math.floor(diff / (1000 * 60 * 60));
@@ -504,13 +624,218 @@ const HomeScreen: React.FC = () => {
 
   const stats = dashboardData?.stats || { total_uploads: 0, total_downloads: 0, total_bookmarks: 0, total_favorites: 0 };
   const recentResources = dashboardData?.recent_resources || [];
-  const announcements = dashboardData?.announcements || [];
+  const announcements =
+    dashboardData?.announcements?.length
+      ? dashboardData.announcements
+      : (studentDashboard?.announcements || []).map((announcement) => ({
+          id: announcement.id,
+          title: announcement.title,
+          message: announcement.message,
+          type: announcement.type,
+          created_at: announcement.created_at,
+        }));
+  const quickStats = studentDashboard?.quick_stats;
+  const unreadInboxCount = Math.max(unreadCount, studentDashboard?.notifications.unread_count ?? 0);
+  const profileCompletion = studentDashboard?.user_summary.profile_completion ?? 0;
+  const isProfileComplete = Boolean(studentDashboard?.user_summary.is_profile_complete);
+  const pendingUploadsCount = studentDashboard?.pending_uploads.total_pending ?? 0;
+  const rejectedUploadsCount = studentDashboard?.pending_uploads.total_rejected ?? 0;
+  const activityFeed = buildActivityFeed(studentDashboard);
 
   const getQuickActionBadgeCount = (actionId: QuickAction['id']): number => {
     if (actionId === 'announcements') return unreadAnnouncementsCount;
     if (actionId === 'favorites') return favoritesCount;
     if (actionId === 'groups') return groupsCount;
     return 0;
+  };
+
+  const nextStepCards: StudentActionCard[] = [
+    {
+      id: 'profile',
+      title: isProfileComplete ? 'Profile ready to go' : 'Complete your profile',
+      subtitle: isProfileComplete
+        ? 'Your account details are ready for recommendations and uploads.'
+        : `${profileCompletion}% completed. Add your academic details to improve suggestions.`,
+      route: '/(student)/edit-profile',
+      icon: 'person-circle',
+      color: colors.primary[500],
+    },
+    {
+      id: 'uploads',
+      title:
+        rejectedUploadsCount > 0
+          ? `${rejectedUploadsCount} uploads need fixes`
+          : pendingUploadsCount > 0
+            ? `${pendingUploadsCount} uploads awaiting review`
+            : 'Share your latest study material',
+      subtitle:
+        rejectedUploadsCount > 0
+          ? 'Review rejected files, update them, and resubmit from your uploads.'
+          : pendingUploadsCount > 0
+            ? 'Track moderation status and keep contributing useful resources.'
+            : 'Upload notes, tutorials, slides, or past papers for your classmates.',
+      route: rejectedUploadsCount > 0 || pendingUploadsCount > 0 ? '/(student)/my-uploads' : '/(student)/upload-resource',
+      icon: rejectedUploadsCount > 0 ? 'alert-circle' : 'cloud-upload',
+      color: rejectedUploadsCount > 0 ? colors.error : colors.success,
+    },
+    {
+      id: 'updates',
+      title:
+        unreadInboxCount > 0 || unreadAnnouncementsCount > 0
+          ? 'Catch up on campus updates'
+          : 'Stay on top of campus activity',
+      subtitle:
+        unreadInboxCount > 0 || unreadAnnouncementsCount > 0
+          ? `${unreadInboxCount} notifications and ${unreadAnnouncementsCount} announcements are waiting.`
+          : 'Notifications, announcements, and study-group updates will show here first.',
+      route: '/(student)/notifications',
+      icon: 'notifications',
+      color: colors.info,
+    },
+    {
+      id: 'progress',
+      title:
+        (gamificationStats?.consecutive_login_days || 0) > 0
+          ? `Keep your ${gamificationStats?.consecutive_login_days}-day streak alive`
+          : 'Review your learning progress',
+      subtitle:
+        gamificationStats?.leaderboard_rank
+          ? `You are ranked #${gamificationStats.leaderboard_rank}. Track progress and level up.`
+          : 'Check performance, progress, points, and what to study next.',
+      route: '/(student)/my-progress',
+      icon: 'trending-up',
+      color: colors.accent[500],
+    },
+  ];
+
+  const snapshotCards: StudentSnapshotCard[] = [
+    {
+      id: 'bookmarks',
+      label: 'Saved',
+      value: String(quickStats?.bookmarks_count ?? stats.total_bookmarks ?? 0),
+      hint: 'bookmarks ready to revisit',
+      icon: 'bookmark',
+      color: colors.accent[500],
+    },
+    {
+      id: 'uploads',
+      label: 'Uploads',
+      value: String(quickStats?.uploads_count ?? stats.total_uploads ?? 0),
+      hint: 'resources you have shared',
+      icon: 'cloud-upload',
+      color: colors.success,
+    },
+    {
+      id: 'downloads',
+      label: 'Downloads',
+      value: String(quickStats?.downloads_count ?? stats.total_downloads ?? 0),
+      hint: 'items opened offline or online',
+      icon: 'download',
+      color: colors.info,
+    },
+    {
+      id: 'storage',
+      label: 'Storage',
+      value: `${Math.round(quickStats?.storage_percent_used ?? 0)}%`,
+      hint: `${Math.round(quickStats?.storage_used_mb ?? 0)} MB of ${Math.round(quickStats?.storage_limit_mb ?? 0)} MB used`,
+      icon: 'folder-open',
+      color: colors.warning,
+    },
+  ];
+
+  const serviceCards: StudentServiceCard[] = [
+    {
+      id: 'ai-chat',
+      title: 'AI Chat',
+      subtitle:
+        aiPicks.length > 0
+          ? `${aiPicks.length} AI-powered picks are ready to explore.`
+          : 'Ask questions, revise concepts, and study faster with AI help.',
+      route: '/(student)/ai-chat',
+      icon: 'sparkles',
+      color: colors.primary[500],
+      badge: aiPicks.length > 0 ? formatBadgeCount(aiPicks.length) : undefined,
+    },
+    {
+      id: 'live-rooms',
+      title: 'Live Rooms',
+      subtitle:
+        groupsCount > 0
+          ? `Jump back into ${groupsCount} group spaces and live study sessions.`
+          : 'Join focused rooms for collaborative, real-time learning.',
+      route: '/(student)/live-rooms',
+      icon: 'videocam',
+      color: colors.error,
+    },
+    {
+      id: 'billing',
+      title: billingSnapshot.plan?.name ? `${billingSnapshot.plan.name}` : 'Billing & Plans',
+      subtitle: billingSnapshot.subscription?.status
+        ? `${formatSubscriptionStatus(billingSnapshot.subscription.status)} subscription. Manage plans, receipts, and access.`
+        : 'Compare plans, manage payments, and unlock premium features.',
+      route: '/(student)/billing',
+      icon: 'card',
+      color: colors.accent[500],
+    },
+    {
+      id: 'help',
+      title: 'Help Center',
+      subtitle:
+        unreadInboxCount > 0
+          ? 'Need help fast? Open FAQs and support options from one place.'
+          : 'Find FAQs, guides, and support for uploads, billing, and access.',
+      route: '/(student)/help',
+      icon: 'information-circle',
+      color: colors.info,
+    },
+  ];
+
+  const supportCards: StudentServiceCard[] = [
+    {
+      id: 'resource-requests',
+      title: 'Resource Requests',
+      subtitle: 'Ask for missing notes, books, or past papers from the community.',
+      route: '/(student)/resource-requests',
+      icon: 'help-circle',
+      color: colors.warning,
+    },
+    {
+      id: 'sessions',
+      title: 'Sessions',
+      subtitle: 'Review where your account is currently signed in.',
+      route: '/(student)/sessions',
+      icon: 'phone',
+      color: colors.primary[500],
+    },
+    {
+      id: 'security',
+      title: 'Security',
+      subtitle: 'Protect your account and update password or security settings.',
+      route: '/(student)/security',
+      icon: 'shield-checkmark',
+      color: colors.success,
+    },
+    {
+      id: 'contact-support',
+      title: 'Contact Support',
+      subtitle: 'Reach the support team for billing, uploads, access, or account help.',
+      route: '/(student)/contact-support',
+      icon: 'mail',
+      color: colors.error,
+    },
+  ];
+
+  const getAnnouncementMeta = (type?: string) => {
+    switch ((type || '').toLowerCase()) {
+      case 'academic':
+        return { icon: 'school', color: colors.primary[500] };
+      case 'system':
+        return { icon: 'hardware-chip', color: colors.warning };
+      case 'event':
+        return { icon: 'calendar', color: colors.success };
+      default:
+        return { icon: 'megaphone', color: colors.info };
+    }
   };
 
   return (
@@ -633,7 +958,335 @@ const HomeScreen: React.FC = () => {
           </View>
         </TouchableOpacity>
 
-        {/* 5. Recently Uploaded Files */}
+        {/* 4. Student Next Steps */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>What to Do Next</Text>
+            <TouchableOpacity onPress={() => router.push('/(student)/settings')}>
+              <Text style={styles.viewAll}>Manage</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.actionCardsList}>
+            {nextStepCards.map((card) => (
+              <TouchableOpacity
+                key={card.id}
+                style={styles.actionCard}
+                onPress={() => router.push(card.route as any)}
+              >
+                <View style={[styles.actionCardIcon, { backgroundColor: card.color + '18' }]}>
+                  <Icon name={card.icon as any} size={22} color={card.color} />
+                </View>
+                <View style={styles.actionCardContent}>
+                  <Text style={styles.actionCardTitle}>{card.title}</Text>
+                  <Text style={styles.actionCardSubtitle}>{card.subtitle}</Text>
+                </View>
+                <Icon name="chevron-forward" size={18} color={colors.text.tertiary} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* 5. Quick Actions */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Student Tools</Text>
+            <TouchableOpacity onPress={() => router.push('/(student)/tabs/more')}>
+              <Text style={styles.viewAll}>More</Text>
+            </TouchableOpacity>
+          </View>
+          <Card style={styles.quickActionsCard}>
+            <View style={styles.quickActionsGrid}>
+              {QUICK_ACTIONS.map((action) => {
+                const badgeCount = getQuickActionBadgeCount(action.id);
+
+                return (
+                  <TouchableOpacity
+                    key={action.id}
+                    style={styles.quickActionItem}
+                    onPress={() => handleQuickActionPress(action)}
+                  >
+                    <View style={[styles.quickActionIcon, { backgroundColor: action.color + '18' }]}>
+                      <Icon name={action.icon as any} size={24} color={action.color} />
+                      {badgeCount > 0 && (
+                        <View style={styles.quickActionBadge}>
+                          <Text style={styles.quickActionBadgeText}>{formatBadgeCount(badgeCount)}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.quickActionLabel}>{action.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Card>
+        </View>
+
+        {/* 6. Browse by Type */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Browse by Type</Text>
+            <TouchableOpacity onPress={() => router.push('/(student)/tabs/resources')}>
+              <Text style={styles.viewAll}>Library</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
+            {CATEGORIES.map((category) => (
+              <TouchableOpacity
+                key={category.id}
+                style={styles.categoryChip}
+                onPress={() => handleCategoryPress(category)}
+              >
+                <View style={[styles.categoryIcon, { backgroundColor: category.color + '18' }]}>
+                  <Icon name={category.icon as any} size={16} color={category.color} />
+                </View>
+                <Text style={styles.categoryName}>{category.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* 7. Snapshot */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Your Snapshot</Text>
+            <TouchableOpacity onPress={() => router.push('/(student)/activity')}>
+              <Text style={styles.viewAll}>Activity</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.snapshotGrid}>
+            {snapshotCards.map((card) => (
+              <TouchableOpacity
+                key={card.id}
+                style={styles.snapshotCard}
+                onPress={() =>
+                  router.push(
+                    (
+                      card.id === 'storage'
+                        ? '/(student)/storage'
+                        : card.id === 'downloads'
+                          ? '/(student)/downloads'
+                          : card.id === 'uploads'
+                            ? '/(student)/my-uploads'
+                            : '/(student)/tabs/saved'
+                    ) as any
+                  )
+                }
+              >
+                <View style={[styles.snapshotIcon, { backgroundColor: card.color + '18' }]}>
+                  <Icon name={card.icon as any} size={18} color={card.color} />
+                </View>
+                <Text style={styles.snapshotValue}>{card.value}</Text>
+                <Text style={styles.snapshotLabel}>{card.label}</Text>
+                <Text style={styles.snapshotHint}>{card.hint}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* 8. Connected Services */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Connected Services</Text>
+            <TouchableOpacity onPress={() => router.push('/(student)/tabs/more')}>
+              <Text style={styles.viewAll}>More</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.serviceGrid}>
+            {serviceCards.map((card) => (
+              <TouchableOpacity
+                key={card.id}
+                style={styles.serviceCard}
+                onPress={() => router.push(card.route as any)}
+              >
+                <View style={styles.serviceCardTop}>
+                  <View style={[styles.serviceIcon, { backgroundColor: card.color + '18' }]}>
+                    <Icon name={card.icon as any} size={20} color={card.color} />
+                  </View>
+                  {card.badge ? (
+                    <View style={styles.serviceBadge}>
+                      <Text style={styles.serviceBadgeText}>{card.badge}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={styles.serviceTitle}>{card.title}</Text>
+                <Text style={styles.serviceSubtitle}>{card.subtitle}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* 9. Account & Support */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Account & Support</Text>
+            <TouchableOpacity onPress={() => router.push('/(student)/tabs/more')}>
+              <Text style={styles.viewAll}>Open Hub</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.serviceGrid}>
+            {supportCards.map((card) => (
+              <TouchableOpacity
+                key={card.id}
+                style={styles.serviceCard}
+                onPress={() => router.push(card.route as any)}
+              >
+                <View style={styles.serviceCardTop}>
+                  <View style={[styles.serviceIcon, { backgroundColor: card.color + '18' }]}>
+                    <Icon name={card.icon as any} size={20} color={card.color} />
+                  </View>
+                </View>
+                <Text style={styles.serviceTitle}>{card.title}</Text>
+                <Text style={styles.serviceSubtitle}>{card.subtitle}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* 10. Gamification */}
+        {gamificationStats && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Momentum</Text>
+              <TouchableOpacity onPress={() => router.push('/(student)/gamification' as any)}>
+                <Text style={styles.viewAll}>Open</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.gamificationCard}
+              onPress={() => router.push('/(student)/gamification' as any)}
+            >
+              <View style={styles.gamificationTopRow}>
+                <View style={styles.gamificationStat}>
+                  <View style={[styles.gamificationIcon, { backgroundColor: colors.warning + '18' }]}>
+                    <Icon name="ribbon" size={22} color={colors.warning} />
+                  </View>
+                  <Text style={styles.gamificationValue}>{gamificationStats.total_points}</Text>
+                  <Text style={styles.gamificationLabel}>Points</Text>
+                </View>
+                <View style={styles.gamificationStat}>
+                  <View style={[styles.gamificationIcon, { backgroundColor: colors.primary[500] + '18' }]}>
+                    <Icon name="flame" size={22} color={colors.primary[500]} />
+                  </View>
+                  <Text style={styles.gamificationValue}>{gamificationStats.consecutive_login_days}</Text>
+                  <Text style={styles.gamificationLabel}>Day Streak</Text>
+                </View>
+                <View style={styles.gamificationStat}>
+                  <View style={[styles.gamificationIcon, { backgroundColor: colors.accent[500] + '18' }]}>
+                    <Icon name="bar-chart" size={22} color={colors.accent[500]} />
+                  </View>
+                  <Text style={styles.gamificationValue}>
+                    {gamificationStats.leaderboard_rank ? `#${gamificationStats.leaderboard_rank}` : '--'}
+                  </Text>
+                  <Text style={styles.gamificationLabel}>Rank</Text>
+                </View>
+              </View>
+              {gamificationStats.earned_badges.length > 0 && (
+                <View style={styles.badgesPreview}>
+                  <Text style={styles.badgesPreviewTitle}>Recent badges</Text>
+                  <View style={styles.badgesPreviewRow}>
+                    {gamificationStats.earned_badges.map((badge) => (
+                      <View key={badge.id} style={styles.badgePreviewItem}>
+                        <View style={styles.badgePreviewIcon}>
+                          <Icon name={badge.icon as any} size={18} color={colors.primary[500]} />
+                        </View>
+                        <Text style={styles.badgePreviewName} numberOfLines={2}>
+                          {badge.name}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* 9. Announcements */}
+        {announcements.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Announcements</Text>
+              <TouchableOpacity onPress={() => router.push('/(student)/announcements')}>
+                <Text style={styles.viewAll}>View All</Text>
+              </TouchableOpacity>
+            </View>
+            <Card style={styles.announcementCard}>
+              {announcements.slice(0, 3).map((announcement, index) => {
+                const meta = getAnnouncementMeta(announcement.type);
+
+                return (
+                  <TouchableOpacity
+                    key={announcement.id}
+                    style={[
+                      styles.announcementItem,
+                      index < announcements.slice(0, 3).length - 1 && styles.announcementBorder,
+                    ]}
+                    onPress={() => router.push('/(student)/announcements')}
+                  >
+                    <View style={styles.announcementContent}>
+                      <View style={[styles.announcementIconBox, { backgroundColor: meta.color + '18' }]}>
+                        <Icon name={meta.icon as any} size={18} color={meta.color} />
+                      </View>
+                      <View style={styles.announcementTextContainer}>
+                        <Text style={styles.announcementTitle} numberOfLines={1}>
+                          {announcement.title}
+                        </Text>
+                        <Text style={styles.previewMeta} numberOfLines={2}>
+                          {announcement.message || 'Campus update'}
+                        </Text>
+                        <Text style={styles.announcementTime}>
+                          {formatDate(announcement.created_at)}
+                        </Text>
+                      </View>
+                    </View>
+                    <Icon name="chevron-forward" size={18} color={colors.text.tertiary} />
+                  </TouchableOpacity>
+                );
+              })}
+            </Card>
+          </View>
+        )}
+
+        {/* 10. Recent Activity */}
+        {activityFeed.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recent Activity</Text>
+              <TouchableOpacity onPress={() => router.push('/(student)/activity')}>
+                <Text style={styles.viewAll}>View All</Text>
+              </TouchableOpacity>
+            </View>
+            <Card style={styles.previewCard}>
+              {activityFeed.map((item, index) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    styles.previewRow,
+                    index < activityFeed.length - 1 && styles.previewBorder,
+                  ]}
+                  onPress={() => router.push(item.route as any)}
+                >
+                  <View style={styles.activityFeedRow}>
+                    <View style={[styles.activityFeedIcon, { backgroundColor: item.color + '18' }]}>
+                      <Icon name={item.icon as any} size={16} color={item.color} />
+                    </View>
+                    <View style={styles.activityFeedContent}>
+                      <Text style={styles.previewTitle} numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                      <Text style={styles.previewMeta} numberOfLines={1}>
+                        {item.subtitle}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.activityFeedTime}>{formatDate(item.timestamp)}</Text>
+                </TouchableOpacity>
+              ))}
+            </Card>
+          </View>
+        )}
+
+        {/* 11. Recently Uploaded Files */}
         {recentlyUploaded.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -1312,6 +1965,41 @@ const styles = StyleSheet.create({
     padding: spacing[2],
   },
 
+  // Next Steps
+  actionCardsList: {
+    gap: spacing[3],
+  },
+  actionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    gap: spacing[3],
+    ...shadows.sm,
+  },
+  actionCardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionCardContent: {
+    flex: 1,
+  },
+  actionCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  actionCardSubtitle: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.text.secondary,
+    marginTop: 4,
+  },
+
   // Section Styles
   section: {
     paddingTop: spacing[6],
@@ -1423,6 +2111,10 @@ const styles = StyleSheet.create({
   },
 
   // Quick Actions
+  quickActionsCard: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[4],
+  },
   quickActionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1463,6 +2155,93 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.text.secondary,
+  },
+
+  // Snapshot
+  snapshotGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[3],
+  },
+  snapshotCard: {
+    width: '47%',
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    ...shadows.sm,
+  },
+  snapshotIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing[3],
+  },
+  snapshotValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  snapshotLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginTop: spacing[1],
+  },
+  snapshotHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.text.tertiary,
+    marginTop: spacing[2],
+  },
+  serviceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[3],
+  },
+  serviceCard: {
+    width: '47%',
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    minHeight: 160,
+    ...shadows.sm,
+  },
+  serviceCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing[3],
+  },
+  serviceIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  serviceBadge: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.primary[50],
+  },
+  serviceBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary[600],
+  },
+  serviceTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  serviceSubtitle: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.text.secondary,
+    marginTop: spacing[2],
   },
 
   // Categories
@@ -1677,6 +2456,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text.tertiary,
     maxWidth: 230,
+  },
+  activityFeedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  activityFeedIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing[3],
+  },
+  activityFeedContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  activityFeedTime: {
+    fontSize: 11,
+    color: colors.text.tertiary,
+    marginLeft: spacing[3],
   },
   emptyCard: {
     backgroundColor: colors.card.light,

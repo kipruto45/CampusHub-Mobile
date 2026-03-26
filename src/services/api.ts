@@ -1032,6 +1032,61 @@ const normalizeAdminStudyGroup = (raw: any) => ({
   updated_at: raw?.updated_at || '',
 });
 
+const normalizeAdminModerationResource = (raw: any) => {
+  const uploaderName = normalizeNameValue(
+    raw?.uploaded_by_name || raw?.uploaded_by?.full_name
+  );
+  const uploaderParts = parseFullName(uploaderName);
+
+  return {
+    ...raw,
+    id: String(raw?.id || ''),
+    title: String(raw?.title || ''),
+    description: String(raw?.description || ''),
+    file_type: String(raw?.file_type || ''),
+    created_at: raw?.created_at || '',
+    moderation_status: String(raw?.moderation_status || raw?.status || 'pending'),
+    uploaded_by: {
+      id: Number(raw?.uploaded_by?.id || raw?.uploaded_by || 0),
+      email: String(raw?.uploaded_by?.email || ''),
+      first_name: uploaderParts.firstName,
+      last_name: uploaderParts.lastName,
+    },
+  };
+};
+
+const normalizeAdminDashboardLayout = (raw: any) => ({
+  id: String(raw?.id || ''),
+  name: String(raw?.name || ''),
+  is_default: Boolean(raw?.is_default),
+  columns: Number(raw?.columns || 12),
+  rows: Number(raw?.rows || 12),
+  widgets: asArray(raw?.widgets),
+});
+
+const normalizeAdminNotification = (raw: any) => ({
+  ...raw,
+  id: Number(raw?.id || 0),
+  title: String(raw?.title || ''),
+  message: String(raw?.message || ''),
+  notification_type: String(raw?.notification_type || ''),
+  priority: String(raw?.priority || 'medium'),
+  is_read: Boolean(raw?.is_read),
+  link: String(raw?.link || ''),
+  created_at: raw?.created_at || '',
+});
+
+const normalizeAdminAuditEntry = (raw: any) => ({
+  id: Number(raw?.id || 0),
+  action: String(raw?.action || ''),
+  actor: String(raw?.actor || 'System'),
+  target: String(raw?.target || ''),
+  details: String(raw?.details || ''),
+  ip_address: String(raw?.ip_address || ''),
+  user_agent: String(raw?.user_agent || ''),
+  created_at: raw?.created_at || '',
+});
+
 const collectPaginatedResults = async <T>(
   fetchPage: (page: number) => Promise<AxiosResponse<any, any>>,
   normalize: (raw: any) => T
@@ -1868,6 +1923,341 @@ export const adminManagementAPI = {
     api.get('admin-management/resources/upload-template/').then((response) => {
       return toEnvelopeResponse(response, response.data);
     }),
+
+  listReportTemplates: () =>
+    api.get('admin-management/report-builder/reports/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const reports = asArray(payload?.reports || payload);
+      return toEnvelopeResponse(response, {
+        reports,
+        results: reports,
+      });
+    }),
+
+  generateReport: (data: {
+    report_type: string;
+    filters?: Record<string, any>;
+    fields?: string[];
+    format?: string;
+  }) =>
+    api.post('admin-management/report-builder/reports/generate/', data).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  bulkUpdateResources: (resourceIds: string[], updates: Record<string, any>) =>
+    api
+      .post('admin-management/bulk/resources/update/', {
+        resource_ids: resourceIds,
+        updates,
+      })
+      .then((response) => toEnvelopeResponse(response, extractData(response.data))),
+
+  bulkDeleteResources: (resourceIds: string[], softDelete: boolean = true) =>
+    api
+      .post('admin-management/bulk/resources/delete/', {
+        resource_ids: resourceIds,
+        soft_delete: softDelete,
+      })
+      .then((response) => toEnvelopeResponse(response, extractData(response.data))),
+
+  bulkModerateResources: (
+    resourceIds: string[],
+    action: 'approve' | 'reject' | 'flag',
+    reason?: string
+  ) =>
+    api
+      .post('admin-management/bulk/moderation/', {
+        resource_ids: resourceIds,
+        action,
+        ...(reason ? { reason } : {}),
+      })
+      .then((response) => toEnvelopeResponse(response, extractData(response.data))),
+
+  getAIModerationQueue: () =>
+    api.get('admin-management/ai-moderation/queue/').then((response) => {
+      const payload = extractData<any>(response.data) || {};
+      const pending = asArray(payload?.pending).map(normalizeAdminModerationResource);
+      const flagged = asArray(payload?.flagged).map(normalizeAdminModerationResource);
+      return toEnvelopeResponse(response, {
+        ...payload,
+        pending,
+        flagged,
+        pending_count: Number(payload?.pending_count ?? pending.length),
+        flagged_count: Number(payload?.flagged_count ?? flagged.length),
+      });
+    }),
+
+  analyzeResourceModeration: (resourceId: string) =>
+    api.post('admin-management/ai-moderation/analyze/', { resource_id: resourceId }).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  runAIModerationBatch: () =>
+    api.post('admin-management/ai-moderation/batch/').then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  getAIModerationStats: () =>
+    api.get('admin-management/ai-moderation/stats/').then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  getPredictiveSummary: () =>
+    api.get('admin-management/predictive/summary/').then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  getPredictiveChurnRisk: () =>
+    api.get('admin-management/predictive/churn-risk/').then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  getPredictiveContentTrends: () =>
+    api.get('admin-management/predictive/content-trends/').then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  getDashboardWidgets: () =>
+    api.get('admin-management/dashboard/widgets/').then((response) => {
+      const payload = extractData<any>(response.data) || {};
+      const widgets = asArray(payload?.widgets || payload);
+      return toEnvelopeResponse(response, { widgets, results: widgets });
+    }),
+
+  getDashboardLayouts: () =>
+    api.get('admin-management/dashboard/layouts/').then((response) => {
+      const payload = extractData<any>(response.data) || {};
+      const rawLayouts = payload?.layouts || payload;
+      const layouts = Array.isArray(rawLayouts)
+        ? rawLayouts.map(normalizeAdminDashboardLayout)
+        : Object.values(rawLayouts || {}).map(normalizeAdminDashboardLayout);
+      return toEnvelopeResponse(response, { layouts, results: layouts });
+    }),
+
+  listContentCalendarEvents: (params?: { start_date?: string; end_date?: string }) =>
+    api.get('admin-management/calendar/events/', { params }).then((response) => {
+      const payload = extractData<any>(response.data);
+      const results = asArray(payload?.results || payload);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(payload?.count || results.length),
+      });
+    }),
+
+  createContentCalendarEvent: (data: {
+    title: string;
+    description?: string;
+    event_type: string;
+    start_datetime: string;
+    end_datetime?: string;
+    is_all_day?: boolean;
+    color?: string;
+  }) =>
+    api.post('admin-management/calendar/events/', data).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  listIncidents: (params?: { status?: string; severity?: string }) =>
+    api.get('admin-management/incidents/', { params }).then((response) => {
+      const payload = extractData<any>(response.data);
+      const results = asArray(payload?.results || payload);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(payload?.count || results.length),
+      });
+    }),
+
+  createIncident: (data: {
+    title: string;
+    description: string;
+    incident_type: string;
+    severity: string;
+  }) =>
+    api.post('admin-management/incidents/', data).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  updateIncidentStatus: (incidentId: string, statusValue: string, resolution?: string) =>
+    api
+      .patch(`admin-management/incidents/${incidentId}/status/`, {
+        status: statusValue,
+        ...(resolution ? { resolution } : {}),
+      })
+      .then((response) => toEnvelopeResponse(response, extractData(response.data))),
+
+  listFunnels: () =>
+    api.get('admin-management/funnels/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const results = asArray(payload?.results || payload);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(payload?.count || results.length),
+      });
+    }),
+
+  getFunnelDropoff: (funnelId: string) =>
+    api.get(`admin-management/funnels/${funnelId}/dropoff/`).then((response) => {
+      const payload = extractData<any>(response.data);
+      const results = asArray(payload?.results || payload);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(results.length),
+      });
+    }),
+
+  listApiKeys: () =>
+    api.get('admin-management/api-keys/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const results = asArray(payload?.results || payload);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(payload?.count || results.length),
+      });
+    }),
+
+  createApiKey: (data: {
+    name: string;
+    description?: string;
+    key_type?: string;
+    rate_limit?: number;
+    scopes?: string[];
+  }) =>
+    api.post('admin-management/api-keys/', data).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  updateApiKey: (
+    keyId: string,
+    data: Partial<{
+      name: string;
+      description: string;
+      status: string;
+      rate_limit: number;
+      scopes: string[];
+    }>
+  ) =>
+    api.patch(`admin-management/api-keys/${keyId}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  revokeApiKey: (keyId: string) =>
+    api.post(`admin-management/api-keys/${keyId}/revoke/`).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  listWorkflows: () =>
+    api.get('admin-management/workflows/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const results = asArray(payload?.results || payload);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(payload?.count || results.length),
+      });
+    }),
+
+  createWorkflow: (data: {
+    name: string;
+    description?: string;
+    trigger_type: string;
+    actions: Record<string, any>[];
+    schedule_interval_minutes?: number;
+  }) =>
+    api.post('admin-management/workflows/', data).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  updateWorkflow: (
+    workflowId: string,
+    data: Partial<{
+      name: string;
+      description: string;
+      trigger_type: string;
+      actions: Record<string, any>[];
+      schedule_interval_minutes: number;
+      status: string;
+    }>
+  ) =>
+    api.patch(`admin-management/workflows/${workflowId}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  deleteWorkflow: (workflowId: string) =>
+    api.delete(`admin-management/workflows/${workflowId}/`).then((response) => {
+      return toEnvelopeResponse(response, { success: true });
+    }),
+
+  listWorkflowExecutions: (workflowId: string) =>
+    api.get(`admin-management/workflows/${workflowId}/executions/`).then((response) => {
+      const payload = extractData<any>(response.data);
+      const results = asArray(payload?.results || payload);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(payload?.count || results.length),
+      });
+    }),
+
+  runWorkflow: (workflowId: string) =>
+    api.post(`admin-management/workflows/${workflowId}/run/`).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  listWebhooks: () =>
+    api.get('admin-management/webhooks/').then((response) => {
+      const payload = extractData<any>(response.data);
+      const results = asArray(payload?.results || payload);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(payload?.count || results.length),
+      });
+    }),
+
+  createWebhook: (data: {
+    name: string;
+    description?: string;
+    url: string;
+    events: string[];
+    auth_type?: string;
+  }) =>
+    api.post('admin-management/webhooks/', data).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  updateWebhook: (
+    webhookId: string,
+    data: Partial<{
+      name: string;
+      description: string;
+      url: string;
+      events: string[];
+      auth_type: string;
+      status: string;
+    }>
+  ) =>
+    api.patch(`admin-management/webhooks/${webhookId}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  deleteWebhook: (webhookId: string) =>
+    api.delete(`admin-management/webhooks/${webhookId}/`).then((response) => {
+      return toEnvelopeResponse(response, { success: true });
+    }),
+
+  testWebhook: (webhookId: string) =>
+    api.post(`admin-management/webhooks/${webhookId}/test/`).then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  listAuditLogs: (params?: { page?: number; action?: string; search?: string }) =>
+    api.get('admin-management/audit/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw).map(normalizeAdminAuditEntry);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
 };
 
 export const bookmarksAPI = {
@@ -2107,6 +2497,28 @@ export const notificationsAPI = {
 
   unregisterDevice: (_id: string) =>
     Promise.resolve(localEnvelopeResponse({ success: true }, { message: 'Device unregistration is handled server-side by token rotation.' })),
+
+  adminList: (params?: { page?: number; is_read?: boolean }) =>
+    api.get('notifications/admin/notifications/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw).map(normalizeAdminNotification);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+
+  adminStats: () =>
+    api.get('notifications/admin/notifications/stats/').then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
+
+  markAllAdminRead: () =>
+    api.post('notifications/admin/notifications/mark_all_read/').then((response) => {
+      return toEnvelopeResponse(response, extractData(response.data));
+    }),
 };
 
 export const downloadsAPI = {
@@ -2443,7 +2855,7 @@ export const billingAPI = {
 export const paymentsAPI = {
   getPlans: () =>
     api.get('/payments/plans/').then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       const rawPlans = asArray(payload?.plans || payload);
       const plans = rawPlans.map((plan: any) => ({
         id: String(plan?.id || ''),
@@ -2471,7 +2883,7 @@ export const paymentsAPI = {
 
   getSubscription: () =>
     api.get('/payments/subscription/').then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, {
         subscription: payload?.subscription ?? null,
         plan: payload?.plan ?? null,
@@ -2483,25 +2895,25 @@ export const paymentsAPI = {
     billing_period?: 'monthly' | 'yearly';
   }) =>
     api.post('/payments/subscription/', payload).then((response) => {
-      const data = response.data || {};
+      const data = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, data);
     }),
 
   cancelSubscription: () =>
     api.post('/payments/subscription/cancel/', {}).then((response) => {
-      const data = response.data || {};
+      const data = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, data);
     }),
 
   reactivateSubscription: () =>
     api.post('/payments/subscription/reactivate/', {}).then((response) => {
-      const data = response.data || {};
+      const data = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, data);
     }),
 
   getBillingPortal: () =>
     api.get('/payments/portal/').then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, {
         portal_url: String(payload?.portal_url || ''),
       });
@@ -2509,7 +2921,7 @@ export const paymentsAPI = {
 
   getPaymentHistory: () =>
     api.get('/payments/payments/').then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       const payments = asArray(payload?.payments || payload);
       return toEnvelopeResponse(response, { payments });
     }),
@@ -2523,7 +2935,7 @@ export const paymentsAPI = {
         },
       })
       .then((response) => {
-        const data = response.data || {};
+        const data = extractData<any>(response.data) || {};
         return toEnvelopeResponse(response, data);
       }),
 
@@ -2547,19 +2959,19 @@ export const paymentsAPI = {
         ...(payload.metadata ? { metadata: payload.metadata } : {}),
       })
       .then((response) => {
-        const data = response.data || {};
+        const data = extractData<any>(response.data) || {};
         return toEnvelopeResponse(response, data);
       }),
 
   getLimits: () =>
     api.get('/payments/limits/').then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, payload);
     }),
 
   getStorageUpgrades: () =>
     api.get('/payments/storage/').then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       const upgrades = asArray(payload?.upgrades || payload);
       return toEnvelopeResponse(response, { upgrades });
     }),
@@ -2578,45 +2990,45 @@ export const paymentsAPI = {
         ...(payload.phone_number ? { phone_number: payload.phone_number } : {}),
       })
       .then((response) => {
-        const data = response.data || {};
+        const data = extractData<any>(response.data) || {};
         return toEnvelopeResponse(response, data);
       }),
 
   applyPromoCode: (code: string) =>
     api.post('/payments/promo/', { code }).then((response) => {
-      const data = response.data || {};
+      const data = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, data);
     }),
 
   // Freemium tiers / feature access
   getTiers: () =>
     api.get('/payments/tiers/').then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       const tiers = asArray(payload?.tiers || payload);
       return toEnvelopeResponse(response, { tiers, current_tier: payload?.current_tier ?? null });
     }),
 
   getUserTier: () =>
     api.get('/payments/tiers/user/').then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, payload);
     }),
 
   getFeatureAccessSummary: () =>
     api.get('/payments/feature-access/').then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, payload);
     }),
 
   checkFeatureAccess: (feature: string) =>
     api.get('/payments/feature-access/', { params: { feature } }).then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, payload);
     }),
 
   startTrial: () =>
     api.post('/payments/trial/', {}).then((response) => {
-      const payload = response.data || {};
+      const payload = extractData<any>(response.data) || {};
       return toEnvelopeResponse(response, payload);
     }),
 };
@@ -3844,6 +4256,145 @@ export const adminAPI = {
     api.delete(`admin-management/units/${id}/`).then((response) => {
       return toEnvelopeResponse(response, { success: true });
     }),
+
+  // Referral Management
+  listReferrals: (params?: {
+    page?: number;
+    page_size?: number;
+    search?: string;
+    status?: string;
+    rewards_claimed?: boolean;
+    referrer?: string;
+  }) =>
+    api.get('admin-management/referrals/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getReferral: (id: string) =>
+    api.get(`admin-management/referrals/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  listRewardTiers: (params?: { is_active?: boolean }) =>
+    api.get('admin-management/referrals/reward-tiers/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  createRewardTier: (data: {
+    name: string;
+    min_referrals: number;
+    points?: number;
+    premium_days?: number;
+    badge?: string;
+    is_active?: boolean;
+  }) =>
+    api.post('admin-management/referrals/reward-tiers/', data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  updateRewardTier: (
+    id: string | number,
+    data: Partial<{
+      name: string;
+      min_referrals: number;
+      points: number;
+      premium_days: number;
+      badge: string;
+      is_active: boolean;
+    }>
+  ) =>
+    api.patch(`admin-management/referrals/reward-tiers/${id}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  deleteRewardTier: (id: string | number) =>
+    api.delete(`admin-management/referrals/reward-tiers/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, null);
+    }),
+
+  // Billing Management
+  listPayments: (params?: {
+    page?: number;
+    page_size?: number;
+    search?: string;
+    status?: string;
+    payment_type?: string;
+    currency?: string;
+    user?: string;
+  }) =>
+    api.get('admin-management/payments/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getPayment: (id: string) =>
+    api.get(`admin-management/payments/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  listSubscriptions: (params?: {
+    page?: number;
+    page_size?: number;
+    search?: string;
+    status?: string;
+    billing_period?: string;
+    plan?: string;
+    user?: string;
+  }) =>
+    api.get('admin-management/subscriptions/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getSubscription: (id: string) =>
+    api.get(`admin-management/subscriptions/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+
+  // Admin Access
+  getScopeInfo: () =>
+    api.get('admin-management/scope/').then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  getFeatureAccess: (features?: string[]) =>
+    api
+      .get('admin-management/feature-access/', {
+        params: features?.length ? { features } : undefined,
+        paramsSerializer: {
+          serialize: (params) => {
+            const searchParams = new URLSearchParams();
+            Object.entries(params || {}).forEach(([key, value]) => {
+              if (Array.isArray(value)) {
+                value.forEach((entry) => searchParams.append(key, String(entry)));
+              } else if (value !== undefined && value !== null) {
+                searchParams.append(key, String(value));
+              }
+            });
+            return searchParams.toString();
+          },
+        },
+      })
+      .then((response) => {
+        return toEnvelopeResponse(response, extractData<any>(response.data));
+      }),
 };
 
 // Study Groups API
@@ -4027,6 +4578,325 @@ export const courseProgressAPI = {
     api.get('/courses/progress/').then((response) => {
       const payload = extractData<any>(response.data);
       return toEnvelopeResponse(response, payload);
+    }),
+};
+
+// Calendar Admin API for mobile app
+export const calendarAdminAPI = {
+  // Academic Calendars
+  listAcademicCalendars: (params?: { page?: number; page_size?: number; year?: string; semester?: string; is_active?: boolean }) =>
+    api.get('admin-management/academic-calendars/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getAcademicCalendar: (id: string) =>
+    api.get(`admin-management/academic-calendars/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  createAcademicCalendar: (data: {
+    name: string;
+    year: string;
+    semester: string;
+    start_date: string;
+    end_date: string;
+    faculty_id?: string;
+    department_id?: string;
+    mid_semester_start?: string;
+    mid_semester_end?: string;
+    exam_start_date?: string;
+    exam_end_date?: string;
+    break_start_date?: string;
+    break_end_date?: string;
+    is_active?: boolean;
+  }) =>
+    api.post('admin-management/academic-calendars/', data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  updateAcademicCalendar: (id: string, data: Partial<{
+    name: string;
+    year: string;
+    semester: string;
+    start_date: string;
+    end_date: string;
+    faculty_id: string;
+    department_id: string;
+    mid_semester_start: string;
+    mid_semester_end: string;
+    exam_start_date: string;
+    exam_end_date: string;
+    break_start_date: string;
+    break_end_date: string;
+    is_active: boolean;
+  }>) =>
+    api.patch(`admin-management/academic-calendars/${id}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  deleteAcademicCalendar: (id: string) =>
+    api.delete(`admin-management/academic-calendars/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, null);
+    }),
+
+  // Timetables
+  listTimetables: (params?: { page?: number; page_size?: number; academic_calendar_id?: string; course_id?: string; unit_id?: string; day?: string; year_of_study?: number }) =>
+    api.get('admin-management/timetables/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getTimetable: (id: string) =>
+    api.get(`admin-management/timetables/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  createTimetable: (data: {
+    academic_calendar_id: string;
+    course_id: string;
+    unit_id?: string;
+    day: string;
+    start_time: string;
+    end_time: string;
+    type?: string;
+    building?: string;
+    room?: string;
+    is_virtual?: boolean;
+    virtual_link?: string;
+    instructor_id?: string;
+    year_of_study?: number;
+    group_name?: string;
+    weeks?: number[];
+  }) =>
+    api.post('admin-management/timetables/', data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  updateTimetable: (id: string, data: Partial<{
+    academic_calendar_id: string;
+    course_id: string;
+    unit_id: string;
+    day: string;
+    start_time: string;
+    end_time: string;
+    type: string;
+    building: string;
+    room: string;
+    is_virtual: boolean;
+    virtual_link: string;
+    instructor_id: string;
+    year_of_study: number;
+    group_name: string;
+    weeks: number[];
+  }>) =>
+    api.patch(`admin-management/timetables/${id}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  deleteTimetable: (id: string) =>
+    api.delete(`admin-management/timetables/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, null);
+    }),
+
+  // Timetable Overrides
+  listTimetableOverrides: (params?: { page?: number; page_size?: number; timetable_id?: string; override_type?: string; date_from?: string; date_to?: string }) =>
+    api.get('admin-management/timetable-overrides/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getTimetableOverride: (id: string) =>
+    api.get(`admin-management/timetable-overrides/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  createTimetableOverride: (data: {
+    timetable_id: string;
+    date: string;
+    override_type: string;
+    new_start_time?: string;
+    new_end_time?: string;
+    new_building?: string;
+    new_room?: string;
+    new_virtual_link?: string;
+    reason?: string;
+    notify_students?: boolean;
+  }) =>
+    api.post('admin-management/timetable-overrides/', data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  updateTimetableOverride: (id: string, data: Partial<{
+    date: string;
+    override_type: string;
+    new_start_time: string;
+    new_end_time: string;
+    new_building: string;
+    new_room: string;
+    new_virtual_link: string;
+    reason: string;
+    notify_students: boolean;
+  }>) =>
+    api.patch(`admin-management/timetable-overrides/${id}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  deleteTimetableOverride: (id: string) =>
+    api.delete(`admin-management/timetable-overrides/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, null);
+    }),
+
+  // Personal Schedules
+  listPersonalSchedules: (params?: { page?: number; page_size?: number; user_id?: string; category?: string; date_from?: string; date_to?: string }) =>
+    api.get('admin-management/personal-schedules/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getPersonalSchedule: (id: string) =>
+    api.get(`admin-management/personal-schedules/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  updatePersonalSchedule: (id: string, data: Partial<{
+    title: string;
+    description: string;
+    category: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    is_all_day: boolean;
+    is_private: boolean;
+  }>) =>
+    api.patch(`admin-management/personal-schedules/${id}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  deletePersonalSchedule: (id: string) =>
+    api.delete(`admin-management/personal-schedules/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, null);
+    }),
+
+  // Schedule Exports
+  listScheduleExports: (params?: { page?: number; page_size?: number; user_id?: string; export_type?: string }) =>
+    api.get('admin-management/schedule-exports/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getScheduleExport: (id: string) =>
+    api.get(`admin-management/schedule-exports/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  updateScheduleExport: (id: string, data: Partial<{
+    sync_enabled: boolean;
+    sync_official_timetable: boolean;
+    sync_personal_events: boolean;
+    sync_exams: boolean;
+    sync_announcements: boolean;
+  }>) =>
+    api.patch(`admin-management/schedule-exports/${id}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  deleteScheduleExport: (id: string) =>
+    api.delete(`admin-management/schedule-exports/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, null);
+    }),
+
+  // Calendar Accounts (Calendar Sync)
+  listCalendarAccounts: (params?: { page?: number; page_size?: number; user_id?: string; provider?: string; is_active?: boolean }) =>
+    api.get('admin-management/calendar-accounts/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getCalendarAccount: (id: string) =>
+    api.get(`admin-management/calendar-accounts/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  updateCalendarAccount: (id: string, data: Partial<{
+    sync_enabled: boolean;
+    is_active: boolean;
+  }>) =>
+    api.patch(`admin-management/calendar-accounts/${id}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  deleteCalendarAccount: (id: string) =>
+    api.delete(`admin-management/calendar-accounts/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, null);
+    }),
+
+  // Sync Settings
+  listSyncSettings: (params?: { page?: number; page_size?: number; user_id?: string }) =>
+    api.get('admin-management/sync-settings/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getSyncSettings: (id: string) =>
+    api.get(`admin-management/sync-settings/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  updateSyncSettings: (id: string, data: Partial<{
+    auto_sync: boolean;
+    sync_interval_minutes: number;
+    sync_direction: string;
+    sync_lectures: boolean;
+    sync_assignments: boolean;
+    sync_exams: boolean;
+    sync_study_sessions: boolean;
+    sync_personal: boolean;
+    notify_before_events: boolean;
+    notify_minutes_before: number;
+  }>) =>
+    api.patch(`admin-management/sync-settings/${id}/`, data).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+
+  // Synced Events
+  listSyncedEvents: (params?: { page?: number; page_size?: number; calendar_account_id?: string; is_deleted?: boolean }) =>
+    api.get('admin-management/synced-events/', { params }).then((response) => {
+      const raw = response.data || {};
+      const results = asArray(raw?.results || raw);
+      return toEnvelopeResponse(response, {
+        results,
+        count: Number(raw?.count || results.length),
+        next: raw?.next || null,
+        previous: raw?.previous || null,
+      });
+    }),
+  getSyncedEvent: (id: string) =>
+    api.get(`admin-management/synced-events/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, extractData<any>(response.data));
+    }),
+  deleteSyncedEvent: (id: string) =>
+    api.delete(`admin-management/synced-events/${id}/`).then((response) => {
+      return toEnvelopeResponse(response, null);
     }),
 };
 

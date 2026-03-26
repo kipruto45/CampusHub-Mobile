@@ -453,11 +453,10 @@ export default function InviteUserScreen() {
             </Card>
 
             <Card style={styles.sampleCard} variant="filled">
-              <Text style={styles.sectionTitle}>Sample CSV</Text>
+              <Text style={styles.sectionTitle}>CSV Format</Text>
               <Text style={styles.sampleText}>
-                email,roles,note,expires_in_days{'\n'}
-                dean@campushub.app,DEPARTMENT_HEAD|INSTRUCTOR,Welcome aboard,14{'\n'}
-                support@campushub.app,SUPPORT_STAFF,,7
+                Include the headers `email` and `roles` in every upload. You can also add
+                `note` and `expires_in_days`, and multiple roles should be separated with `|`.
               </Text>
             </Card>
 

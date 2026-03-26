@@ -316,6 +316,7 @@ const SecurityScreen: React.FC = () => {
       confirmLabel: 'Confirm',
     };
   }, [promptType]);
+  const hasBackupCodes = backupCodes.length > 0;
 
   if (loading) {
     return (
@@ -568,14 +569,16 @@ const SecurityScreen: React.FC = () => {
               Save these codes in a safe place. Each code can be used once.
             </Text>
             <View style={styles.codesContainer}>
-              {backupCodes.length > 0 ? (
+              {hasBackupCodes ? (
                 backupCodes.map((code) => (
                   <Text key={code} style={styles.codeItem}>
                     {code}
                   </Text>
                 ))
               ) : (
-                <Text style={styles.modalText}>No codes available.</Text>
+                <Text style={styles.modalText}>
+                  No recovery codes were returned for this account. Generate a fresh set to replace any older codes you may have stored.
+                </Text>
               )}
             </View>
             <View style={styles.modalActions}>
@@ -587,9 +590,18 @@ const SecurityScreen: React.FC = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalConfirmButton]}
-                onPress={() => copyToClipboard(backupCodes.join('\n'))}
+                onPress={() => {
+                  if (hasBackupCodes) {
+                    copyToClipboard(backupCodes.join('\n'));
+                    return;
+                  }
+                  setBackupCodesOpen(false);
+                  handleRecoveryCodes();
+                }}
               >
-                <Text style={styles.modalConfirmText}>Copy All</Text>
+                <Text style={styles.modalConfirmText}>
+                  {hasBackupCodes ? 'Copy All' : 'Generate New'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

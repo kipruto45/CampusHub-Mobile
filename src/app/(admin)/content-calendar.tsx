@@ -12,8 +12,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { adminManagementAPI } from '../../services/api';
 
 interface CalendarEvent {
   id: string;
@@ -39,7 +38,6 @@ const EVENT_COLORS = {
 
 export default function ContentCalendar() {
   const router = useRouter();
-  const { accessToken } = useAuthStore();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -64,21 +62,15 @@ export default function ContentCalendar() {
 
   const fetchEvents = async () => {
     try {
-      const apiBaseUrl = await getApiBaseUrl();
       const monthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
       const monthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
-      
-      const response = await fetch(
-        `${apiBaseUrl}/admin-management/calendar/events/?start_date=${monthStart.toISOString()}&end_date=${monthEnd.toISOString()}`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        setEvents(data.results || data);
-      }
+
+      const response = await adminManagementAPI.listContentCalendarEvents({
+        start_date: monthStart.toISOString(),
+        end_date: monthEnd.toISOString(),
+      });
+      const data = response?.data?.data ?? response?.data ?? {};
+      setEvents(Array.isArray(data?.results) ? data.results : []);
     } catch (error) {
       console.error('Error fetching events:', error);
     } finally {
@@ -99,32 +91,22 @@ export default function ContentCalendar() {
     }
 
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}/admin-management/calendar/events/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newEvent),
+      await adminManagementAPI.createContentCalendarEvent({
+        ...newEvent,
+        end_datetime: newEvent.end_datetime || undefined,
       });
-
-      if (response.ok) {
-        Alert.alert('Success', 'Event created successfully');
-        setShowModal(false);
-        setNewEvent({
-          title: '',
-          description: '',
-          event_type: 'announcement',
-          start_datetime: '',
-          end_datetime: '',
-          is_all_day: false,
-          color: EVENT_COLORS.announcement,
-        });
-        fetchEvents();
-      } else {
-        Alert.alert('Error', 'Failed to create event');
-      }
+      Alert.alert('Success', 'Event created successfully');
+      setShowModal(false);
+      setNewEvent({
+        title: '',
+        description: '',
+        event_type: 'announcement',
+        start_datetime: '',
+        end_datetime: '',
+        is_all_day: false,
+        color: EVENT_COLORS.announcement,
+      });
+      fetchEvents();
     } catch (error) {
       Alert.alert('Error', 'Network error');
     }

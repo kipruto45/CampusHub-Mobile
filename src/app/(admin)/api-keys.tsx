@@ -12,8 +12,7 @@ import {
   Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { adminManagementAPI } from '../../services/api';
 
 interface APIKey {
   id: string;
@@ -33,7 +32,6 @@ interface APIKey {
 
 export default function APIKeys() {
   const router = useRouter();
-  const { accessToken } = useAuthStore();
   const [apiKeys, setAPIKeys] = useState<APIKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -54,15 +52,9 @@ export default function APIKeys() {
 
   const fetchAPIKeys = async () => {
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}/admin-management/api-keys/`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAPIKeys(data.results || data);
-      }
+      const response = await adminManagementAPI.listApiKeys();
+      const data = response?.data?.data ?? response?.data ?? {};
+      setAPIKeys(Array.isArray(data?.results) ? data.results : []);
     } catch (error) {
       console.error('Error fetching API keys:', error);
     } finally {
@@ -83,34 +75,21 @@ export default function APIKeys() {
     }
 
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(`${apiBaseUrl}/admin-management/api-keys/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newKey),
+      const response = await adminManagementAPI.createApiKey(newKey);
+      const data = response?.data?.data ?? response?.data ?? {};
+      Alert.alert(
+        'Success',
+        `API Key created: ${data.raw_key}\n\nSave this key - it won't be shown again!`,
+        [{ text: 'OK', onPress: () => setShowModal(false) }]
+      );
+      setNewKey({
+        name: '',
+        description: '',
+        key_type: 'personal',
+        rate_limit: 1000,
+        scopes: ['read'],
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        Alert.alert(
-          'Success',
-          `API Key created: ${data.raw_key}\n\nSave this key - it won't be shown again!`,
-          [{ text: 'OK', onPress: () => setShowModal(false) }]
-        );
-        setNewKey({
-          name: '',
-          description: '',
-          key_type: 'personal',
-          rate_limit: 1000,
-          scopes: ['read'],
-        });
-        fetchAPIKeys();
-      } else {
-        Alert.alert('Error', 'Failed to create API key');
-      }
+      fetchAPIKeys();
     } catch (error) {
       Alert.alert('Error', 'Network error');
     }
@@ -120,23 +99,9 @@ export default function APIKeys() {
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
     
     try {
-      const apiBaseUrl = await getApiBaseUrl();
-      const response = await fetch(
-        `${apiBaseUrl}/admin-management/api-keys/${keyId}/`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
-
-      if (response.ok) {
-        Alert.alert('Success', `API key ${newStatus === 'active' ? 'activated' : 'deactivated'}`);
-        fetchAPIKeys();
-      }
+      await adminManagementAPI.updateApiKey(keyId, { status: newStatus });
+      Alert.alert('Success', `API key ${newStatus === 'active' ? 'activated' : 'deactivated'}`);
+      fetchAPIKeys();
     } catch (error) {
       Alert.alert('Error', 'Failed to update status');
     }
@@ -153,16 +118,9 @@ export default function APIKeys() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const apiBaseUrl = await getApiBaseUrl();
-              const response = await fetch(
-                `${apiBaseUrl}/admin-management/api-keys/${keyId}/revoke/`,
-                { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } }
-              );
-
-              if (response.ok) {
-                Alert.alert('Success', 'API key revoked');
-                fetchAPIKeys();
-              }
+              await adminManagementAPI.revokeApiKey(keyId);
+              Alert.alert('Success', 'API key revoked');
+              fetchAPIKeys();
             } catch (error) {
               Alert.alert('Error', 'Failed to revoke key');
             }

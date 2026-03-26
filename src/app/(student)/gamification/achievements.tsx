@@ -164,6 +164,18 @@ const ChallengesScreen: React.FC = () => {
     [filter]
   );
 
+  const filteredCategories = useMemo(() => {
+    return (categories || [])
+      .map((category) => {
+        const achievements = Array.isArray(category?.achievements) ? category.achievements : [];
+        return {
+          ...category,
+          achievements: achievements.filter(matchesFilter),
+        };
+      })
+      .filter((category) => category.achievements.length > 0);
+  }, [categories, matchesFilter]);
+
   const handleClaim = useCallback(
     (achievementId: string, name?: string) => {
       if (!achievementId || claimingId) return;
@@ -286,15 +298,31 @@ const ChallengesScreen: React.FC = () => {
         {categories.length === 0 ? (
           <View style={styles.emptyCard}>
             <Icon name="diamond" size={34} color={colors.text.tertiary} />
-            <Text style={styles.emptyTitle}>No challenges available</Text>
-            <Text style={styles.emptyText}>We could not load achievement milestones right now.</Text>
+            <Text style={styles.emptyTitle}>Challenge board is still loading</Text>
+            <Text style={styles.emptyText}>
+              Your progress summary is available, but the detailed challenge milestones have not synced yet.
+            </Text>
+            <View style={styles.emptyActions}>
+              <Button
+                title="View points"
+                onPress={() => router.push('/(student)/gamification/points' as any)}
+                variant="secondary"
+                style={{ flex: 1 }}
+              />
+              <View style={{ width: spacing[3] }} />
+              <Button title="Refresh" onPress={() => load()} variant="outline" style={{ flex: 1 }} />
+            </View>
+          </View>
+        ) : filteredCategories.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Icon name="filter" size={34} color={colors.text.tertiary} />
+            <Text style={styles.emptyTitle}>No matches for this filter</Text>
+            <Text style={styles.emptyText}>
+              Try another challenge filter to see more milestones and rewards.
+            </Text>
           </View>
         ) : (
-          categories.map((cat) => {
-            const achievements = Array.isArray(cat?.achievements) ? cat.achievements : [];
-            const filtered = achievements.filter(matchesFilter);
-            if (filtered.length === 0) return null;
-
+          filteredCategories.map((cat) => {
             const categoryKey = String(cat?.category || '');
             const accent = getCategoryAccent(categoryKey);
             const iconName = getCategoryIcon(categoryKey);
@@ -307,10 +335,10 @@ const ChallengesScreen: React.FC = () => {
                     <Icon name={iconName as any} size={16} color={accent} />
                   </View>
                   <Text style={styles.categoryTitle}>{title}</Text>
-                  <Text style={styles.categoryCount}>{filtered.length}</Text>
+                  <Text style={styles.categoryCount}>{cat.achievements.length}</Text>
                 </View>
 
-                {filtered.map((achievement: any) => {
+                {cat.achievements.map((achievement: any) => {
                   const progress = achievement?.user_progress || {};
                   const pct = clampPct(progress?.progress_percent ?? 0);
                   const isCompleted = Boolean(progress?.is_completed);
@@ -469,6 +497,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { marginTop: spacing[3], fontSize: 15, fontWeight: '900', color: colors.text.primary },
   emptyText: { marginTop: spacing[2], fontSize: 13, color: colors.text.secondary, textAlign: 'center' },
+  emptyActions: { flexDirection: 'row', width: '100%', marginTop: spacing[4] },
 
   categoryHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], marginBottom: spacing[3] },
   categoryIcon: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },

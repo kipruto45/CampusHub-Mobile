@@ -16,8 +16,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
-import { getApiBaseUrl } from '../../services/api';
+import { adminManagementAPI } from '../../services/api';
 
 interface ModerationResource {
   id: string;
@@ -62,7 +61,6 @@ const RISK_COLORS: { [key: string]: string } = {
 
 export default function AIModerationScreen() {
   const router = useRouter();
-  const { accessToken: token } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<ModerationStats | null>(null);
@@ -72,27 +70,16 @@ export default function AIModerationScreen() {
 
   const fetchModerationQueue = useCallback(async () => {
     try {
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/admin/ai-moderation/queue/`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
+      const response = await adminManagementAPI.getAIModerationQueue();
+      const data = response?.data?.data ?? response?.data ?? {};
+      setStats(data);
     } catch (error) {
       console.error('Error fetching moderation queue:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token]);
+  }, []);
 
   const runBatchModeration = async () => {
     Alert.alert(
@@ -104,25 +91,13 @@ export default function AIModerationScreen() {
           text: 'Run',
           onPress: async () => {
             try {
-              const response = await fetch(
-                `${getApiBaseUrl()}/api/admin/ai-moderation/batch/`,
-                {
-                  method: 'POST',
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                  },
-                }
+              const response = await adminManagementAPI.runAIModerationBatch();
+              const data = response?.data?.data ?? response?.data ?? {};
+              Alert.alert(
+                'Batch Complete',
+                `Approved: ${data.auto_approved}, Flagged: ${data.auto_flagged}, Blocked: ${data.auto_blocked}`
               );
-
-              if (response.ok) {
-                const data = await response.json();
-                Alert.alert(
-                  'Batch Complete',
-                  `Approved: ${data.auto_approved}, Flagged: ${data.auto_flagged}, Blocked: ${data.auto_blocked}`
-                );
-                fetchModerationQueue();
-              }
+              fetchModerationQueue();
             } catch (error) {
               console.error('Error running batch moderation:', error);
             }
@@ -137,22 +112,9 @@ export default function AIModerationScreen() {
     setAnalysisResult(null);
     
     try {
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/admin/ai-moderation/analyze/`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ resource_id: resourceId }),
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setAnalysisResult(data);
-      }
+      const response = await adminManagementAPI.analyzeResourceModeration(resourceId);
+      const data = response?.data?.data ?? response?.data ?? {};
+      setAnalysisResult(data);
     } catch (error) {
       console.error('Error analyzing resource:', error);
     } finally {

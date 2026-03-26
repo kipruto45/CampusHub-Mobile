@@ -124,6 +124,24 @@ const BillingHome: React.FC = () => {
     }).length;
   }, [upgrades]);
 
+  const openBillingFallback = useCallback(() => {
+    const hasSubscription = Boolean(subscription?.id || plan?.id);
+    Alert.alert(
+      hasSubscription ? 'Manage Billing In App' : 'Choose a Plan In App',
+      hasSubscription
+        ? 'The browser billing portal is unavailable for this account right now. You can still review payment history or manage your plan from the app.'
+        : 'A billing portal is not set up for this account yet. You can still compare plans and start a subscription from the app.',
+      [
+        {
+          text: hasSubscription ? 'Payment History' : 'View Plans',
+          onPress: () =>
+            router.push((hasSubscription ? '/(student)/billing/history' : '/(student)/billing/plans') as any),
+        },
+        { text: 'Close', style: 'cancel' },
+      ]
+    );
+  }, [plan?.id, router, subscription?.id]);
+
   const handleOpenPortal = useCallback(async () => {
     try {
       setOpeningPortal(true);
@@ -131,18 +149,26 @@ const BillingHome: React.FC = () => {
       const payload = response?.data?.data ?? response?.data ?? {};
       const url = String(payload?.portal_url || '').trim();
       if (!url) {
-        throw new Error('Billing portal is not available for this account yet.');
+        openBillingFallback();
+        return;
       }
       await WebBrowser.openBrowserAsync(url);
     } catch (err: any) {
-      Alert.alert(
-        'Billing Portal',
-        err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Unable to open billing portal.'
-      );
+      const message =
+        err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Unable to open billing portal.';
+      if (
+        err?.response?.status === 404 ||
+        /no billing account found/i.test(message) ||
+        /not available/i.test(message)
+      ) {
+        openBillingFallback();
+        return;
+      }
+      Alert.alert('Billing Portal', message);
     } finally {
       setOpeningPortal(false);
     }
-  }, []);
+  }, [openBillingFallback]);
 
   const handleCancelOrReactivate = useCallback(() => {
     const cancelAtPeriodEnd = Boolean(subscription?.cancel_at_period_end);

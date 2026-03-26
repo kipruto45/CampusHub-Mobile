@@ -53,6 +53,7 @@ const PaymentHistoryScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
   const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [openingReceiptId, setOpeningReceiptId] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -78,16 +79,47 @@ const PaymentHistoryScreen: React.FC = () => {
     loadHistory();
   }, [loadHistory]);
 
-  const openReceipt = async (url: string) => {
+  const openReceipt = async (payment: PaymentItem) => {
     try {
-      const cleaned = String(url || '').trim();
+      setOpeningReceiptId(payment.id);
+      let cleaned = String(payment.receipt_url || '').trim();
+
       if (!cleaned) {
-        Alert.alert('Receipt', 'Receipt link is not available yet.');
+        const response = await paymentsAPI.getPaymentStatus({ payment_id: payment.id });
+        const payload = response?.data?.data ?? response?.data ?? {};
+        cleaned = String(payload?.receipt_url || '').trim();
+
+        if (cleaned) {
+          setPayments((current) =>
+            current.map((item) =>
+              item.id === payment.id
+                ? {
+                    ...item,
+                    receipt_url: cleaned,
+                    status: String(payload?.status || item.status),
+                  }
+                : item
+            )
+          );
+        }
+      }
+
+      if (!cleaned) {
+        const currentStatus = String(payment.status || '').toLowerCase();
+        Alert.alert(
+          'Receipt Unavailable',
+          currentStatus === 'pending'
+            ? 'This payment is still pending. Check the status again after the payment settles.'
+            : 'A receipt has not been generated yet. Refresh the payment status and try again shortly.'
+        );
         return;
       }
+
       await WebBrowser.openBrowserAsync(cleaned);
     } catch (err: any) {
       Alert.alert('Receipt', err?.message || 'Unable to open receipt.');
+    } finally {
+      setOpeningReceiptId(null);
     }
   };
 
@@ -186,6 +218,7 @@ const PaymentHistoryScreen: React.FC = () => {
           payments.map((p) => {
             const pill = statusPill(p.status);
             const checking = checkingId === p.id;
+            const openingReceipt = openingReceiptId === p.id;
             const isPending = String(p.status || '').toLowerCase() === 'pending';
             return (
               <View key={p.id} style={styles.paymentCard}>
@@ -213,10 +246,11 @@ const PaymentHistoryScreen: React.FC = () => {
 
                 <View style={styles.paymentActions}>
                   <Button
-                    title="Receipt"
-                    onPress={() => openReceipt(String(p.receipt_url || ''))}
+                    title={openingReceipt ? 'Opening...' : 'Receipt'}
+                    onPress={() => openReceipt(p)}
                     variant="secondary"
-                    disabled={!p.receipt_url}
+                    disabled={openingReceipt}
+                    loading={openingReceipt}
                     style={{ flex: 1 }}
                   />
                   <View style={{ width: spacing[3] }} />
@@ -308,4 +342,3 @@ const styles = StyleSheet.create({
 });
 
 export default PaymentHistoryScreen;
-

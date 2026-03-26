@@ -34,6 +34,15 @@ const percentLabel = (value: any) => {
   return `${Math.max(0, Math.min(100, Math.round(parsed)))}%`;
 };
 
+const getBadgeLookupKey = (value: any): string => {
+  const badge = value?.badge || value || {};
+  const id = String(badge?.id || '').trim();
+  if (id) return `id:${id}`;
+
+  const fallback = String(badge?.slug || badge?.name || badge?.title || '').trim().toLowerCase();
+  return fallback ? `fallback:${fallback}` : '';
+};
+
 const BadgesScreen: React.FC = () => {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -90,6 +99,32 @@ const BadgesScreen: React.FC = () => {
     return ids;
   }, [earned]);
 
+  const badgeProgressMap = useMemo(() => {
+    const next = new Map<string, any>();
+    for (const entry of progress) {
+      const key = getBadgeLookupKey(entry);
+      if (key) {
+        next.set(key, entry);
+      }
+    }
+    return next;
+  }, [progress]);
+
+  const catalogBadges = useMemo(() => {
+    const next = new Map<string, any>();
+    const source = allBadges.length > 0 ? allBadges : [...earned, ...progress];
+
+    source.forEach((entry) => {
+      const badge = entry?.badge || entry || {};
+      const key = getBadgeLookupKey(badge);
+      if (key && !next.has(key)) {
+        next.set(key, badge);
+      }
+    });
+
+    return Array.from(next.values());
+  }, [allBadges, earned, progress]);
+
   const handleCheck = useCallback(async () => {
     try {
       setChecking(true);
@@ -119,9 +154,9 @@ const BadgesScreen: React.FC = () => {
     () => [
       { key: 'earned', label: `Earned (${earned.length})` },
       { key: 'next', label: `Next (${progress.length})` },
-      { key: 'all', label: `All (${allBadges.length || '—'})` },
+      { key: 'all', label: `All (${catalogBadges.length || '—'})` },
     ],
-    [allBadges.length, earned.length, progress.length]
+    [catalogBadges.length, earned.length, progress.length]
   );
 
   if (loading) {
@@ -253,8 +288,15 @@ const BadgesScreen: React.FC = () => {
           progress.length === 0 ? (
             <View style={styles.emptyCard}>
               <Icon name="checkmark-circle" size={34} color={colors.success} />
-              <Text style={styles.emptyTitle}>You are up to date</Text>
-              <Text style={styles.emptyText}>No badge progress available right now.</Text>
+              <Text style={styles.emptyTitle}>No badge races right now</Text>
+              <Text style={styles.emptyText}>
+                You are either caught up or the next badge milestones have not been published yet.
+              </Text>
+              <Button
+                title="View challenges"
+                onPress={() => router.push('/(student)/gamification/achievements' as any)}
+                variant="outline"
+              />
             </View>
           ) : (
             progress.map((item) => {
@@ -288,19 +330,43 @@ const BadgesScreen: React.FC = () => {
         ) : null}
 
         {tab === 'all' ? (
-          allBadges.length === 0 ? (
+          catalogBadges.length === 0 ? (
             <View style={styles.emptyCard}>
               <Icon name="information-circle" size={34} color={colors.text.tertiary} />
-              <Text style={styles.emptyTitle}>All badges not available</Text>
-              <Text style={styles.emptyText}>We could not load the full list right now.</Text>
+              <Text style={styles.emptyTitle}>Badge catalog is syncing</Text>
+              <Text style={styles.emptyText}>
+                Your earned badges are safe. The full catalog will appear here when the server publishes it.
+              </Text>
+              <Button title="Refresh" onPress={() => load()} variant="outline" />
             </View>
           ) : (
-            allBadges.map((badge) => {
+            catalogBadges.map((badge) => {
               const badgeId = String(badge?.id || '').trim();
+              const badgeKey = getBadgeLookupKey(badge);
               const isEarned = badgeId ? earnedBadgeIds.has(badgeId) : false;
+              const progressEntry = badgeKey ? badgeProgressMap.get(badgeKey) : null;
+              const progressPercent = Number(progressEntry?.progress_percent ?? 0);
+              const isInProgress = !isEarned && progressPercent > 0;
               const category = badge?.category?.name || badge?.category || '';
+              const statusBg = isEarned
+                ? colors.success + '1A'
+                : isInProgress
+                  ? colors.info + '16'
+                  : colors.gray[100];
+              const statusColor = isEarned
+                ? colors.success
+                : isInProgress
+                  ? colors.info
+                  : colors.text.tertiary;
+              const badgeMeta = isInProgress
+                ? `${percentLabel(progressPercent)} complete`
+                : badge?.points_required
+                  ? `${badge.points_required} pts`
+                  : badge?.action_count_required
+                    ? `${badge.action_count_required} actions`
+                    : 'Unlockable';
               return (
-                <View key={badgeId || String(Math.random())} style={styles.card}>
+                <View key={badgeKey || badgeId || badge?.name || 'badge'} style={styles.card}>
                   <View style={styles.rowTop}>
                     <View style={styles.rowLeft}>
                       <View style={styles.badgeIcon}>
@@ -310,13 +376,13 @@ const BadgesScreen: React.FC = () => {
                         <Text style={styles.badgeName}>{badge?.name || 'Badge'}</Text>
                         <Text style={styles.badgeMeta}>
                           {category ? `${String(category).toUpperCase()} • ` : ''}
-                          {badge?.points_required ? `${badge.points_required} pts` : badge?.action_count_required ? `${badge.action_count_required} actions` : 'Unlockable'}
+                          {badgeMeta}
                         </Text>
                       </View>
                     </View>
-                    <View style={[styles.statusPill, { backgroundColor: isEarned ? colors.success + '1A' : colors.gray[100] }]}>
-                      <Text style={[styles.statusPillText, { color: isEarned ? colors.success : colors.text.tertiary }]}>
-                        {isEarned ? 'EARNED' : 'LOCKED'}
+                    <View style={[styles.statusPill, { backgroundColor: statusBg }]}>
+                      <Text style={[styles.statusPillText, { color: statusColor }]}>
+                        {isEarned ? 'EARNED' : isInProgress ? 'IN PROGRESS' : 'LOCKED'}
                       </Text>
                     </View>
                   </View>
@@ -414,4 +480,3 @@ const styles = StyleSheet.create({
 });
 
 export default BadgesScreen;
-
