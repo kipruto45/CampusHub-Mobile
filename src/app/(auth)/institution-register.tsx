@@ -18,7 +18,7 @@ import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
-import { authAPI } from '../../services/api';
+import api from '../../services/api';
 
 const InstitutionRegisterScreen: React.FC = () => {
   const router = useRouter();
@@ -92,7 +92,7 @@ const InstitutionRegisterScreen: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await authAPI.post('/institutions/register/', {
+      const response = await api.post('/institutions/register/', {
         name,
         short_name: shortName,
         slug,
@@ -162,26 +162,26 @@ const InstitutionRegisterScreen: React.FC = () => {
                 value={slug}
                 onChangeText={(text) => setSlug(generateSlug(text))}
                 placeholder="e.g., mit-university"
-                autoLowercase
               />
             </View>
           </View>
 
           <Input
             label="Institution Type *"
-            value={institutionType}
-            onChangeText={setInstitutionType}
+            value={institutionType ? institutionTypes.find(t => t.value === institutionType)?.label || '' : ''}
             placeholder="Select type..."
             editable={false}
-            rightIcon="chevron-down"
             onPress={() => {
               Alert.alert(
                 'Select Institution Type',
                 '',
-                institutionTypes.map((type) => ({
-                  text: type.label,
-                  onPress: () => setInstitutionType(type.value),
-                }))
+                [
+                  ...institutionTypes.map((type) => ({
+                    text: type.label,
+                    onPress: () => setInstitutionType(type.value),
+                  })),
+                  { text: 'Cancel', onPress: () => {} },
+                ]
               );
             }}
           />
@@ -191,7 +191,7 @@ const InstitutionRegisterScreen: React.FC = () => {
             value={emailDomain}
             onChangeText={setEmailDomain}
             placeholder="@university.edu"
-            autoLowercase
+            
             keyboardType="email-address"
           />
 
@@ -240,7 +240,7 @@ const InstitutionRegisterScreen: React.FC = () => {
             onChangeText={setContactEmail}
             placeholder="your@email.com"
             keyboardType="email-address"
-            autoLowercase
+            
           />
 
           <Input
@@ -299,7 +299,7 @@ const InstitutionRegisterScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.background.primary,
   },
   scrollView: {
     flex: 1,
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   },
   form: {
     ...shadows.small,
-    backgroundColor: colors.background,
+    backgroundColor: colors.card.light,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
   },
@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: colors.border,
+    backgroundColor: colors.border.light,
     marginVertical: spacing.lg,
   },
   checkboxContainer: {
@@ -359,17 +359,17 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: borderRadius.sm,
     borderWidth: 2,
-    borderColor: colors.border,
+    borderColor: colors.border.light,
     marginRight: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkboxChecked: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.primary[500],
+    borderColor: colors.primary[500],
   },
   checkmark: {
-    color: colors.white,
+    color: colors.text.inverse,
     fontWeight: 'bold',
     fontSize: 14,
   },
@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   link: {
-    color: colors.primary,
+    color: colors.primary[500],
     fontWeight: '500',
   },
   registerButton: {
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   loginLink: {
-    color: colors.primary,
+    color: colors.primary[500],
     fontSize: 14,
     fontWeight: '600',
   },
