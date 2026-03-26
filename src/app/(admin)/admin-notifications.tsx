@@ -3,18 +3,18 @@
  * Real-time admin notifications and alerts
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { notificationsAPI } from '../../services/api';
 
 interface AdminNotification {

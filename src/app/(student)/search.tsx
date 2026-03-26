@@ -1,26 +1,26 @@
 // AI + keyword search screen for CampusHub
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useRef,useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
   ActivityIndicator,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
 import Badge from '../../components/ui/Badge';
 import ErrorState from '../../components/ui/ErrorState';
-import { aiAPI, resourcesAPI } from '../../services/api';
+import Icon from '../../components/ui/Icon';
 import { useToast } from '../../components/ui/Toast';
+import { aiAPI,resourcesAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 type SearchMode = 'hybrid' | 'semantic' | 'keyword';
 
@@ -50,19 +50,7 @@ export default function SearchScreen() {
 
   const inputRef = useRef<TextInput>(null);
 
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (query.trim().length >= 2) {
-        void runSearch(query);
-      } else {
-        setResults([]);
-        setError(null);
-      }
-    }, 250);
-    return () => clearTimeout(timeout);
-  }, [query, mode]);
-
-  const runSearch = async (text: string) => {
+  const runSearch = useCallback(async (text: string) => {
     const q = text.trim();
     if (!q) return;
 
@@ -83,7 +71,7 @@ export default function SearchScreen() {
       if (!items.length) {
         showToast('info', 'No matches found. Try a different phrase.');
       }
-    } catch (err: any) {
+    } catch (_err: any) {
       // Fallback to keyword search on resources API
       try {
         const fallback = await resourcesAPI.list({ search: q, limit: 20 });
@@ -105,7 +93,19 @@ export default function SearchScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [mode, showToast]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (query.trim().length >= 2) {
+        void runSearch(query);
+      } else {
+        setResults([]);
+        setError(null);
+      }
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [mode, query, runSearch]);
 
   const renderItem = ({ item }: { item: SearchResultItem }) => (
     <TouchableOpacity
@@ -344,4 +344,3 @@ const styles = StyleSheet.create({
     marginTop: spacing[1],
   },
 });
-

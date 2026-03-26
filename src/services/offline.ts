@@ -4,7 +4,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Network from 'expo-network';
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback,useEffect,useState } from 'react';
 
 // Check if AsyncStorage is available (requires development build)
 let isStorageAvailable = true;
@@ -15,7 +15,7 @@ let isStorageAvailable = true;
     await AsyncStorage.setItem('__test__', 'test');
     await AsyncStorage.removeItem('__test__');
     isStorageAvailable = true;
-  } catch (e) {
+  } catch (_e) {
     isStorageAvailable = false;
     console.log('AsyncStorage not available - using memory fallback');
   }
@@ -33,7 +33,7 @@ interface NetworkState {
 }
 
 class NetworkService {
-  private listeners: Array<(state: NetworkState) => void> = [];
+  private listeners: ((state: NetworkState) => void)[] = [];
   private checkInterval: ReturnType<typeof setInterval> | null = null;
 
   async getNetworkState(): Promise<NetworkState> {
@@ -52,7 +52,7 @@ class NetworkService {
       }
       
       return networkState;
-    } catch (error) {
+    } catch (_error) {
       // Return cached state if error
       if (isStorageAvailable) {
         try {
@@ -154,7 +154,7 @@ const buildActionFingerprint = (
 };
 
 class SyncQueueService {
-  private listeners: Array<(queue: QueuedAction[]) => void> = [];
+  private listeners: ((queue: QueuedAction[]) => void)[] = [];
 
   async getQueue(): Promise<QueuedAction[]> {
     try {

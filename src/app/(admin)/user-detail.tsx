@@ -1,18 +1,18 @@
 // Admin User Detail Screen for CampusHub
 // Detailed view of a user account
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import ErrorState from '../../components/ui/ErrorState';
-import { adminAPI } from '../../services/api';
+import Icon from '../../components/ui/Icon';
 import { useToast } from '../../components/ui/Toast';
 import { strings } from '../../constants/strings';
+import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface UserDetail {
   id: string;
@@ -135,7 +135,7 @@ const UserDetailScreen: React.FC = () => {
       await adminAPI.updateUserStatus(String(id), !user.is_active);
       setUser(prev => prev ? { ...prev, is_active: !prev.is_active } : null);
       showToast('success', user.is_active ? strings.users.deactivate : strings.users.activate);
-    } catch (err: any) {
+    } catch (_err: any) {
       showToast('error', strings.users.updateFailed);
     }
   };
@@ -149,7 +149,7 @@ const UserDetailScreen: React.FC = () => {
       } else {
         showToast('error', 'No token returned.');
       }
-    } catch (err) {
+    } catch (_err) {
       showToast('error', 'Failed to generate impersonation token.');
     }
   };

@@ -1,14 +1,13 @@
 // InviteLinkCard Component - Display and manage an invite link
 // CampusHub Mobile App
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Share } from 'react-native';
+import React,{ useState } from 'react';
+import { Share,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
+import { copyToClipboard } from '../../utils/share';
 import Icon from '../ui/Icon';
-import { studyGroupsAPI } from '../../services/api';
-import { copyToClipboard, openNativeShareSheet } from '../../utils/share';
 import { useToast } from '../ui/Toast';
 
 interface InviteLink {
@@ -31,7 +30,7 @@ interface InviteLinkCardProps {
   onUpdate: (link: InviteLink) => void;
 }
 
-export default function InviteLinkCard({ link, onRevoke, onUpdate }: InviteLinkCardProps) {
+export default function InviteLinkCard({ link, onRevoke, onUpdate: _onUpdate }: InviteLinkCardProps) {
   const [copying, setCopying] = useState(false);
   const { showToast } = useToast();
 
@@ -71,7 +70,7 @@ export default function InviteLinkCard({ link, onRevoke, onUpdate }: InviteLinkC
     try {
       await copyToClipboard(link.invite_link);
       showToast('success', 'Invite link copied to clipboard!');
-    } catch (error) {
+    } catch (_error) {
       showToast('error', 'Failed to copy link');
     } finally {
       setCopying(false);
@@ -85,7 +84,7 @@ export default function InviteLinkCard({ link, onRevoke, onUpdate }: InviteLinkC
         title: 'Join Study Group',
         url: link.invite_link,
       });
-    } catch (error) {
+    } catch (_error) {
       showToast('error', 'Failed to share link');
     }
   };

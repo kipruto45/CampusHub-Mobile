@@ -1,13 +1,13 @@
 // Dashboard Preview Components for CampusHub Mobile App
 // Displays previews of notifications, announcements, and recent activity
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import React,{ useEffect,useState } from 'react';
+import { RefreshControl,ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
+import { DashboardActivityItem,DashboardAnnouncement,dashboardApi,DashboardNotificationItem } from '../../services/dashboard.service';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import Icon from '../ui/Icon';
+import { borderRadius,spacing } from '../../theme/spacing';
 import Card from '../ui/Card';
-import { dashboardApi, DashboardAnnouncement, DashboardNotificationItem, DashboardActivityItem } from '../../services/dashboard.service';
+import Icon from '../ui/Icon';
 
 // Announcements Preview
 interface AnnouncementsPreviewProps {

@@ -4,14 +4,6 @@
 import * as Linking from 'expo-linking';
 import api from './api';
 
-// Google Drive API configuration
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID';
-const GOOGLE_REDIRECT_URI = Linking.createURL('auth/google/callback');
-
-// Microsoft (OneDrive) API configuration
-const MICROSOFT_CLIENT_ID = process.env.EXPO_PUBLIC_MICROSOFT_CLIENT_ID || 'YOUR_MICROSOFT_CLIENT_ID';
-const MICROSOFT_REDIRECT_URI = Linking.createURL('auth/microsoft/callback');
-
 export interface CloudAccount {
   id: string;
   provider: 'google_drive' | 'onedrive';
@@ -49,6 +41,41 @@ export interface CloudStorageStats {
   connected: boolean;
 }
 
+export type CloudProvider = 'google_drive' | 'onedrive';
+
+const getQueryValue = (value: string | string[] | undefined): string => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value) && typeof value[0] === 'string') {
+    return value[0];
+  }
+  return '';
+};
+
+const CLOUD_REDIRECT_PATHS: Record<CloudProvider, string> = {
+  google_drive: 'auth/google/callback',
+  onedrive: 'auth/microsoft/callback',
+};
+
+export const getCloudRedirectUri = (provider: CloudProvider): string =>
+  Linking.createURL(CLOUD_REDIRECT_PATHS[provider]);
+
+export const getCloudProviderLabel = (provider: CloudProvider): string =>
+  provider === 'google_drive' ? 'Google Drive' : 'My Drive';
+
+const parseCloudCallback = (callbackUrl: string) => {
+  const parsed = Linking.parse(callbackUrl);
+  const queryParams = parsed.queryParams || {};
+  return {
+    code: getQueryValue(queryParams.code as string | string[] | undefined),
+    error: getQueryValue(queryParams.error as string | string[] | undefined),
+    errorDescription:
+      getQueryValue(queryParams.error_description as string | string[] | undefined) ||
+      getQueryValue(queryParams.errorDescription as string | string[] | undefined),
+  };
+};
+
 // Google Drive Service
 export const googleDriveService = {
   // Check if user is authenticated
@@ -75,7 +102,7 @@ export const googleDriveService = {
   async connect(): Promise<{ authUrl: string }> {
     try {
       const response = await api.post('/cloud-storage/google/connect/', {
-        redirect_uri: GOOGLE_REDIRECT_URI,
+        redirect_uri: getCloudRedirectUri('google_drive'),
       });
       return response.data;
     } catch (error: any) {
@@ -181,7 +208,7 @@ export const onedriveService = {
   async connect(): Promise<{ authUrl: string }> {
     try {
       const response = await api.post('/cloud-storage/onedrive/connect/', {
-        redirect_uri: MICROSOFT_REDIRECT_URI,
+        redirect_uri: getCloudRedirectUri('onedrive'),
       });
       return response.data;
     } catch (error: any) {
@@ -270,6 +297,30 @@ export const cloudStorageService = {
       return response.data.accounts || [];
     } catch {
       return [];
+    }
+  },
+
+  async completeConnection(provider: CloudProvider, callbackUrl: string): Promise<CloudAccount> {
+    const { code, error, errorDescription } = parseCloudCallback(callbackUrl);
+    if (error) {
+      throw new Error(errorDescription || error.replace(/_/g, ' '));
+    }
+    if (!code) {
+      throw new Error('The sign-in callback did not include an authorization code.');
+    }
+
+    try {
+      const response = await api.post(`/cloud-storage/${provider}/oauth/callback/`, {
+        code,
+        redirect_uri: getCloudRedirectUri(provider),
+      });
+      return response.data?.account;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.error ||
+          error.response?.data?.message ||
+          `Failed to finish linking ${getCloudProviderLabel(provider)}`
+      );
     }
   },
 

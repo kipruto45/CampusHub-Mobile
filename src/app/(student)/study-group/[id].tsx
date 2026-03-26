@@ -1,20 +1,19 @@
 // Study Group Detail Screen for CampusHub
 // View and manage a specific study group
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl, Alert, FlatList, Modal } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { colors } from '../../../theme/colors';
-import { spacing, borderRadius } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
-import Avatar from '../../../components/ui/Avatar';
-import { studyGroupsAPI } from '../../../services/api';
-import { resourcesAPI } from '../../../services/api';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,Modal,RefreshControl,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
+import CreateInviteLinkSheet,{ CreateLinkData } from '../../../components/social/CreateInviteLinkSheet';
 import InviteLinkCard from '../../../components/social/InviteLinkCard';
-import CreateInviteLinkSheet, { CreateLinkData } from '../../../components/social/CreateInviteLinkSheet';
+import Avatar from '../../../components/ui/Avatar';
+import Icon from '../../../components/ui/Icon';
 import Tooltip from '../../../components/ui/Tooltip';
+import { resourcesAPI,studyGroupsAPI } from '../../../services/api';
 import { useAuthStore } from '../../../store/auth.store';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 interface StudyGroupPost {
   id: string;
@@ -73,7 +72,7 @@ interface InviteLink {
 const StudyGroupDetailScreen: React.FC = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user: _user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [group, setGroup] = useState<StudyGroup | null>(null);
@@ -88,7 +87,7 @@ const StudyGroupDetailScreen: React.FC = () => {
   // Invite Link State
   const [inviteLinks, setInviteLinks] = useState<InviteLink[]>([]);
   const [showCreateLinkSheet, setShowCreateLinkSheet] = useState(false);
-  const [creatingLink, setCreatingLink] = useState(false);
+  const [_creatingLink, setCreatingLink] = useState(false);
 
   // Share Resource State
   const [showShareResourceSheet, setShowShareResourceSheet] = useState(false);
@@ -123,7 +122,7 @@ const StudyGroupDetailScreen: React.FC = () => {
         try {
           const linksRes = await studyGroupsAPI.getInviteLinks(id);
           setInviteLinks(linksRes.data.data || []);
-        } catch (e) {
+        } catch (_e) {
           // Ignore invite links fetch error
         }
       }
@@ -198,7 +197,7 @@ const StudyGroupDetailScreen: React.FC = () => {
   const handleLikePost = async (postId: string) => {
     try {
       const response = await studyGroupsAPI.likePost(id, postId);
-      const { likes_count, liked } = response.data.data;
+      const { likes_count, _liked } = response.data.data;
       
       // Update the post in the posts list
       setPosts(posts.map(post => 

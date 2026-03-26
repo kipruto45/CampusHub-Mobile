@@ -1,14 +1,14 @@
 // Student Layout for CampusHub
 // Custom modern bottom navigation bar with 5 icons
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, ActivityIndicator, StyleSheet, Text, TouchableOpacity, Platform } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { colors, lightColors } from '../../theme/colors';
-import { useAuthStore } from '../../store/auth.store';
-import { isAdminRole, ADMIN_HOME_ROUTE } from '../../lib/auth-routing';
+import { Stack,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Platform,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../../components/ui/Icon';
+import { ADMIN_HOME_ROUTE,isAdminRole } from '../../lib/auth-routing';
+import { useAuthStore } from '../../store/auth.store';
+import { colors,lightColors } from '../../theme/colors';
 
 // Suppress warnings
 import { LogBox } from 'react-native';
@@ -26,14 +26,14 @@ const TABS = [
 // Custom Bottom Tab Bar Component
 function CustomBottomBar({ activeTab, onTabPress }: { activeTab: string; onTabPress: (route: string) => void }) {
   const insets = useSafeAreaInsets();
-  
   const router = useRouter();
+  const aiBottomOffset = Math.max(insets.bottom, 10) + 34;
   
   return (
     <View style={styles.wrapper}>
       {/* Floating AI Button */}
       <TouchableOpacity
-        style={styles.floatingAIButton}
+        style={[styles.floatingAIButton, { bottom: aiBottomOffset }]}
         onPress={() => router.push('/(student)/ai-chat')}
         activeOpacity={0.8}
         accessibilityRole="button"
@@ -83,7 +83,7 @@ function CustomBottomBar({ activeTab, onTabPress }: { activeTab: string; onTabPr
 
 export default function StudentLayout() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const _insets = useSafeAreaInsets();
   const { isAuthenticated, isLoading, initializeAuth, accessToken, user } = useAuthStore();
   // Always use light mode - dark mode disabled
   const themeColors = lightColors;
@@ -173,18 +173,17 @@ const styles = StyleSheet.create({
   },
   wrapper: {
     position: 'relative',
+    overflow: 'visible',
   },
   floatingAIButton: {
     position: 'absolute',
-    top: -40,
-    left: '50%',
-    marginLeft: -38,
+    right: 18,
     zIndex: 120,
   },
   floatingAIHalo: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: 'rgba(13, 115, 119, 0.16)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -197,9 +196,9 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   floatingAIInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: colors.primary[600],
     justifyContent: 'center',
     alignItems: 'center',
@@ -214,19 +213,19 @@ const styles = StyleSheet.create({
   },
   floatingAIAccent: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: colors.accent[400],
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
   floatingAILabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.4,
     color: '#FFFFFF',
   },
   bottomBar: {

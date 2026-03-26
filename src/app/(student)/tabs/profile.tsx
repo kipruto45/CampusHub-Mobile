@@ -1,16 +1,17 @@
 // Profile Screen for CampusHub
 // Backend-driven - no mock data
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Image, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../../theme/colors';
-import { spacing, borderRadius } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,Image,ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
+import Avatar from '../../../components/ui/Avatar';
 import ErrorState from '../../../components/ui/ErrorState';
+import Icon from '../../../components/ui/Icon';
+import { gamificationAPI,userAPI } from '../../../services/api';
 import { useAuthStore } from '../../../store/auth.store';
-import { userAPI, gamificationAPI } from '../../../services/api';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 // Types
 interface LinkedProvider {
@@ -49,13 +50,13 @@ interface GamificationStats {
   total_shares: number;
   total_comments: number;
   leaderboard_rank?: number | null;
-  badges: Array<{
+  badges: {
     id: string;
     name: string;
     icon: string;
     is_earned: boolean;
     category?: string;
-  }>;
+  }[];
 }
 
 const ProfileScreen: React.FC = () => {
@@ -294,15 +295,12 @@ const ProfileScreen: React.FC = () => {
       {/* Profile Card */}
       <View style={styles.profileCard}>
         <View style={styles.avatarContainer}>
-          {profile?.avatar ? (
-            <Image source={{ uri: profile.avatar }} style={styles.avatarImage} resizeMode="cover" />
-          ) : (
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {profile?.first_name?.[0] || 'U'}{profile?.last_name?.[0] || ''}
-              </Text>
-            </View>
-          )}
+          <Avatar
+            source={profile?.avatar}
+            name={`${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || profile?.email || 'User'}
+            sizePx={80}
+            cacheKey={`student-profile-${profile?.id || 'current'}`}
+          />
           <TouchableOpacity 
             style={styles.editAvatarBtn}
             onPress={() => router.push('/(student)/edit-profile')}

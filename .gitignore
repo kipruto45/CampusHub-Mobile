@@ -16,6 +16,10 @@ campushub-*.json
 android/app/google-services.json
 ios/GoogleService-Info.plist
 .apk
+.aab
+*.jks
+*.keystore
+android/keystore.properties
 
 # Local Netlify folder
 .netlify

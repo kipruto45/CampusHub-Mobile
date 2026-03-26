@@ -1,21 +1,20 @@
 // Resource Detail Screen for CampusHub
 // Resource details with comments and ratings - Backend-driven
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, RefreshControl } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { colors } from '../../../theme/colors';
-import { spacing, borderRadius } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
-import Avatar from '../../../components/ui/Avatar';
-import { courseProgressAPI, resourcesAPI, aiAPI } from '../../../services/api';
-import { localDownloadsService } from '../../../services/local-downloads.service';
-import ShareResourceButton from '../../../components/resources/ShareResourceButton';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useRef,useState } from 'react';
+import { ActivityIndicator,Alert,RefreshControl,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import ResourceShareSheet from '../../../components/modals/ResourceShareSheet';
+import Avatar from '../../../components/ui/Avatar';
+import Icon from '../../../components/ui/Icon';
 import { useResourceShare } from '../../../hooks/useResourceShare';
+import { aiAPI,courseProgressAPI,resourcesAPI } from '../../../services/api';
 import { bookmarksService } from '../../../services/bookmarks.service';
 import { favoritesService } from '../../../services/favorites.service';
+import { localDownloadsService } from '../../../services/local-downloads.service';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 const formatNumber = (value: number) => {
   try {
@@ -169,7 +168,7 @@ const ResourceDetailScreen: React.FC = () => {
       const response = await aiAPI.summarizeResource(resource.id, { max_length: 180, summary_type: 'auto' });
       const payload = response?.data?.data || response?.data || {};
       setSummary(payload?.summary || 'No summary available yet.');
-    } catch (err: any) {
+    } catch (_err: any) {
       setSummary('Could not generate summary. Please try again.');
     } finally {
       setLoadingSummary(false);
@@ -358,7 +357,7 @@ const ResourceDetailScreen: React.FC = () => {
     </View>
   );
 
-  const renderLoading = () => (
+  const _renderLoading = () => (
     <View style={styles.loadingContainer}>
       <ActivityIndicator size="large" color={colors.primary[500]} />
       <Text style={styles.loadingText}>Loading resource...</Text>

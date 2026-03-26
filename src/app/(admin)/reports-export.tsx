@@ -3,21 +3,21 @@
  * Generate reports, export data, and perform bulk operations
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
   ActivityIndicator,
   Alert,
-  TextInput,
-  Switch,
   Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
 import { announcementsApi } from '../../services/announcements.service';
 import { adminManagementAPI } from '../../services/api';
 

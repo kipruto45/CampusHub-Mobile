@@ -1,24 +1,24 @@
 // Feature Access Screen (Freemium gating visibility)
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-} from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Button from '../../../components/ui/Button';
+import Icon from '../../../components/ui/Icon';
 import Input from '../../../components/ui/Input';
 import { paymentsAPI } from '../../../services/api';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 type FeatureRow = {
   key: string;
@@ -41,16 +41,16 @@ const formatDownloadLimit = (value: any) => {
   return `${parsed}/mo`;
 };
 
-const CATEGORY_META: Array<{
+const CATEGORY_META: {
   key: string;
   title: string;
   icon: any;
   tint: string;
   bg: string;
-}> = [
+}[] = [
   { key: 'core', title: 'Core', icon: 'home', tint: colors.text.secondary, bg: colors.gray[100] },
-  { key: 'premium', title: 'Premium', icon: 'diamond', tint: colors.primary[600], bg: colors.primary[50] },
-  { key: 'pro', title: 'Pro', icon: 'briefcase', tint: colors.accent[500], bg: colors.accent[50] },
+  { key: 'basic', title: 'Basic', icon: 'diamond', tint: colors.primary[600], bg: colors.primary[50] },
+  { key: 'premium', title: 'Premium', icon: 'briefcase', tint: colors.accent[500], bg: colors.accent[50] },
   { key: 'enterprise', title: 'Enterprise', icon: 'business', tint: colors.info, bg: colors.info + '12' },
 ];
 
@@ -89,7 +89,7 @@ const FeatureAccessScreen: React.FC = () => {
     load();
   }, [load]);
 
-  const categories = summary?.categories || {};
+  const categories = useMemo(() => summary?.categories || {}, [summary?.categories]);
 
   const tierName = String(summary?.tier_name || summary?.tier || 'Free');
   const tierKey = String(summary?.tier || '').toLowerCase();
@@ -135,7 +135,7 @@ const FeatureAccessScreen: React.FC = () => {
   }, [featureKey]);
 
   const handleStartTrial = useCallback(() => {
-    Alert.alert('Start free trial', 'Start a Premium trial on this account?', [
+    Alert.alert('Start free trial', 'Start the trial available for this account?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Start trial',
@@ -147,7 +147,7 @@ const FeatureAccessScreen: React.FC = () => {
             Alert.alert(
               'Trial started',
               payload?.trial_end
-                ? `Your trial ends on ${new Date(payload.trial_end).toLocaleString()}.`
+                ? `Your ${payload?.tier_name || 'trial'} ends on ${new Date(payload.trial_end).toLocaleString()}.`
                 : payload?.message || 'Your trial has started.'
             );
             await load();
@@ -486,4 +486,3 @@ const styles = StyleSheet.create({
 });
 
 export default FeatureAccessScreen;
-

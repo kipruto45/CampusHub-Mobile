@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
 import BottomSheet from '../ui/BottomSheet';
 import Icon from '../ui/Icon';
 

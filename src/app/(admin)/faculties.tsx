@@ -1,15 +1,15 @@
 // Admin Faculties Management for CampusHub
 // Manage academic structure (faculties, departments, courses, units)
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Modal, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,Modal,RefreshControl,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import ErrorState from '../../components/ui/ErrorState';
+import Icon from '../../components/ui/Icon';
 import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface Faculty {
   id: string;
@@ -75,7 +75,7 @@ const FacultiesScreen: React.FC = () => {
 
   useEffect(() => {
     fetchData(true);
-  }, []);
+  }, [fetchData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -85,7 +85,7 @@ const FacultiesScreen: React.FC = () => {
   const handleRetry = useCallback(() => {
     setLoading(true);
     fetchData(true);
-  }, []);
+  }, [fetchData]);
 
   const handleCreate = () => {
     setEditingItem(null);
@@ -133,7 +133,7 @@ const FacultiesScreen: React.FC = () => {
         await adminAPI.updateFaculty(item.id, { is_active: !(item.is_active ?? true) });
       }
       fetchData(true);
-    } catch (err: any) {
+    } catch (_err: any) {
       Alert.alert('Error', 'Failed to update status');
     }
   };

@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -8,14 +9,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 
-import api, { adminAPI, getAuthToken } from '../../services/api';
-import { localDownloadsService } from '../../services/local-downloads.service';
 import Icon from '../../components/ui/Icon';
+import api,{ adminAPI,getAuthToken } from '../../services/api';
+import { localDownloadsService } from '../../services/local-downloads.service';
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface SystemStats {
   total_users: number;
@@ -61,14 +61,14 @@ interface ExportInfo {
 
 type ExportFormat = 'csv' | 'pdf' | 'excel';
 
-const EXPORT_FORMATS: Array<{
+const EXPORT_FORMATS: {
   key: ExportFormat;
   label: string;
   icon: string;
   description: string;
   mimeType: string;
   extension: string;
-}> = [
+}[] = [
   {
     key: 'csv',
     label: 'CSV',

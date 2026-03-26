@@ -39,7 +39,7 @@ export interface DownloadQueueItem {
 
 class OfflineService {
   private isOnline: boolean = true;
-  private listeners: Array<(online: boolean) => void> = [];
+  private listeners: ((online: boolean) => void)[] = [];
 
   constructor() {
     this.initNetworkListener();
@@ -50,7 +50,7 @@ class OfflineService {
       // Check initial state
       const state = await Network.getNetworkStateAsync();
       this.isOnline = state.isConnected ?? false;
-    } catch (e) {
+    } catch (_e) {
       console.log('Network detection not available');
       this.isOnline = true;
     }
@@ -62,7 +62,7 @@ class OfflineService {
       const state = await Network.getNetworkStateAsync();
       this.isOnline = state.isConnected ?? false;
       return this.isOnline;
-    } catch (e) {
+    } catch (_e) {
       return this.isOnline;
     }
   }
@@ -169,7 +169,7 @@ class OfflineService {
         totalCached: 0,
         storageUsed: 0,
       };
-    } catch (error) {
+    } catch (_error) {
       return {
         lastSync: '',
         totalCached: 0,
@@ -228,7 +228,7 @@ class OfflineService {
     try {
       const data = await AsyncStorage.getItem(DOWNLOAD_QUEUE_KEY);
       return data ? JSON.parse(data) : [];
-    } catch (error) {
+    } catch (_error) {
       return [];
     }
   }

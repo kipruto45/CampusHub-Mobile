@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -8,14 +9,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 
 import ErrorState from '../../components/ui/ErrorState';
 import Icon from '../../components/ui/Icon';
 import { adminAPI } from '../../services/api';
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface ScopeInfo {
   role?: string;

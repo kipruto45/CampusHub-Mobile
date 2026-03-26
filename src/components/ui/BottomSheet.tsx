@@ -1,17 +1,17 @@
 // Bottom Sheet / Modal Component for CampusHub
 // Provides slide-up modal functionality
 
-import React, { useEffect, useRef } from 'react';
+import React,{ useEffect,useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Modal,
-  TouchableOpacity,
   Animated,
   Dimensions,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';

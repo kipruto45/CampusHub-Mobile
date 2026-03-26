@@ -232,7 +232,7 @@ class CacheService {
   }
 
   // Preload cache with common data
-  async preloadCache(data: Array<{ endpoint: string; data: any; duration?: number }>): Promise<void> {
+  async preloadCache(data: { endpoint: string; data: any; duration?: number }[]): Promise<void> {
     for (const item of data) {
       await this.set(item.endpoint, item.data, undefined, item.duration);
     }

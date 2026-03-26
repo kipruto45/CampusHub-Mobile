@@ -3,18 +3,18 @@
  * Monitor API usage and performance metrics
  */
 
-import React, { useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  RefreshControl,
-  FlatList,
-  ActivityIndicator,
-} from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import React,{ useCallback,useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import * as adminService from '../../services/admin-management.service';
 import { APIUsageStats } from '../../services/admin-management.service';
 
@@ -32,7 +32,7 @@ export default function APIUsageScreen() {
   const [selectedRange, setSelectedRange] = useState(7);
   const [activeTab, setActiveTab] = useState<'overview' | 'endpoints' | 'users'>('overview');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const data = await adminService.getAPIUsageStats(selectedRange);
       setStats(data);
@@ -41,12 +41,12 @@ export default function APIUsageScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedRange]);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [selectedRange])
+    }, [loadData])
   );
 
   const onRefresh = async () => {

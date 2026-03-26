@@ -1,22 +1,22 @@
 // Library Screen for CampusHub
 // Personal library for private files - Backend-driven
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
-import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 import { useRouter } from 'expo-router';
-import { colors } from '../../../theme/colors';
-import { spacing, borderRadius } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
-import ErrorState from '../../../components/ui/ErrorState';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import { ActivityIndicator,FlatList,Modal,RefreshControl,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import FavoriteFileButton from '../../../components/library/FavoriteFileButton';
 import FavoriteFolderButton from '../../../components/library/FavoriteFolderButton';
+import ErrorState from '../../../components/ui/ErrorState';
+import Icon from '../../../components/ui/Icon';
+import { useToast } from '../../../components/ui/Toast';
 import { favoritesService } from '../../../services/favorites.service';
 import { libraryService } from '../../../services/library.service';
 import { mobileAutomationService } from '../../../services/mobileAutomation.service';
-import { useToast } from '../../../components/ui/Toast';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 const formatNumber = (value: number) => {
   try {
@@ -224,7 +224,7 @@ const LibraryScreen: React.FC = () => {
     }
   };
 
-  const handleDeleteFolder = async (id: string, name: string) => {
+  const _handleDeleteFolder = async (id: string, _name: string) => {
     const exec = async () => libraryService.deleteFolder(id);
     const optimistic = () => setFolders((prev) => prev.filter((f) => f.id !== id));
     optimistic();
@@ -236,7 +236,7 @@ const LibraryScreen: React.FC = () => {
     try {
       await exec();
       showToast('success', 'Folder deleted.');
-    } catch (err) {
+    } catch (_err) {
       showToast('error', 'Failed to delete folder');
       fetchLibraryData();
     }
@@ -274,7 +274,7 @@ const LibraryScreen: React.FC = () => {
     }
   };
 
-  const handleDeleteFile = async (id: string, name: string) => {
+  const handleDeleteFile = async (id: string, _name: string) => {
     const exec = async () => libraryService.deleteFile(id);
     const optimistic = () => setFiles((prev) => prev.filter((f) => f.id !== id));
     optimistic();
@@ -286,7 +286,7 @@ const LibraryScreen: React.FC = () => {
     try {
       await exec();
       showToast('success', 'File deleted.');
-    } catch (err) {
+    } catch (_err) {
       showToast('error', 'Failed to delete file');
       fetchLibraryData();
     }
@@ -358,7 +358,7 @@ const LibraryScreen: React.FC = () => {
     return `${kb.toFixed(0)} KB`;
   };
 
-  const formatDate = (dateString?: string) => {
+  const _formatDate = (dateString?: string) => {
     if (!dateString) return 'Unknown';
     const date = new Date(dateString);
     const now = new Date();

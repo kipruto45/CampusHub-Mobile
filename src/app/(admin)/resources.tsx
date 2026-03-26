@@ -1,16 +1,16 @@
 // Admin Resources Management for CampusHub
 // Review, moderate, and manage resources
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Modal, TextInput, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,Modal,RefreshControl,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import ErrorState from '../../components/ui/ErrorState';
-import { adminManagementAPI, coursesAPI, publicAcademicAPI } from '../../services/api';
+import Icon from '../../components/ui/Icon';
+import { adminManagementAPI,coursesAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 type ResourceStatus = 'pending' | 'approved' | 'rejected' | 'flagged' | 'archived';
 
@@ -103,7 +103,7 @@ const ResourcesScreen: React.FC = () => {
 
   useEffect(() => {
     fetchResources(1, true);
-  }, [selectedFilter, searchQuery]);
+  }, [fetchResources]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -119,9 +119,9 @@ const ResourcesScreen: React.FC = () => {
   const handleRetry = useCallback(() => {
     setLoading(true);
     fetchResources(1, true);
-  }, []);
+  }, [fetchResources]);
 
-  const handleUpdateStatus = async (resourceId: string, newStatus: ResourceStatus) => {
+  const _handleUpdateStatus = async (resourceId: string, newStatus: ResourceStatus) => {
     try {
       if (newStatus === 'approved') {
         await adminManagementAPI.approveResource(resourceId);
@@ -132,24 +132,24 @@ const ResourcesScreen: React.FC = () => {
         r.id === resourceId ? { ...r, status: newStatus } : r
       ));
       Alert.alert('Success', `Resource ${newStatus} successfully`);
-    } catch (err: any) {
+    } catch (_err: any) {
       Alert.alert('Error', 'Failed to update resource status');
     }
   };
 
-  const handleFlagResource = async (resourceId: string) => {
+  const _handleFlagResource = async (resourceId: string) => {
     try {
       await adminManagementAPI.flagResource(resourceId, 'Flagged by admin');
       setResources(prev => prev.map(r => 
         r.id === resourceId ? { ...r, status: 'flagged' } : r
       ));
       Alert.alert('Success', 'Resource flagged successfully');
-    } catch (err: any) {
+    } catch (_err: any) {
       Alert.alert('Error', 'Failed to flag resource');
     }
   };
 
-  const handleArchiveResource = async (resourceId: string) => {
+  const _handleArchiveResource = async (resourceId: string) => {
     Alert.alert(
       'Archive Resource',
       'Are you sure you want to archive this resource?',
@@ -164,7 +164,7 @@ const ResourcesScreen: React.FC = () => {
                 r.id === resourceId ? { ...r, status: 'archived' } : r
               ));
               Alert.alert('Success', 'Resource archived successfully');
-            } catch (err: any) {
+            } catch (_err: any) {
               Alert.alert('Error', 'Failed to archive resource');
             }
           }
@@ -180,7 +180,7 @@ const ResourcesScreen: React.FC = () => {
         r.id === resourceId ? { ...r, is_pinned: !currentPinned } : r
       ));
       Alert.alert('Success', `Resource ${!currentPinned ? 'pinned' : 'unpinned'} successfully`);
-    } catch (err: any) {
+    } catch (_err: any) {
       Alert.alert('Error', 'Failed to update pin status');
     }
   };
@@ -888,7 +888,7 @@ const UploadModal = ({
   description,
   resourceType,
   courseId,
-  courses,
+  _courses,
   loadingCourses,
   uploading,
   onSelectFile,

@@ -1,9 +1,9 @@
 // Protected Route Wrapper for CampusHub
 // Ensures user is authenticated before accessing protected routes
 
-import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { useEffect } from 'react';
+import { ActivityIndicator,StyleSheet,View } from 'react-native';
 import { useAuthStore } from '../../store/auth.store';
 import { colors } from '../../theme/colors';
 
@@ -18,7 +18,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   useEffect(() => {
     // Initialize auth state on mount
     initializeAuth();
-  }, []);
+  }, [initializeAuth]);
 
   useEffect(() => {
     // Check auth state after initialization
@@ -28,7 +28,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
         router.replace('/(auth)/login?reason=session_expired');
       }
     }
-  }, [isAuthenticated, isLoading, accessToken]);
+  }, [accessToken, isAuthenticated, isLoading, router]);
 
   // Show loading while checking auth state
   if (isLoading) {

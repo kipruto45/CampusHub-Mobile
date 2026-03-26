@@ -93,7 +93,7 @@ const signInWithGoogleNative = async (): Promise<NativeAuthResult> => {
     const googleModule = (await import('@react-native-google-signin/google-signin')) as any;
     GoogleSignin = googleModule.GoogleSignin;
     statusCodes = googleModule.statusCodes;
-  } catch (error) {
+  } catch (_error) {
     return {
       success: false,
       error: 'Google native module is not installed',
@@ -165,7 +165,7 @@ const signInWithMicrosoftNative = async (): Promise<NativeAuthResult> => {
     PublicClientApplication =
       msalModule.default ?? msalModule.PublicClientApplication;
     MSALPromptType = msalModule.MSALPromptType;
-  } catch (error) {
+  } catch (_error) {
     return {
       success: false,
       error: 'Microsoft native module is not installed',

@@ -1,11 +1,11 @@
 // Privacy Policy Screen for CampusHub
 
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
+import React from 'react';
+import { ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
+import { colors } from '../../theme/colors';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 const PrivacyScreen: React.FC = () => {
   const router = useRouter();

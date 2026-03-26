@@ -1,12 +1,12 @@
 import React from 'react';
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import Icon from '../ui/Icon';
 
 interface RecentSearchListProps {
-  items: Array<{ id: string; query: string }>;
+  items: { id: string; query: string }[];
   onSelect: (query: string) => void;
   onRemove: (id: string) => void;
   onClearAll: () => void;

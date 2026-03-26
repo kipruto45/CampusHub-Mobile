@@ -3,31 +3,28 @@
  * Manage badges, leaderboards, and points for the gamification system
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect,useRouter } from 'expo-router';
+import React,{ useCallback,useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  RefreshControl,
-  Alert,
-  TextInput,
-  Modal,
-  FlatList,
   ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useFocusEffect } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
 import * as adminService from '../../services/admin-management.service';
-import { Badge, GamificationStats, LeaderboardEntry } from '../../services/admin-management.service';
+import { Badge,GamificationStats,LeaderboardEntry } from '../../services/admin-management.service';
 
 const CATEGORIES = ['all', 'uploads', 'downloads', 'engagement', 'social', 'learning', 'special'];
 
 export default function GamificationManagementScreen() {
-  const router = useRouter();
-  const { } = useAuthStore();
+  const _router = useRouter();
   const [activeTab, setActiveTab] = useState<'overview' | 'badges' | 'leaderboard'>('overview');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,7 +44,7 @@ export default function GamificationManagementScreen() {
     requirement_value: 1,
   });
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       if (activeTab === 'overview') {
         const statsData = await adminService.getGamificationStats();
@@ -64,12 +61,12 @@ export default function GamificationManagementScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, leaderboardPeriod]);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [activeTab, selectedCategory, leaderboardPeriod])
+    }, [loadData])
   );
 
   const onRefresh = async () => {
@@ -93,7 +90,7 @@ export default function GamificationManagementScreen() {
       });
       loadData();
       Alert.alert('Success', 'Badge created successfully');
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to create badge');
     }
   };
@@ -102,7 +99,7 @@ export default function GamificationManagementScreen() {
     try {
       await adminService.updateBadge(badge.id, { is_active: !badge.is_active });
       loadData();
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to update badge');
     }
   };
@@ -112,7 +109,7 @@ export default function GamificationManagementScreen() {
       await adminService.refreshLeaderboard(leaderboardPeriod);
       loadData();
       Alert.alert('Success', 'Leaderboard refreshed');
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to refresh leaderboard');
     }
   };

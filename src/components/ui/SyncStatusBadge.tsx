@@ -1,10 +1,10 @@
 // Sync Status Badge Component - Shows sync status for offline actions
 
 import React from 'react';
-import { StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { StyleSheet,Text,View,ViewStyle } from 'react-native';
 
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
 import Icon from './Icon';
 
 type SyncStatus = 'synced' | 'pending' | 'syncing' | 'failed';

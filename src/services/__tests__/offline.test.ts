@@ -1,3 +1,5 @@
+import { syncQueueService } from '../offline';
+
 const mockStorage = new Map<string, string>();
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -23,8 +25,6 @@ jest.mock('expo-network', () => ({
     type: 'WIFI',
   })),
 }));
-
-import { syncQueueService } from '../offline';
 
 describe('offline sync queue', () => {
   beforeEach(async () => {

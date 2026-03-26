@@ -1,30 +1,30 @@
 // Certificates Screen
 // Lists user certificates, supports verification, and PDF download via backend.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-  TextInput,
-  Modal,
-  Linking,
-} from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
-import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { certificatesAPI, getApiBaseUrl, getAuthToken } from '../../services/api';
+import Card from '../../components/ui/Card';
+import Icon from '../../components/ui/Icon';
+import { certificatesAPI,getApiBaseUrl,getAuthToken } from '../../services/api';
 import { localDownloadsService } from '../../services/local-downloads.service';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 type CertificateSummary = {
   uniqueId: string;

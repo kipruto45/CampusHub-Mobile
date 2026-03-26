@@ -1,14 +1,14 @@
 // Resource Requests Screen for CampusHub
 // Browse and create resource requests
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,RefreshControl,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { resourceRequestsAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface ResourceRequest {
   id: string;
@@ -72,7 +72,7 @@ const ResourceRequestsScreen: React.FC = () => {
       setNewTitle('');
       setNewDescription('');
       fetchRequests();
-    } catch (err) {
+    } catch (_err) {
       Alert.alert('Error', 'Failed to create request');
     } finally {
       setCreating(false);

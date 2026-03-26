@@ -1,14 +1,14 @@
 // Admin Settings Screen for CampusHub
 // Admin account and app settings
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, Switch, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,ScrollView,StyleSheet,Switch,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 const SettingsScreen: React.FC = () => {
   const router = useRouter();
@@ -45,7 +45,7 @@ const SettingsScreen: React.FC = () => {
     try {
       setSavingPreference(field);
       await adminAPI.updatePreferences({ [field]: value });
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to update settings');
       if (field === 'email_notifications') setEmailNotifications((prev) => !prev);
       if (field === 'app_notifications') setAppNotifications((prev) => !prev);

@@ -1,20 +1,20 @@
 // Splash Screen for CampusHub
 // Premium minimal loading intro
 
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, Easing, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { colors, darkColors } from '../../theme/colors';
-import { spacing } from '../../theme/spacing';
-import { useAuthStore } from '../../store/auth.store';
+import React,{ useEffect, useRef } from 'react';
+import { Animated,Image,StyleSheet,Text,View } from 'react-native';
 import { resolveHomeRouteByRole } from '../../lib/auth-routing';
+import { useAuthStore } from '../../store/auth.store';
+import { colors,darkColors } from '../../theme/colors';
+import { spacing } from '../../theme/spacing';
 
 const SplashScreen: React.FC = () => {
   const router = useRouter();
   const { initializeAuth } = useAuthStore();
-  const fadeAnim = new Animated.Value(0);
-  const scaleAnim = new Animated.Value(0.8);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
     // Initialize auth state from persisted storage
@@ -48,7 +48,7 @@ const SplashScreen: React.FC = () => {
     }, 2500);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [fadeAnim, initializeAuth, router, scaleAnim]);
 
   return (
     <View style={styles.container}>

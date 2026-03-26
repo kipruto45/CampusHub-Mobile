@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback,useEffect,useMemo,useRef,useState } from 'react';
 
-import { searchService, SearchFilters, SearchSuggestion } from '../services/search.service';
+import { SearchFilters,searchService,SearchSuggestion } from '../services/search.service';
 
 const MIN_QUERY_LENGTH = 2;
 

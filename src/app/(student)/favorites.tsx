@@ -1,15 +1,15 @@
-import React from 'react';
-import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import React from 'react';
+import { FlatList,RefreshControl,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 
 import FavoriteItemCard from '../../components/favorites/FavoriteItemCard';
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState from '../../components/ui/ErrorState';
+import Icon from '../../components/ui/Icon';
 import Loading from '../../components/ui/Loading';
 import { useFavorites } from '../../hooks/useFavorites';
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
-import Icon from '../../components/ui/Icon';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 const tabs = [
   { label: 'Resources', value: 'resources' as const },

@@ -1,23 +1,22 @@
 // Library Share Sheet Component
 // Modal for sharing personal library files
 
-import React, { useCallback, useState } from 'react';
+import React,{ useCallback,useState } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
-  Alert,
+  View
 } from 'react-native';
 
+import { LibraryFile,libraryService } from '../../services/library.service';
+import { localDownloadsService } from '../../services/local-downloads.service';
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
+import { copyToClipboard,openNativeShareSheet } from '../../utils/share';
 import BottomSheet from '../ui/BottomSheet';
 import Icon from '../ui/Icon';
-import { libraryService, LibraryFile } from '../../services/library.service';
-import { localDownloadsService } from '../../services/local-downloads.service';
-import { copyToClipboard, openNativeShareSheet } from '../../utils/share';
 import { useToast } from '../ui/Toast';
 
 type Props = {
@@ -78,7 +77,7 @@ const LibraryShareSheet: React.FC<Props> = ({
       showToast('success', 'Link copied to clipboard');
       onShareComplete?.();
       return true;
-    } catch (err) {
+    } catch (_err) {
       showToast('error', 'Failed to copy link');
       return false;
     }
@@ -103,7 +102,7 @@ const LibraryShareSheet: React.FC<Props> = ({
         onShareComplete?.();
       }
       return result;
-    } catch (err) {
+    } catch (_err) {
       showToast('error', 'Failed to share');
       return false;
     }

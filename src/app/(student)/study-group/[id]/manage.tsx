@@ -1,13 +1,13 @@
 // Study Group Manage Screen for CampusHub
 // Admin management options for study groups
 
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Switch } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { colors } from '../../../../theme/colors';
-import { spacing, borderRadius } from '../../../../theme/spacing';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,ScrollView,StyleSheet,Switch,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../../../components/ui/Icon';
 import { studyGroupsAPI } from '../../../../services/api';
+import { colors } from '../../../../theme/colors';
+import { borderRadius,spacing } from '../../../../theme/spacing';
 
 interface StudyGroup {
   id: string;
@@ -26,22 +26,22 @@ const StudyGroupManageScreen: React.FC = () => {
   const [group, setGroup] = useState<StudyGroup | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetchGroupDetails();
-  }, [id]);
-
-  const fetchGroupDetails = async () => {
+  const fetchGroupDetails = useCallback(async () => {
     try {
       setLoading(true);
       const response = await studyGroupsAPI.get(id || '');
       const data = response.data.data || response.data;
       setGroup(data);
-    } catch (err: any) {
+    } catch (_err: any) {
       Alert.alert('Error', 'Failed to load group details');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    fetchGroupDetails();
+  }, [fetchGroupDetails]);
 
   const handleTogglePrivacy = async (value: boolean) => {
     if (!group) return;
@@ -51,7 +51,7 @@ const StudyGroupManageScreen: React.FC = () => {
       await studyGroupsAPI.update(id, { privacy: newPrivacy });
       setGroup({ ...group, privacy: newPrivacy });
       Alert.alert('Success', `Group is now ${newPrivacy}`);
-    } catch (err: any) {
+    } catch (_err: any) {
       Alert.alert('Error', 'Failed to update privacy settings');
     } finally {
       setSaving(false);
@@ -65,7 +65,7 @@ const StudyGroupManageScreen: React.FC = () => {
       await studyGroupsAPI.update(id, { allow_member_invites: value });
       setGroup({ ...group, allow_member_invites: value });
       Alert.alert('Success', value ? 'Members can now invite others' : 'Only admins can invite members');
-    } catch (err: any) {
+    } catch (_err: any) {
       Alert.alert('Error', 'Failed to update invite settings');
     } finally {
       setSaving(false);
@@ -86,7 +86,7 @@ const StudyGroupManageScreen: React.FC = () => {
               await studyGroupsAPI.delete(id);
               Alert.alert('Success', 'Group deleted successfully');
               router.replace('/(student)/study-groups');
-            } catch (err: any) {
+            } catch (_err: any) {
               Alert.alert('Error', 'Failed to delete group');
             }
           },
@@ -109,7 +109,7 @@ const StudyGroupManageScreen: React.FC = () => {
               await studyGroupsAPI.leave(id);
               Alert.alert('Success', 'You have left the group');
               router.replace('/(student)/study-groups');
-            } catch (err: any) {
+            } catch (_err: any) {
               Alert.alert('Error', 'Failed to leave group');
             }
           },

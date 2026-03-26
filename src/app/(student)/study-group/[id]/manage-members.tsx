@@ -1,13 +1,13 @@
 // Study Group Manage Members Screen for CampusHub
 // Admin can manage group members here
 
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, RefreshControl } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { colors } from '../../../../theme/colors';
-import { spacing, borderRadius } from '../../../../theme/spacing';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,RefreshControl,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../../../components/ui/Icon';
 import { studyGroupsAPI } from '../../../../services/api';
+import { colors } from '../../../../theme/colors';
+import { borderRadius,spacing } from '../../../../theme/spacing';
 
 interface Member {
   id: string;
@@ -29,22 +29,22 @@ const ManageMembersScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
 
-  useEffect(() => {
-    fetchMembers();
-  }, [id]);
-
-  const fetchMembers = async () => {
+  const fetchMembers = useCallback(async () => {
     try {
       setLoading(true);
       const response = await studyGroupsAPI.getMembers(id || '');
       const data = response.data.data || response.data;
       setMembers(data.results || data);
-    } catch (err: any) {
+    } catch (_err: any) {
       Alert.alert('Error', 'Failed to load members');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    fetchMembers();
+  }, [fetchMembers]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -66,7 +66,7 @@ const ManageMembersScreen: React.FC = () => {
               await studyGroupsAPI.removeMember(id, member.user.id);
               Alert.alert('Success', 'Member removed successfully');
               fetchMembers();
-            } catch (err: any) {
+            } catch (_err: any) {
               Alert.alert('Error', 'Failed to remove member');
             }
           },
@@ -88,7 +88,7 @@ const ManageMembersScreen: React.FC = () => {
               await studyGroupsAPI.updateMemberRole(id, member.user.id, { role: newRole });
               Alert.alert('Success', 'Role updated successfully');
               fetchMembers();
-            } catch (err: any) {
+            } catch (_err: any) {
               Alert.alert('Error', 'Failed to update role');
             }
           },

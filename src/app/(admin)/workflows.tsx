@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  StyleSheet,
-  RefreshControl,
-  Modal,
-  Alert,
-} from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useEffect,useState } from 'react';
+import {
+  Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { adminManagementAPI } from '../../services/api';
 
 interface Workflow {
@@ -56,7 +56,7 @@ export default function Workflows() {
   const router = useRouter();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [executions, setExecutions] = useState<WorkflowExecution[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
@@ -131,24 +131,24 @@ export default function Workflows() {
         schedule_interval_minutes: 60,
       });
       fetchWorkflows();
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Network error');
     }
   };
 
-  const toggleWorkflow = async (workflowId: string, currentStatus: string) => {
+  const _toggleWorkflow = async (workflowId: string, currentStatus: string) => {
     const newStatus = currentStatus === 'active' ? 'paused' : 'active';
 
     try {
       await adminManagementAPI.updateWorkflow(workflowId, { status: newStatus });
       Alert.alert('Success', `Workflow ${newStatus}`);
       fetchWorkflows();
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to update workflow');
     }
   };
 
-  const runWorkflow = async (workflowId: string) => {
+  const _runWorkflow = async (workflowId: string) => {
     try {
       await adminManagementAPI.runWorkflow(workflowId);
       Alert.alert('Success', 'Workflow started');
@@ -156,12 +156,12 @@ export default function Workflows() {
       if (selectedWorkflow?.id === workflowId) {
         fetchExecutions(workflowId);
       }
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Network error');
     }
   };
 
-  const deleteWorkflow = async (workflowId: string) => {
+  const _deleteWorkflow = async (workflowId: string) => {
     Alert.alert(
       'Delete Workflow',
       'Are you sure you want to delete this workflow?',
@@ -175,7 +175,7 @@ export default function Workflows() {
               await adminManagementAPI.deleteWorkflow(workflowId);
               Alert.alert('Success', 'Workflow deleted');
               fetchWorkflows();
-            } catch (error) {
+            } catch (_error) {
               Alert.alert('Error', 'Failed to delete workflow');
             }
           },

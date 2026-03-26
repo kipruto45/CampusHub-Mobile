@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback,useEffect,useMemo,useState } from 'react';
 
 import { favoritesAPI } from '../services/api';
-import { networkService, syncQueueService } from '../services/offline';
+import { networkService,syncQueueService } from '../services/offline';
 
 export type FavoriteTargetType = 'resource' | 'file' | 'folder';
 export type FavoriteFilterType = 'resources' | 'files' | 'folders';

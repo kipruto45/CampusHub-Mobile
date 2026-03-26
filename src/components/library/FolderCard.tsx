@@ -1,9 +1,9 @@
 // Folder Card Component
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
-import Icon from '../ui/Icon';
+import { StyleSheet,Text,TouchableOpacity,View,ViewStyle } from 'react-native';
 import { LibraryFolder } from '../../services/library.service';
 import { colors } from '../../theme/colors';
+import Icon from '../ui/Icon';
 
 interface FolderCardProps {
   folder: LibraryFolder;

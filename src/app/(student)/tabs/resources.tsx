@@ -1,32 +1,32 @@
 // Resources Screen for CampusHub
 // Browse all learning resources - Backend-driven
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  FlatList,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-  Modal,
-} from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../../theme/colors';
-import { spacing, borderRadius } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Badge from '../../../components/ui/Badge';
-import Icon from '../../../components/ui/Icon';
-import ErrorState from '../../../components/ui/ErrorState';
+import React,{ useCallback,useEffect,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import BookmarkButton from '../../../components/resources/BookmarkButton';
 import FavoriteButton from '../../../components/resources/FavoriteButton';
-import { resourcesAPI, publicAcademicAPI, coursesAPI } from '../../../services/api';
-import { resourcesService } from '../../../services/resources.service';
+import Badge from '../../../components/ui/Badge';
+import ErrorState from '../../../components/ui/ErrorState';
+import Icon from '../../../components/ui/Icon';
+import { coursesAPI,publicAcademicAPI,resourcesAPI } from '../../../services/api';
 import { bookmarksService } from '../../../services/bookmarks.service';
 import { favoritesService } from '../../../services/favorites.service';
+import { resourcesService } from '../../../services/resources.service';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 import { openNativeShareSheet } from '../../../utils/share';
 
 // Types matching backend response
@@ -311,7 +311,7 @@ const ResourcesScreen: React.FC = () => {
     fetchResources();
   }, [fetchResources]);
 
-  const resetDraftCourseAndUnit = () => {
+  const _resetDraftCourseAndUnit = () => {
     setCourses([]);
     setUnits([]);
     setDraftFilters((current) => ({
@@ -476,7 +476,7 @@ const ResourcesScreen: React.FC = () => {
   };
 
   const getOptionLabel = (
-    options: Array<{ id: string; name: string; code?: string }>,
+    options: { id: string; name: string; code?: string }[],
     id: string
   ) => {
     const match = options.find((option) => option.id === id);
@@ -492,7 +492,7 @@ const ResourcesScreen: React.FC = () => {
     appliedFilters.unit ? getOptionLabel(units, appliedFilters.unit) : '',
   ].filter(Boolean);
 
-  const getResourceTypeColor = (type: string) => {
+  const _getResourceTypeColor = (type: string) => {
     switch (type?.toLowerCase()) {
       case 'notes': return colors.primary[500];
       case 'past_exam':

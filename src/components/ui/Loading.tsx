@@ -1,7 +1,7 @@
 // Loading Component for CampusHub
 
 import React from 'react';
-import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
+import { ActivityIndicator,StyleSheet,Text,View } from 'react-native';
 import { colors } from '../../theme/colors';
 
 interface LoadingProps {

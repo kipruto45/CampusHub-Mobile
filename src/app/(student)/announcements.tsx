@@ -1,17 +1,17 @@
 // Announcements Screen for CampusHub
 // School-wide announcements with filters and details - Backend-driven
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, TextInput, Modal, ScrollView, RefreshControl, ActivityIndicator, Linking, Alert, Share } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useRef,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,Linking,Modal,RefreshControl,ScrollView,Share,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { announcementsAPI } from '../../services/api';
 import { localDownloadsService } from '../../services/local-downloads.service';
 import { useAuthStore } from '../../store/auth.store';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { spacing } from '../../theme/spacing';
 
 // Announcement Types - matching backend response
 interface AnnouncementAttachment {
@@ -406,7 +406,7 @@ const AnnouncementsScreen: React.FC = () => {
       try {
         const downloadKey = await ensureAttachmentAvailable(announcement, attachment);
         await localDownloadsService.openLocalFile(downloadKey);
-      } catch (err) {
+      } catch (_err) {
         try {
           await Linking.openURL(remoteUrl);
         } catch {
@@ -486,7 +486,7 @@ const AnnouncementsScreen: React.FC = () => {
         title: announcement.title,
         message,
       });
-    } catch (err) {
+    } catch (_err) {
       Alert.alert('Share failed', 'Unable to share this announcement right now.');
     }
   }, []);

@@ -1,12 +1,12 @@
 // Contact Support Screen for CampusHub
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useState } from 'react';
+import { Alert,KeyboardAvoidingView,Linking,Platform,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 // CampusHub Contact Information
 const CAMPUSHUB_EMAIL = 'kiprutovictor39@gmail.com';
@@ -25,6 +25,21 @@ const ContactSupportScreen: React.FC = () => {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
 
+  const openSupportEmail = async (nextSubject?: string, nextMessage?: string) => {
+    const query = [
+      nextSubject ? `subject=${encodeURIComponent(nextSubject)}` : '',
+      nextMessage ? `body=${encodeURIComponent(nextMessage)}` : '',
+    ]
+      .filter(Boolean)
+      .join('&');
+    const emailUrl = `mailto:${CAMPUSHUB_EMAIL}${query ? `?${query}` : ''}`;
+    const canOpen = await Linking.canOpenURL(emailUrl);
+    if (!canOpen) {
+      throw new Error('Unable to open email client.');
+    }
+    await Linking.openURL(emailUrl);
+  };
+
   const contactOptions: ContactOption[] = [
     {
       icon: 'mail',
@@ -32,15 +47,9 @@ const ContactSupportScreen: React.FC = () => {
       description: CAMPUSHUB_EMAIL,
       action: async () => {
         try {
-          const emailUrl = `mailto:${CAMPUSHUB_EMAIL}`;
-          const canOpen = await Linking.canOpenURL(emailUrl);
-          if (canOpen) {
-            await Linking.openURL(emailUrl);
-          } else {
-            Alert.alert('Error', 'Unable to open email client. Please email us directly at ' + CAMPUSHUB_EMAIL);
-          }
-        } catch (error) {
-          Alert.alert('Error', 'Failed to open email client.');
+          await openSupportEmail('CampusHub support');
+        } catch (_error) {
+          Alert.alert('Error', `Unable to open email client. Please email us directly at ${CAMPUSHUB_EMAIL}.`);
         }
       },
     },
@@ -57,7 +66,7 @@ const ContactSupportScreen: React.FC = () => {
           } else {
             Alert.alert('Error', 'Unable to make phone calls on this device.');
           }
-        } catch (error) {
+        } catch (_error) {
           Alert.alert('Error', 'Failed to initiate phone call.');
         }
       },
@@ -66,17 +75,27 @@ const ContactSupportScreen: React.FC = () => {
       icon: 'chatbubbles',
       title: 'Live Chat',
       description: 'Available 9AM - 6PM',
-      action: () => {
-        // Open live chat - using a web-based chat widget URL
-        const chatUrl = 'https://campushub.com/chat';
-        Linking.openURL(chatUrl).catch(() => {
-          Alert.alert('Live Chat', 'Starting live chat support...\n\nOur support team is available from 9AM to 6PM.');
-        });
+      action: async () => {
+        const whatsappUrl = `https://wa.me/${CAMPUSHUB_PHONE.replace(/[^\d]/g, '')}?text=${encodeURIComponent(
+          'Hello CampusHub support, I need help.'
+        )}`;
+        try {
+          await Linking.openURL(whatsappUrl);
+        } catch {
+          try {
+            await openSupportEmail('CampusHub live chat request', 'Hello CampusHub support, I need help.');
+          } catch {
+            Alert.alert(
+              'Live Chat',
+              `Reach support on WhatsApp or email ${CAMPUSHUB_EMAIL} if chat is unavailable right now.`
+            );
+          }
+        }
       },
     },
   ];
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!subject.trim()) {
       Alert.alert('Error', 'Please enter a subject');
       return;
@@ -87,15 +106,18 @@ const ContactSupportScreen: React.FC = () => {
     }
 
     setSending(true);
-    // Simulate sending
-    setTimeout(() => {
-      setSending(false);
+    try {
+      await openSupportEmail(subject.trim(), message.trim());
       Alert.alert(
-        'Message Sent',
-        'Thank you for contacting us. We will get back to you within 24 hours.',
+        'Email Draft Ready',
+        'Your support message has been opened in your email app.',
         [{ text: 'OK', onPress: () => router.back() }]
       );
-    }, 1500);
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'Failed to open email client.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (

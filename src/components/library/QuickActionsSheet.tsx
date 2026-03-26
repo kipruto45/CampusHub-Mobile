@@ -1,14 +1,14 @@
 // Quick Actions Sheet Component
 import React from 'react';
 import {
-  View,
-  Text,
   StyleSheet,
-  ViewStyle,
+  Text,
   TouchableOpacity,
+  View,
+  ViewStyle,
 } from 'react-native';
-import Icon from '../ui/Icon';
 import { colors } from '../../theme/colors';
+import Icon from '../ui/Icon';
 
 interface QuickActionsSheetProps {
   visible: boolean;

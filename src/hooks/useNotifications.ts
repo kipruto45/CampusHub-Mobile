@@ -1,8 +1,8 @@
 // Notifications Hook for CampusHub Mobile App
 // Provides state management and API calls for notifications
 
-import { useState, useCallback, useEffect } from 'react';
-import { notificationsApi, Notification, NotificationListResponse, UnreadCountResponse } from '../services/notifications-api.service';
+import { useCallback,useEffect,useState } from 'react';
+import { Notification,NotificationListResponse,notificationsApi,UnreadCountResponse } from '../services/notifications-api.service';
 import { useAuthStore } from '../store/auth.store';
 
 interface UseNotificationsState {
@@ -36,7 +36,7 @@ export function useNotifications(): UseNotifications {
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [totalCount, setTotalCount] = useState<number>(0);
+  const [_totalCount, setTotalCount] = useState<number>(0);
 
   const fetchNotifications = useCallback(async (params?: {
     page?: number;

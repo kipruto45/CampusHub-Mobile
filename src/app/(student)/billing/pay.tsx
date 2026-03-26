@@ -1,18 +1,20 @@
 // One-time Payment Screen
 
-import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import { Alert,ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Button from '../../../components/ui/Button';
+import Icon from '../../../components/ui/Icon';
 import Input from '../../../components/ui/Input';
 import { paymentsAPI } from '../../../services/api';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 type Provider = 'stripe' | 'paypal' | 'mobile_money';
+type ProviderStatus = { configured?: boolean; error?: string };
+type ProviderStatusMap = Partial<Record<Provider, ProviderStatus>>;
 
 const parseAmount = (value: string): number | null => {
   const cleaned = String(value || '').trim().replace(/,/g, '');
@@ -20,6 +22,25 @@ const parseAmount = (value: string): number | null => {
   const parsed = Number(cleaned);
   if (Number.isNaN(parsed) || parsed <= 0) return null;
   return parsed;
+};
+
+const normalizePaymentError = (error: any): string => {
+  const message = String(
+    error?.response?.data?.error ||
+      error?.response?.data?.message ||
+      error?.message ||
+      ''
+  ).trim();
+
+  if (/you did not provide an api key/i.test(message) || /set stripe_secret_key/i.test(message)) {
+    return 'Card payments are not configured on the server yet. Please add a Stripe secret key before retrying.';
+  }
+
+  if (/failed to get paypal access token/i.test(message) || /paypal_client_id|paypal_client_secret/i.test(message)) {
+    return 'PayPal payments are not configured on the server yet. Please add valid PayPal credentials before retrying.';
+  }
+
+  return message || 'Unable to start payment.';
 };
 
 const OneTimePaymentScreen: React.FC = () => {
@@ -30,8 +51,11 @@ const OneTimePaymentScreen: React.FC = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [lastPaymentId, setLastPaymentId] = useState<string | null>(null);
+  const [providers, setProviders] = useState<ProviderStatusMap>({});
 
   const amountNumber = useMemo(() => parseAmount(amount), [amount]);
+  const paymentCurrency = provider === 'mobile_money' ? 'KES' : 'USD';
+  const providerStatusAvailable = useMemo(() => Object.keys(providers).length > 0, [providers]);
 
   const providerOptions = useMemo(
     () => [
@@ -42,10 +66,62 @@ const OneTimePaymentScreen: React.FC = () => {
     []
   );
 
+  const isProviderConfigured = useCallback(
+    (providerId: Provider) => {
+      if (!providerStatusAvailable) return true;
+      return Boolean(providers?.[providerId]?.configured);
+    },
+    [providerStatusAvailable, providers]
+  );
+
+  const selectedProviderError = useMemo(() => {
+    if (!providerStatusAvailable || isProviderConfigured(provider)) {
+      return '';
+    }
+    return String(providers?.[provider]?.error || 'This payment method is not configured right now.');
+  }, [isProviderConfigured, provider, providerStatusAvailable, providers]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadProviders = async () => {
+      try {
+        const response = await paymentsAPI.getPaymentProviders();
+        const payload = response?.data?.data ?? response?.data ?? {};
+        const providerPayload = (payload?.providers || {}) as ProviderStatusMap;
+        if (!mounted) return;
+        setProviders(providerPayload);
+        setProvider((current) => {
+          if (providerPayload?.[current]?.configured) {
+            return current;
+          }
+          return (
+            (providerOptions.find((option) => providerPayload?.[option.id as Provider]?.configured)?.id as Provider) ||
+            current
+          );
+        });
+      } catch {
+        if (mounted) {
+          setProviders({});
+        }
+      }
+    };
+
+    loadProviders();
+    return () => {
+      mounted = false;
+    };
+  }, [providerOptions]);
+
   const handleStartPayment = useCallback(async () => {
     const parsedAmount = parseAmount(amount);
     if (!parsedAmount) {
       Alert.alert('Amount', 'Enter a valid amount greater than 0.');
+      return;
+    }
+
+    if (!isProviderConfigured(provider)) {
+      Alert.alert('Payment method unavailable', selectedProviderError);
       return;
     }
 
@@ -60,7 +136,7 @@ const OneTimePaymentScreen: React.FC = () => {
       const response = await paymentsAPI.createPayment({
         provider,
         amount: parsedAmount,
-        currency: 'USD',
+        currency: paymentCurrency,
         description: description || 'CampusHub payment',
         payment_type: 'one_time',
         phone_number: provider === 'mobile_money' ? phoneNumber : undefined,
@@ -89,17 +165,11 @@ const OneTimePaymentScreen: React.FC = () => {
         Alert.alert('Payment started', 'Your payment has been initiated.');
       }
     } catch (err: any) {
-      Alert.alert(
-        'Payment Failed',
-        err?.response?.data?.error ||
-          err?.response?.data?.message ||
-          err?.message ||
-          'Unable to start payment.'
-      );
+      Alert.alert('Payment Failed', normalizePaymentError(err));
     } finally {
       setSubmitting(false);
     }
-  }, [amount, description, phoneNumber, provider]);
+  }, [amount, description, isProviderConfigured, paymentCurrency, phoneNumber, provider, selectedProviderError]);
 
   const handleCheckStatus = useCallback(async () => {
     if (!lastPaymentId) return;
@@ -141,18 +211,27 @@ const OneTimePaymentScreen: React.FC = () => {
                 style={[
                   styles.providerChip,
                   provider === opt.id ? styles.providerChipActive : null,
+                  !isProviderConfigured(opt.id as Provider) ? styles.providerChipDisabled : null,
                 ]}
                 onPress={() => setProvider(opt.id as Provider)}
+                disabled={!isProviderConfigured(opt.id as Provider)}
               >
                 <Icon
                   name={opt.icon as any}
                   size={16}
-                  color={provider === opt.id ? colors.primary[600] : colors.text.tertiary}
+                  color={
+                    !isProviderConfigured(opt.id as Provider)
+                      ? colors.text.tertiary
+                      : provider === opt.id
+                        ? colors.primary[600]
+                        : colors.text.tertiary
+                  }
                 />
                 <Text
                   style={[
                     styles.providerChipText,
                     provider === opt.id ? styles.providerChipTextActive : null,
+                    !isProviderConfigured(opt.id as Provider) ? styles.providerChipTextDisabled : null,
                   ]}
                 >
                   {opt.label}
@@ -161,14 +240,28 @@ const OneTimePaymentScreen: React.FC = () => {
             ))}
           </View>
 
+          <Text style={styles.currencyHint}>
+            {provider === 'mobile_money'
+              ? 'Mobile Money payments are processed in KES automatically.'
+              : 'Card and PayPal payments continue to use USD.'}
+          </Text>
+
+          {selectedProviderError ? (
+            <Text style={styles.providerError}>{selectedProviderError}</Text>
+          ) : null}
+
           <Input
-            label="Amount (USD)"
+            label={`Amount (${paymentCurrency})`}
             placeholder="e.g. 9.99"
             value={amount}
             onChangeText={setAmount}
             keyboardType="decimal-pad"
             autoCapitalize="none"
-            hint={amountNumber ? `You will pay USD ${amountNumber}` : 'Enter the amount to pay.'}
+            hint={
+              amountNumber
+                ? `You will pay ${paymentCurrency} ${amountNumber}`
+                : `Enter the amount to pay in ${paymentCurrency}.`
+            }
             containerStyle={{ marginTop: spacing[4] }}
           />
 
@@ -199,7 +292,7 @@ const OneTimePaymentScreen: React.FC = () => {
               title={submitting ? 'Starting...' : 'Continue'}
               onPress={handleStartPayment}
               loading={submitting}
-              disabled={submitting}
+              disabled={submitting || !isProviderConfigured(provider)}
               fullWidth
               icon={<Icon name="arrow-forward" size={18} color={colors.text.inverse} />}
               iconPosition="right"
@@ -274,8 +367,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.gray[100],
   },
   providerChipActive: { backgroundColor: colors.primary[50], borderWidth: 1, borderColor: colors.primary[200] },
+  providerChipDisabled: { opacity: 0.45 },
   providerChipText: { fontSize: 13, fontWeight: '700', color: colors.text.secondary },
   providerChipTextActive: { color: colors.primary[700] },
+  providerChipTextDisabled: { color: colors.text.tertiary },
+  currencyHint: { marginTop: spacing[3], fontSize: 12, color: colors.text.secondary },
+  providerError: { marginTop: spacing[2], fontSize: 12, color: colors.error, lineHeight: 18 },
 
   statusCard: {
     marginTop: spacing[4],
@@ -294,4 +391,3 @@ const styles = StyleSheet.create({
 });
 
 export default OneTimePaymentScreen;
-

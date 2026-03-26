@@ -1,11 +1,9 @@
 // Offline Banner Component - Shows connectivity status
 
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, StatusBar } from 'react-native';
+import React,{ useEffect } from 'react';
+import { Animated,StatusBar,StyleSheet,Text,View } from 'react-native';
 import { useNetworkStatus } from '../services/offline';
 import Icon from './ui/Icon';
-
-const { width } = Dimensions.get('window');
 
 interface OfflineBannerProps {
   style?: 'fixed' | 'absolute';

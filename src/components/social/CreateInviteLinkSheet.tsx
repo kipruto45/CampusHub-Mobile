@@ -1,11 +1,10 @@
 // CreateInviteLinkSheet Component - Create new invite link
 // CampusHub Mobile App
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, ScrollView, Modal, TextInput } from 'react-native';
+import React,{ useState } from 'react';
+import { Modal,ScrollView,StyleSheet,Switch,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 import Icon from '../ui/Icon';
 import { useToast } from '../ui/Toast';
 
@@ -63,7 +62,7 @@ export default function CreateInviteLinkSheet({ visible, onClose, onCreate }: Cr
       await onCreate(data);
       resetForm();
       onClose();
-    } catch (error) {
+    } catch (_error) {
       showToast('error', 'Failed to create invite link');
     } finally {
       setLoading(false);

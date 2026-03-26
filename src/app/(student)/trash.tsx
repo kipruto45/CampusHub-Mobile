@@ -1,14 +1,14 @@
 // Trash Screen for CampusHub
 // Deleted files management with restore and permanent delete - Backend-driven
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,RefreshControl,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { trashAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { spacing } from '../../theme/spacing';
 
 // Trash Item Types - matching backend response
 interface TrashItem {

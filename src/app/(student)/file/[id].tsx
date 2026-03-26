@@ -1,34 +1,33 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { Stack,useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  Platform,
-  TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 
+import * as Sharing from 'expo-sharing';
 import LibraryShareSheet from '../../../components/library/LibraryShareSheet';
 import Icon from '../../../components/ui/Icon';
+import { useToast } from '../../../components/ui/Toast';
+import { strings } from '../../../constants/strings';
 import {
   formatFileSize,
   formatRelativeTime,
-  libraryService,
   LibraryFile,
+  libraryService,
 } from '../../../services/library.service';
 import { localDownloadsService } from '../../../services/local-downloads.service';
-import * as Sharing from 'expo-sharing';
-import { useToast } from '../../../components/ui/Toast';
-import { strings } from '../../../constants/strings';
 import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
 import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 type PreviewInfo = {
   is_previewable: boolean;
@@ -70,7 +69,7 @@ export default function LibraryFileDetailScreen() {
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<'preview' | 'download' | null>(null);
   const [editedTitle, setEditedTitle] = useState<string>('');
-  const [saving, setSaving] = useState(false);
+  const [_saving, setSaving] = useState(false);
 
   // Initialize edited title when file loads
   useEffect(() => {
@@ -185,7 +184,7 @@ export default function LibraryFileDetailScreen() {
     } finally {
       setFavoriteLoading(false);
     }
-  }, [file]);
+  }, [file, showToast]);
 
   const metadata = file
     ? [

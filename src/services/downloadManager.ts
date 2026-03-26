@@ -27,7 +27,7 @@ interface DownloadManagerState {
 
 class DownloadManager {
   private tasks: Map<string, DownloadTask> = new Map();
-  private listeners: Array<(state: DownloadManagerState) => void> = [];
+  private listeners: ((state: DownloadManagerState) => void)[] = [];
   private activeCount: number = 0;
 
   constructor() {

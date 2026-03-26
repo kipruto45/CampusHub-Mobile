@@ -1,9 +1,9 @@
 // Storage Summary Card Component
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
-import Icon from '../ui/Icon';
-import { StorageSummary, formatFileSize } from '../../services/library.service';
+import { StyleSheet,Text,TouchableOpacity,View,ViewStyle } from 'react-native';
+import { StorageSummary,formatFileSize } from '../../services/library.service';
 import { colors } from '../../theme/colors';
+import Icon from '../ui/Icon';
 
 interface StorageSummaryCardProps {
   storage: StorageSummary;

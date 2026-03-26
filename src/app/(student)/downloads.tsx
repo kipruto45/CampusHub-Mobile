@@ -1,29 +1,29 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
-  ActivityIndicator,
-  Platform,
-  Linking,
-  TextInput,
-} from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import NetInfo from '@react-native-community/netinfo';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Linking,
+  Platform,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import ErrorState from '../../components/ui/ErrorState';
 import Icon from '../../components/ui/Icon';
 import { useToast } from '../../components/ui/Toast';
-import ErrorState from '../../components/ui/ErrorState';
-import { downloadsAPI, resourcesAPI } from '../../services/api';
-import { localDownloadsService, LocalDownloadRecord } from '../../services/local-downloads.service';
-import { libraryService } from '../../services/library.service';
 import { strings } from '../../constants/strings';
+import { downloadsAPI,resourcesAPI } from '../../services/api';
+import { libraryService } from '../../services/library.service';
+import { LocalDownloadRecord,localDownloadsService } from '../../services/local-downloads.service';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 const formatNumber = (value: number) => {
   try {

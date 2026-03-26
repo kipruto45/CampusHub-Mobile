@@ -1,8 +1,8 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, ViewStyle } from 'react-native';
+import { ActivityIndicator,StyleSheet,Text,TouchableOpacity,ViewStyle } from 'react-native';
 
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
 import Icon from '../ui/Icon';
 
 type Props = {

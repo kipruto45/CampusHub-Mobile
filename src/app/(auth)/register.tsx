@@ -1,30 +1,30 @@
 // Register Screen for CampusHub
 // Simplified registration with just email and full name
 
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Image,
-  Linking,
-} from 'react-native';
-import { useToast } from '../../components/ui/Toast';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Input from '../../components/ui/Input';
+import React,{ useState } from 'react';
+import {
+  Image,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
-import { useAuthStore } from '../../store/auth.store';
+import Input from '../../components/ui/Input';
+import { useToast } from '../../components/ui/Toast';
 import { authAPI } from '../../services/api';
+import { canUseNativeProvider,signInWithNativeProvider } from '../../services/nativeSocialAuth';
 import { exchangeNativeTokens } from '../../services/socialAuth';
-import { canUseNativeProvider, signInWithNativeProvider } from '../../services/nativeSocialAuth';
+import { useAuthStore } from '../../store/auth.store';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 const RegisterScreen: React.FC = () => {
   const router = useRouter();
@@ -110,9 +110,13 @@ const RegisterScreen: React.FC = () => {
 
     try {
       setMagicBusy(true);
-      await authAPI.requestMagicLink(email.trim().toLowerCase());
+      const normalizedEmail = email.trim().toLowerCase();
+      await authAPI.requestMagicLink(normalizedEmail);
       showToast('success', 'Check your email for a one-tap sign-in link.');
-      router.push('/(auth)/magic-link');
+      router.push({
+        pathname: '/(auth)/magic-link',
+        params: { email: normalizedEmail, requested: '1' },
+      });
     } catch (err: any) {
       const message = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Unable to send magic link.';
       showToast('error', message);

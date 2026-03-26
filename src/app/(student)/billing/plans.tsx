@@ -1,26 +1,28 @@
 // Billing Plans Screen
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-} from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Button from '../../../components/ui/Button';
+import Icon from '../../../components/ui/Icon';
+import Input from '../../../components/ui/Input';
 import { paymentsAPI } from '../../../services/api';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 type BillingPeriod = 'monthly' | 'yearly';
+type Provider = 'stripe' | 'paypal' | 'mobile_money';
 
 type Plan = {
   id: string;
@@ -43,12 +45,44 @@ type Plan = {
   stripe_yearly_price_id: string;
 };
 
+type ProviderStatus = {
+  configured?: boolean;
+  error?: string;
+};
+
+type ProviderStatusMap = Partial<Record<Provider, ProviderStatus>>;
+
+const PROVIDER_OPTIONS: { id: Provider; label: string; icon: string }[] = [
+  { id: 'stripe', label: 'Card', icon: 'card' },
+  { id: 'paypal', label: 'PayPal', icon: 'wallet' },
+  { id: 'mobile_money', label: 'Mobile Money', icon: 'cash' },
+];
+
 const formatMoney = (value: any, currency = 'USD') => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
   const parsed = Number(raw);
   if (Number.isNaN(parsed)) return `${currency} ${raw}`;
   return `${currency} ${parsed.toFixed(parsed % 1 === 0 ? 0 : 2)}`;
+};
+
+const normalizePaymentError = (error: any): string => {
+  const message = String(
+    error?.response?.data?.error ||
+      error?.response?.data?.message ||
+      error?.message ||
+      ''
+  ).trim();
+
+  if (/you did not provide an api key/i.test(message) || /set stripe_secret_key/i.test(message)) {
+    return 'Card subscriptions are not configured on the server yet. Please add a Stripe secret key before retrying.';
+  }
+
+  if (/failed to get paypal access token/i.test(message) || /paypal_client_id|paypal_client_secret/i.test(message)) {
+    return 'PayPal subscriptions are not configured on the server yet. Please add valid PayPal credentials before retrying.';
+  }
+
+  return message || 'Unable to start checkout.';
 };
 
 const PlansScreen: React.FC = () => {
@@ -59,7 +93,21 @@ const PlansScreen: React.FC = () => {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [subscription, setSubscription] = useState<any | null>(null);
   const [currentPlan, setCurrentPlan] = useState<any | null>(null);
+  const [providers, setProviders] = useState<ProviderStatusMap>({});
+  const [provider, setProvider] = useState<Provider>('stripe');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [startingPlanId, setStartingPlanId] = useState<string | null>(null);
+  const [startingTrial, setStartingTrial] = useState(false);
+
+  const selectPreferredProvider = useCallback(
+    (providerMap: ProviderStatusMap, current: Provider): Provider => {
+      if (providerMap?.[current]?.configured) {
+        return current;
+      }
+      return PROVIDER_OPTIONS.find((option) => providerMap?.[option.id]?.configured)?.id || current;
+    },
+    []
+  );
 
   const loadPlans = useCallback(async () => {
     try {
@@ -70,7 +118,11 @@ const PlansScreen: React.FC = () => {
 
       const plansPayload = plansRes?.data?.data ?? plansRes?.data ?? {};
       const results = Array.isArray(plansPayload?.plans) ? plansPayload.plans : [];
+      const providerPayload = (plansPayload?.providers || {}) as ProviderStatusMap;
+
       setPlans(results);
+      setProviders(providerPayload);
+      setProvider((current) => selectPreferredProvider(providerPayload, current));
 
       const subPayload = subRes?.data?.data ?? subRes?.data ?? {};
       setSubscription(subPayload?.subscription ?? null);
@@ -87,36 +139,79 @@ const PlansScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [selectPreferredProvider]);
 
   useEffect(() => {
     loadPlans();
   }, [loadPlans]);
 
+  const providerStatusAvailable = useMemo(() => Object.keys(providers).length > 0, [providers]);
   const currentPlanId = useMemo(() => String(currentPlan?.id || ''), [currentPlan]);
   const currentPlanLabel = useMemo(
     () => String(currentPlan?.name || currentPlan?.tier || '').trim(),
     [currentPlan]
   );
 
-  const getPriceLabel = (plan: Plan) => {
-    const currency = 'USD';
-    const price = billingPeriod === 'monthly' ? plan.price_monthly : plan.price_yearly;
-    const suffix = billingPeriod === 'monthly' ? '/mo' : '/yr';
-    const formatted = formatMoney(price, currency);
-    return formatted ? `${formatted}${suffix}` : '';
-  };
+  const isProviderConfigured = useCallback(
+    (providerId: Provider) => {
+      if (!providerStatusAvailable) {
+        return true;
+      }
+      return Boolean(providers?.[providerId]?.configured);
+    },
+    [providerStatusAvailable, providers]
+  );
 
-  const canPurchase = (plan: Plan) =>
-    billingPeriod === 'monthly'
-      ? Boolean(plan.stripe_monthly_price_id)
-      : Boolean(plan.stripe_yearly_price_id);
+  const selectedProviderError = useMemo(() => {
+    if (!providerStatusAvailable || isProviderConfigured(provider)) {
+      return '';
+    }
+    return String(providers?.[provider]?.error || 'This payment method is not configured right now.');
+  }, [isProviderConfigured, provider, providerStatusAvailable, providers]);
+
+  const getPlanAmount = useCallback(
+    (plan: Plan) => Number(billingPeriod === 'monthly' ? plan.price_monthly : plan.price_yearly || 0),
+    [billingPeriod]
+  );
+
+  const getPriceLabel = useCallback(
+    (plan: Plan) => {
+      const currency = provider === 'mobile_money' ? 'KES' : 'USD';
+      const price = billingPeriod === 'monthly' ? plan.price_monthly : plan.price_yearly;
+      const suffix = billingPeriod === 'monthly' ? '/mo' : '/yr';
+      const formatted = formatMoney(price, currency);
+      return formatted ? `${formatted}${suffix}` : '';
+    },
+    [billingPeriod, provider]
+  );
+
+  const hasAnyConfiguredProvider = useMemo(() => {
+    if (!providerStatusAvailable) {
+      return true;
+    }
+    return PROVIDER_OPTIONS.some((option) => isProviderConfigured(option.id));
+  }, [isProviderConfigured, providerStatusAvailable]);
+
+  const canPurchase = useCallback(
+    (plan: Plan) => getPlanAmount(plan) > 0 && isProviderConfigured(provider),
+    [getPlanAmount, isProviderConfigured, provider]
+  );
 
   const handleUnavailablePlan = useCallback(
     (plan: Plan) => {
+      if (getPlanAmount(plan) <= 0) {
+        Alert.alert(
+          'Included Plan',
+          `${plan.name} is the free plan, so it does not need checkout. You can keep using it or start the available free trial from this screen.`,
+          [{ text: 'Close', style: 'cancel' }]
+        );
+        return;
+      }
+
       Alert.alert(
-        'Plan Setup Needed',
-        `${plan.name} is not configured for ${billingPeriod} checkout yet. You can contact support and we will help you activate the right option.`,
+        'Payment Method Unavailable',
+        selectedProviderError ||
+          `${plan.name} is not available with the selected payment method right now. Switch payment method or contact support for help.`,
         [
           {
             text: 'Contact Support',
@@ -126,48 +221,93 @@ const PlansScreen: React.FC = () => {
         ]
       );
     },
-    [billingPeriod, router]
+    [getPlanAmount, router, selectedProviderError]
   );
 
-  const handleSubscribe = async (plan: Plan) => {
-    if (!plan?.id) return;
+  const handleStartTrial = useCallback(() => {
+    Alert.alert('Start free trial', 'Start the trial available for this account?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Start trial',
+        onPress: async () => {
+          try {
+            setStartingTrial(true);
+            const response = await paymentsAPI.startTrial();
+            const payload = response?.data?.data ?? response?.data ?? {};
+            Alert.alert(
+              'Trial started',
+              payload?.trial_end
+                ? `Your ${payload?.tier_name || 'trial'} ends on ${new Date(payload.trial_end).toLocaleString()}.`
+                : payload?.message || 'Your trial has started.'
+            );
+            await loadPlans();
+          } catch (err: any) {
+            Alert.alert(
+              'Trial unavailable',
+              err?.response?.data?.error ||
+                err?.response?.data?.message ||
+                err?.message ||
+                'Unable to start trial.'
+            );
+          } finally {
+            setStartingTrial(false);
+          }
+        },
+      },
+    ]);
+  }, [loadPlans]);
 
-    if (!canPurchase(plan)) {
-      handleUnavailablePlan(plan);
-      return;
-    }
+  const handleSubscribe = useCallback(
+    async (plan: Plan) => {
+      if (!plan?.id) return;
 
-    try {
-      setStartingPlanId(plan.id);
-      const response = await paymentsAPI.createSubscription({
-        plan_id: plan.id,
-        billing_period: billingPeriod,
-      });
-      const payload = response?.data?.data ?? response?.data ?? {};
-      const checkoutUrl = String(payload?.checkout_url || '').trim();
-
-      if (!checkoutUrl) {
-        Alert.alert('Checkout', 'Checkout link was not returned. Please try again.');
+      if (provider === 'mobile_money' && !String(phoneNumber || '').trim()) {
+        Alert.alert('Phone number required', 'Add your phone number to receive mobile money payment instructions.');
         return;
       }
 
-      await WebBrowser.openBrowserAsync(checkoutUrl);
-      Alert.alert(
-        'Complete Checkout',
-        'Finish the payment in your browser, then come back and pull to refresh your billing status.'
-      );
-    } catch (err: any) {
-      Alert.alert(
-        'Subscribe Failed',
-        err?.response?.data?.error ||
-          err?.response?.data?.message ||
-          err?.message ||
-          'Unable to start checkout.'
-      );
-    } finally {
-      setStartingPlanId(null);
-    }
-  };
+      if (!canPurchase(plan)) {
+        handleUnavailablePlan(plan);
+        return;
+      }
+
+      try {
+        setStartingPlanId(plan.id);
+        const response = await paymentsAPI.createSubscription({
+          plan_id: plan.id,
+          billing_period: billingPeriod,
+          provider,
+          phone_number: provider === 'mobile_money' ? phoneNumber : undefined,
+        });
+        const payload = response?.data?.data ?? response?.data ?? {};
+        const checkoutUrl = String(payload?.checkout_url || '').trim();
+        const instructions = payload?.instructions || null;
+
+        if (!checkoutUrl) {
+          if (instructions) {
+            Alert.alert(
+              'Payment instructions',
+              String(instructions?.message || 'Follow the instructions to complete your payment.')
+            );
+            return;
+          }
+          Alert.alert('Checkout', 'Checkout link was not returned. Please try again.');
+          return;
+        }
+
+        await WebBrowser.openBrowserAsync(checkoutUrl);
+        Alert.alert(
+          'Complete Checkout',
+          'Finish the payment in your browser, then come back and pull to refresh your billing status.'
+        );
+      } catch (err: any) {
+        Alert.alert('Subscribe Failed', normalizePaymentError(err));
+      } finally {
+        setStartingPlanId(null);
+      }
+    },
+    [billingPeriod, canPurchase, handleUnavailablePlan, phoneNumber, provider]
+  );
 
   if (loading) {
     return (
@@ -201,6 +341,42 @@ const PlansScreen: React.FC = () => {
         }
         contentContainerStyle={styles.scrollContent}
       >
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryTop}>
+            <View style={styles.summaryIconWrap}>
+              <Icon name="diamond" size={18} color={colors.primary[600]} />
+            </View>
+            <View style={styles.summaryTextWrap}>
+              <Text style={styles.summaryKicker}>Current plan</Text>
+              <Text style={styles.summaryTitle}>
+                {currentPlanLabel || (subscription ? 'Subscription' : 'Free')}
+              </Text>
+              <Text style={styles.summaryText}>
+                {subscription?.status
+                  ? `Status: ${String(subscription.status).replace(/_/g, ' ')}.`
+                  : 'Start your free trial or choose a paid plan below.'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.summaryActions}>
+            <Button
+              title={startingTrial ? 'Starting...' : 'Start Free Trial'}
+              onPress={handleStartTrial}
+              loading={startingTrial}
+              disabled={startingTrial}
+              style={{ flex: 1 }}
+            />
+            <View style={{ width: spacing[3] }} />
+            <Button
+              title="Billing"
+              onPress={() => router.replace('/(student)/billing' as any)}
+              variant="secondary"
+              style={{ flex: 1 }}
+            />
+          </View>
+        </View>
+
         <View style={styles.periodCard}>
           <Text style={styles.periodTitle}>Billing period</Text>
           <View style={styles.periodToggle}>
@@ -239,6 +415,71 @@ const PlansScreen: React.FC = () => {
           </View>
         </View>
 
+        <View style={styles.periodCard}>
+          <Text style={styles.periodTitle}>Payment method</Text>
+          <View style={styles.providerRow}>
+            {PROVIDER_OPTIONS.map((option) => {
+              const configured = isProviderConfigured(option.id);
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[
+                    styles.providerChip,
+                    provider === option.id ? styles.providerChipActive : null,
+                    !configured ? styles.providerChipDisabled : null,
+                  ]}
+                  onPress={() => setProvider(option.id)}
+                  disabled={!configured}
+                >
+                  <Icon
+                    name={option.icon as any}
+                    size={16}
+                    color={
+                      !configured
+                        ? colors.text.tertiary
+                        : provider === option.id
+                          ? colors.primary[600]
+                          : colors.text.secondary
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.providerChipText,
+                      provider === option.id ? styles.providerChipTextActive : null,
+                      !configured ? styles.providerChipTextDisabled : null,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={styles.providerHint}>
+            {provider === 'mobile_money'
+              ? 'Mobile Money subscriptions use KES automatically.'
+              : 'Card and PayPal subscriptions use USD.'}
+          </Text>
+
+          {selectedProviderError ? (
+            <Text style={styles.providerError}>{selectedProviderError}</Text>
+          ) : null}
+
+          {provider === 'mobile_money' ? (
+            <Input
+              label="Phone number"
+              placeholder="e.g. +2547XXXXXXXX"
+              value={phoneNumber}
+              onChangeText={setPhoneNumber}
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+              hint="Used to send mobile money payment instructions."
+              containerStyle={{ marginTop: spacing[4], marginBottom: 0 }}
+            />
+          ) : null}
+        </View>
+
         {plans.length === 0 ? (
           <View style={styles.emptyCard}>
             <Icon name="diamond" size={36} color={colors.text.tertiary} />
@@ -266,8 +507,14 @@ const PlansScreen: React.FC = () => {
           </View>
         ) : (
           plans.map((plan) => {
-            const isCurrent = currentPlanId && String(plan.id) === currentPlanId;
-            const isActive = Boolean(subscription?.status && ['active', 'trialing'].includes(String(subscription.status).toLowerCase()));
+            const isFreePlan = getPlanAmount(plan) <= 0;
+            const isCurrent = currentPlanId
+              ? String(plan.id) === currentPlanId
+              : isFreePlan && !subscription;
+            const isActive = Boolean(
+              subscription?.status &&
+                ['active', 'trialing'].includes(String(subscription.status).toLowerCase())
+            );
             const label = getPriceLabel(plan);
             const purchasable = canPurchase(plan);
             const starting = startingPlanId === plan.id;
@@ -297,7 +544,7 @@ const PlansScreen: React.FC = () => {
                 ) : null}
 
                 <View style={styles.planPriceRow}>
-                  <Text style={styles.planPrice}>{label || 'Contact us'}</Text>
+                  <Text style={styles.planPrice}>{label || 'Included'}</Text>
                   {isCurrent && isActive ? (
                     <View style={styles.currentPill}>
                       <Text style={styles.currentPillText}>Current</Text>
@@ -317,14 +564,22 @@ const PlansScreen: React.FC = () => {
                   <View style={styles.featureRow}>
                     <Icon name="download" size={16} color={colors.primary[500]} />
                     <Text style={styles.featureText}>
-                      {plan.can_download_unlimited ? 'Unlimited downloads' : `${plan.download_limit_monthly}/mo downloads`}
+                      {plan.can_download_unlimited
+                        ? 'Unlimited downloads'
+                        : `${plan.download_limit_monthly}/mo downloads`}
                     </Text>
                   </View>
                 </View>
 
-                {!purchasable ? (
+                {!hasAnyConfiguredProvider ? (
                   <Text style={styles.planHelperText}>
-                    This plan is not configured for {billingPeriod} checkout yet.
+                    No payment methods are configured right now. Contact support or start the free trial first.
+                  </Text>
+                ) : !purchasable ? (
+                  <Text style={styles.planHelperText}>
+                    {isFreePlan
+                      ? 'This is your included free plan.'
+                      : selectedProviderError || `Switch payment method to continue with ${plan.name}.`}
                   </Text>
                 ) : null}
 
@@ -332,24 +587,26 @@ const PlansScreen: React.FC = () => {
                   title={
                     isCurrent && isActive
                       ? 'Manage in Billing'
-                      : purchasable
-                        ? starting
-                          ? 'Starting...'
-                          : 'Subscribe'
-                        : 'Contact Support'
+                      : isFreePlan
+                        ? 'Included'
+                        : purchasable
+                          ? starting
+                            ? 'Starting...'
+                            : 'Subscribe'
+                          : 'Choose Another Method'
                   }
                   onPress={() => {
                     if (isCurrent && isActive) {
                       router.replace('/(student)/billing' as any);
                       return;
                     }
-                    if (!purchasable) {
+                    if (isFreePlan || !purchasable) {
                       handleUnavailablePlan(plan);
                       return;
                     }
                     handleSubscribe(plan);
                   }}
-                  disabled={starting}
+                  disabled={starting || (!isCurrent && isFreePlan)}
                   loading={starting}
                   variant={
                     isCurrent && isActive ? 'secondary' : purchasable ? 'primary' : 'outline'
@@ -393,6 +650,29 @@ const styles = StyleSheet.create({
 
   scrollContent: { padding: spacing[4], paddingBottom: spacing[10] },
 
+  summaryCard: {
+    backgroundColor: colors.card.light,
+    borderRadius: borderRadius['2xl'],
+    padding: spacing[4],
+    marginBottom: spacing[4],
+    ...shadows.sm,
+  },
+  summaryTop: { flexDirection: 'row', alignItems: 'flex-start' },
+  summaryIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.primary[50],
+    marginRight: spacing[3],
+  },
+  summaryTextWrap: { flex: 1 },
+  summaryKicker: { fontSize: 12, fontWeight: '700', color: colors.text.secondary },
+  summaryTitle: { marginTop: 2, fontSize: 18, fontWeight: '900', color: colors.text.primary },
+  summaryText: { marginTop: spacing[2], fontSize: 13, lineHeight: 18, color: colors.text.secondary },
+  summaryActions: { flexDirection: 'row', marginTop: spacing[4] },
+
   periodCard: {
     backgroundColor: colors.card.light,
     borderRadius: borderRadius['2xl'],
@@ -412,6 +692,23 @@ const styles = StyleSheet.create({
   periodButtonActive: { backgroundColor: colors.card.light, ...shadows.xs },
   periodButtonText: { fontSize: 13, fontWeight: '700', color: colors.text.secondary },
   periodButtonTextActive: { color: colors.text.primary },
+  providerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2], marginTop: spacing[3] },
+  providerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: colors.gray[100],
+  },
+  providerChipActive: { backgroundColor: colors.primary[50], borderWidth: 1, borderColor: colors.primary[200] },
+  providerChipDisabled: { opacity: 0.45 },
+  providerChipText: { fontSize: 13, fontWeight: '700', color: colors.text.secondary },
+  providerChipTextActive: { color: colors.primary[700] },
+  providerChipTextDisabled: { color: colors.text.tertiary },
+  providerHint: { marginTop: spacing[3], fontSize: 12, color: colors.text.secondary },
+  providerError: { marginTop: spacing[2], fontSize: 12, color: colors.error, lineHeight: 18 },
 
   planCard: {
     backgroundColor: colors.card.light,

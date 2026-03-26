@@ -1,13 +1,13 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 
+import { useResourceShare } from '../../hooks/useResourceShare';
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
-import Icon from '../ui/Icon';
+import { borderRadius,spacing } from '../../theme/spacing';
+import ResourceShareSheet from '../modals/ResourceShareSheet';
 import BookmarkButton from '../resources/BookmarkButton';
 import FavoriteButton from '../resources/FavoriteButton';
-import { useResourceShare } from '../../hooks/useResourceShare';
-import ResourceShareSheet from '../modals/ResourceShareSheet';
+import Icon from '../ui/Icon';
 import { useToast } from '../ui/Toast';
 
 interface BookmarkedResourceCardProps {

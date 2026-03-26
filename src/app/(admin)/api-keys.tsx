@@ -1,17 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  StyleSheet,
-  RefreshControl,
-  Modal,
-  Alert,
-  Switch,
-} from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useEffect,useState } from 'react';
+import {
+  Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import { adminManagementAPI } from '../../services/api';
 
 interface APIKey {
@@ -33,10 +32,10 @@ interface APIKey {
 export default function APIKeys() {
   const router = useRouter();
   const [apiKeys, setAPIKeys] = useState<APIKey[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showKey, setShowKey] = useState<string | null>(null);
+  const [_showKey, _setShowKey] = useState<string | null>(null);
 
   const [newKey, setNewKey] = useState({
     name: '',
@@ -90,7 +89,7 @@ export default function APIKeys() {
         scopes: ['read'],
       });
       fetchAPIKeys();
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Network error');
     }
   };
@@ -102,7 +101,7 @@ export default function APIKeys() {
       await adminManagementAPI.updateApiKey(keyId, { status: newStatus });
       Alert.alert('Success', `API key ${newStatus === 'active' ? 'activated' : 'deactivated'}`);
       fetchAPIKeys();
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to update status');
     }
   };
@@ -121,7 +120,7 @@ export default function APIKeys() {
               await adminManagementAPI.revokeApiKey(keyId);
               Alert.alert('Success', 'API key revoked');
               fetchAPIKeys();
-            } catch (error) {
+            } catch (_error) {
               Alert.alert('Error', 'Failed to revoke key');
             }
           },

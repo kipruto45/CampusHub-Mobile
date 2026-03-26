@@ -1,18 +1,54 @@
 // Root Layout for CampusHub
 // Main app entry point with notification initialization
 
-import { Stack, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
+import { Stack,useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet, AppState, AppStateStatus, Alert } from 'react-native';
-import { useEffect, useRef } from 'react';
-import { lightColors } from '../theme/colors';
+import { useEffect,useRef } from 'react';
+import { Alert,AppState,AppStateStatus,StyleSheet,View } from 'react-native';
+import { OfflineBanner } from '../components/OfflineBanner';
+import { ToastProvider,useToast } from '../components/ui/Toast';
+import { ensureApiBaseUrl } from '../services/api';
 import { mobileAutomationService } from '../services/mobileAutomation.service';
 import { notificationService } from '../services/notifications';
-import { ensureApiBaseUrl } from '../services/api';
 import { useAuthStore } from '../store/auth.store';
-import { ToastProvider, useToast } from '../components/ui/Toast';
-import { OfflineBanner } from '../components/OfflineBanner';
+import { lightColors } from '../theme/colors';
+
+const getQueryParam = (
+  value: string | string[] | undefined
+): string => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value) && typeof value[0] === 'string') {
+    return value[0];
+  }
+  return '';
+};
+
+const extractMagicLinkToken = (url: string): string => {
+  const parsed = Linking.parse(url);
+  const path = (parsed.path || '').replace(/^\/+/, '');
+  const segments = path.split('/').filter(Boolean);
+  const qp = parsed.queryParams || {};
+  const tokenFromQuery =
+    getQueryParam(qp.token as string | string[] | undefined) ||
+    getQueryParam(qp.magic_link as string | string[] | undefined);
+
+  if (segments[0] === 'magic-link') {
+    return tokenFromQuery || segments[1] || '';
+  }
+
+  const magicSegmentIndex = segments.indexOf('magic-link');
+  if (
+    magicSegmentIndex >= 0 &&
+    segments[magicSegmentIndex + 1] === 'consume'
+  ) {
+    return tokenFromQuery;
+  }
+
+  return '';
+};
 
 function RootLayoutInner() {
   const router = useRouter();
@@ -87,7 +123,7 @@ function RootLayoutInner() {
       notificationService.removeNotificationListeners();
       toastListenerRef.current?.();
     };
-  }, []);
+  }, [initializeAuth, router, showToast]);
 
   // Handle deep links (invite links, shared resources)
   useEffect(() => {
@@ -98,12 +134,12 @@ function RootLayoutInner() {
       const segments = path.split('/').filter(Boolean);
       const qp = parsed.queryParams || {};
 
-      const magicLinkToken =
-        (segments[0] === 'magic-link' && typeof qp.token === 'string' && qp.token) ||
-        (segments[0] === 'magic-link' && segments[1]) ||
-        (typeof qp.magic_link === 'string' && qp.magic_link);
+      const magicLinkToken = extractMagicLinkToken(url);
       if (magicLinkToken) {
-        router.push(`/(auth)/magic-link?token=${magicLinkToken}`);
+        router.push({
+          pathname: '/(auth)/magic-link',
+          params: { token: magicLinkToken },
+        });
         return;
       }
 

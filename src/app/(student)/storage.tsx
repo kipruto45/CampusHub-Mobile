@@ -1,18 +1,26 @@
 // Storage Screen for CampusHub
 // Personal storage usage and management - Backend connected
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,Modal,RefreshControl,ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
-import { userAPI, trashAPI } from '../../services/api';
-import { cloudStorageService, googleDriveService, onedriveService, type CloudAccount, type CloudStorageStats } from '../../services/cloud-storage.service';
+import { paymentsAPI,trashAPI,userAPI } from '../../services/api';
+import {
+  cloudStorageService,
+  getCloudProviderLabel,
+  getCloudRedirectUri,
+  googleDriveService,
+  onedriveService,
+  type CloudAccount,
+  type CloudProvider,
+  type CloudStorageStats,
+} from '../../services/cloud-storage.service';
 import { localDownloadsService } from '../../services/local-downloads.service';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { spacing } from '../../theme/spacing';
 
 // Storage Categories
 interface StorageCategory {
@@ -41,27 +49,53 @@ const StorageScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [featureSummary, setFeatureSummary] = useState<any | null>(null);
   const [storageData, setStorageData] = useState<StorageData | null>(null);
-  const [trashItems, setTrashItems] = useState<any[]>([]);
+  const [_trashItems, setTrashItems] = useState<any[]>([]);
+  const googleAccount = cloudAccounts.find((account) => account.provider === 'google_drive');
+  const myDriveAccount = cloudAccounts.find((account) => account.provider === 'onedrive');
+  const canUseCloudIntegrations =
+    featureSummary?.feature_flags?.all_integrations !== false;
 
   const fetchStorageData = useCallback(async () => {
     try {
       setError(null);
-      
-      // Fetch storage data from dashboard
-      const dashboardRes = await userAPI.getStorage();
-      const data = dashboardRes.data?.data || dashboardRes.data || {};
-      
-      setStorageData({
-        total_storage: data.storage_limit || 5 * 1024 * 1024 * 1024,
-        storage_used: data.storage_used || 0,
-        storage_limit: data.storage_limit || 5 * 1024 * 1024 * 1024,
-      });
-      
-      // Fetch trash items count
-      const trashRes = await trashAPI.list({ page: 1 });
-      const trashData = trashRes.data?.data?.results || trashRes.data?.data || trashRes.data || [];
-      setTrashItems(trashData);
+
+      const [dashboardRes, trashRes, featureRes] = await Promise.allSettled([
+        userAPI.getStorage(),
+        trashAPI.list({ page: 1 }),
+        paymentsAPI.getFeatureAccessSummary(),
+      ]);
+
+      if (featureRes.status === 'fulfilled') {
+        setFeatureSummary(featureRes.value.data?.data || featureRes.value.data || null);
+      }
+
+      if (dashboardRes.status === 'fulfilled') {
+        const data = dashboardRes.value.data?.data || dashboardRes.value.data || {};
+        setStorageData({
+          total_storage: data.storage_limit || 5 * 1024 * 1024 * 1024,
+          storage_used: data.storage_used || 0,
+          storage_limit: data.storage_limit || 5 * 1024 * 1024 * 1024,
+        });
+      }
+
+      if (trashRes.status === 'fulfilled') {
+        const trashData =
+          trashRes.value.data?.data?.results ||
+          trashRes.value.data?.data ||
+          trashRes.value.data ||
+          [];
+        setTrashItems(trashData);
+      }
+
+      if (dashboardRes.status === 'rejected' && trashRes.status === 'rejected') {
+        throw new Error('Failed to load storage data');
+      }
+
+      if (dashboardRes.status === 'rejected' || trashRes.status === 'rejected') {
+        setError('Some storage details are temporarily unavailable, but you can still use the storage screen.');
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Failed to load storage data');
     } finally {
@@ -70,16 +104,16 @@ const StorageScreen: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchStorageData();
-    fetchCloudAccounts();
-  }, [fetchStorageData]);
-
-  const fetchCloudAccounts = async () => {
+  const fetchCloudAccounts = useCallback(async () => {
+    if (!canUseCloudIntegrations) {
+      setCloudAccounts([]);
+      setCloudStats({});
+      return;
+    }
     try {
       const accounts = await cloudStorageService.getConnectedAccounts();
       setCloudAccounts(accounts);
-      
+
       // Fetch stats for each connected account
       const stats: { google_drive?: CloudStorageStats; onedrive?: CloudStorageStats } = {};
       for (const account of accounts) {
@@ -93,20 +127,44 @@ const StorageScreen: React.FC = () => {
     } catch (err) {
       console.error('Failed to fetch cloud accounts:', err);
     }
-  };
+  }, [canUseCloudIntegrations]);
 
-  const handleConnectCloud = async (provider: 'google_drive' | 'onedrive') => {
+  useEffect(() => {
+    fetchStorageData();
+    if (canUseCloudIntegrations) {
+      fetchCloudAccounts();
+    } else {
+      setCloudAccounts([]);
+      setCloudStats({});
+    }
+  }, [canUseCloudIntegrations, fetchCloudAccounts, fetchStorageData]);
+
+  const handleConnectCloud = async (provider: CloudProvider) => {
+    if (!canUseCloudIntegrations) {
+      Alert.alert('Upgrade required', 'Cloud integrations are available on upgraded plans. Open Plans to continue.');
+      return;
+    }
     try {
       setConnectingCloud(provider);
-      const { authUrl } = provider === 'google_drive' 
+      const { authUrl } = provider === 'google_drive'
         ? await googleDriveService.connect()
         : await onedriveService.connect();
-      
-      // Open browser for OAuth
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, 'campushub://');
-      
+
+      const redirectUri = getCloudRedirectUri(provider);
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+
       if (result.type === 'success') {
+        if (!result.url) {
+          throw new Error('The sign-in callback did not return a valid link.');
+        }
+        await cloudStorageService.completeConnection(provider, result.url);
         await fetchCloudAccounts();
+        Alert.alert(
+          'Storage linked',
+          `${getCloudProviderLabel(provider)} is now connected to your CampusHub account.`
+        );
+      } else if (result.type !== 'cancel') {
+        throw new Error('The sign-in flow did not finish. Please try again.');
       }
     } catch (err: any) {
       Alert.alert('Connection Failed', err.message || 'Failed to connect to cloud storage');
@@ -115,10 +173,10 @@ const StorageScreen: React.FC = () => {
     }
   };
 
-  const handleDisconnectCloud = async (provider: 'google_drive' | 'onedrive') => {
+  const handleDisconnectCloud = async (provider: CloudProvider) => {
     Alert.alert(
       'Disconnect Cloud Storage',
-      `Are you sure you want to disconnect your ${provider === 'google_drive' ? 'Google Drive' : 'OneDrive'} account?`,
+      `Are you sure you want to disconnect your ${getCloudProviderLabel(provider)} account?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -127,9 +185,11 @@ const StorageScreen: React.FC = () => {
           onPress: async () => {
             try {
               setLoadingCloud(true);
-              provider === 'google_drive' 
-                ? await googleDriveService.disconnect()
-                : await onedriveService.disconnect();
+              if (provider === 'google_drive') {
+                await googleDriveService.disconnect();
+              } else {
+                await onedriveService.disconnect();
+              }
               await fetchCloudAccounts();
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to disconnect');
@@ -149,8 +209,10 @@ const StorageScreen: React.FC = () => {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchStorageData();
-    fetchCloudAccounts();
-  }, [fetchStorageData]);
+    if (canUseCloudIntegrations) {
+      fetchCloudAccounts();
+    }
+  }, [canUseCloudIntegrations, fetchCloudAccounts, fetchStorageData]);
 
   // Storage data from API
   const totalStorage = storageData?.storage_limit || 5 * 1024 * 1024 * 1024;
@@ -207,11 +269,15 @@ const StorageScreen: React.FC = () => {
 
   const handleManageDownloads = () => router.push('/(student)/downloads');
 
-  const handleSyncCloud = async (provider: 'google_drive' | 'onedrive') => {
+  const handleSyncCloud = async (provider: CloudProvider) => {
+    if (!canUseCloudIntegrations) {
+      Alert.alert('Upgrade required', 'Cloud syncing is available on upgraded plans. Open Plans to continue.');
+      return;
+    }
     try {
       setLoadingCloud(true);
       await cloudStorageService.syncFiles(provider);
-      Alert.alert('Sync complete', `${provider === 'google_drive' ? 'Google Drive' : 'OneDrive'} files are up to date.`);
+      Alert.alert('Sync complete', `${getCloudProviderLabel(provider)} files are up to date.`);
     } catch (err: any) {
       Alert.alert('Sync failed', err.message || 'Could not sync files');
     } finally {
@@ -221,15 +287,15 @@ const StorageScreen: React.FC = () => {
 
   const renderProgressCircle = () => {
     const radius = 70;
-    const circumference = 2 * Math.PI * radius;
+    const _circumference = 2 * Math.PI * radius;
 
     return (
       <View style={styles.circleContainer}>
         <View style={styles.progressOuter}>
           <View style={[styles.progressBg, { borderColor: colors.gray[200] }]} />
           <View style={[
-            styles.progressFill, 
-            { 
+            styles.progressFill,
+            {
               borderColor: getWarningColor(),
               transform: [{ rotate: `${percentage * 3.6}deg` }]
             }
@@ -346,8 +412,8 @@ const StorageScreen: React.FC = () => {
           <Text style={styles.sectionTitle}>Storage Breakdown</Text>
           <View style={styles.breakdownCard}>
             {categories.map((category, index) => (
-              <TouchableOpacity 
-                key={index} 
+              <TouchableOpacity
+                key={index}
                 style={styles.categoryItem}
                 activeOpacity={0.7}
               >
@@ -375,7 +441,7 @@ const StorageScreen: React.FC = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionsCard}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.actionItem}
               onPress={() => setShowClearCacheModal(true)}
             >
@@ -390,7 +456,7 @@ const StorageScreen: React.FC = () => {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionItem} onPress={handleManageDownloads}>
-              <View style={[styles.actionIcon, { backgroundColor: colors.accent[50] }]}> 
+              <View style={[styles.actionIcon, { backgroundColor: colors.accent[50] }]}>
                 <Icon name="download" size={22} color={colors.accent[500]} />
               </View>
               <View style={styles.actionInfo}>
@@ -400,8 +466,8 @@ const StorageScreen: React.FC = () => {
               <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.actionItem} 
+            <TouchableOpacity
+              style={styles.actionItem}
               onPress={() => router.push('/(student)/trash')}
             >
               <View style={[styles.actionIcon, { backgroundColor: colors.warning + '20' }]}>
@@ -415,7 +481,7 @@ const StorageScreen: React.FC = () => {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionItem}>
-              <View style={[styles.actionIcon, { backgroundColor: colors.info + '20' }]}> 
+              <View style={[styles.actionIcon, { backgroundColor: colors.info + '20' }]}>
                 <Icon name="time" size={22} color={colors.info} />
               </View>
               <View style={styles.actionInfo}>
@@ -430,88 +496,124 @@ const StorageScreen: React.FC = () => {
         {/* Cloud Storage Connections */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Cloud Storage</Text>
-          <View style={styles.actionsCard}>
-            {/* Google Drive */}
-            <TouchableOpacity 
-              style={styles.actionItem}
-              onPress={() => isGoogleConnected ? handleDisconnectCloud('google_drive') : handleConnectCloud('google_drive')}
-              disabled={connectingCloud === 'google_drive'}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#4285F420' }]}>
-                <Text style={{ fontSize: 20 }}>📁</Text>
-              </View>
-              <View style={styles.actionInfo}>
-                <Text style={styles.actionTitle}>Google Drive</Text>
-                <Text style={styles.actionSubtitle}>
-                  {isGoogleConnected 
-                    ? (cloudStats.google_drive ? `${formatSize(cloudStats.google_drive.storage_used)} of ${formatSize(cloudStats.google_drive.storage_total)} used` : 'Connected')
-                    : 'Connect to import/export files'}
-                </Text>
-              </View>
-              {connectingCloud === 'google_drive' ? (
-                <ActivityIndicator size="small" color={colors.primary[500]} />
-              ) : (
-                <Icon 
-                  name={isGoogleConnected ? 'checkmark-circle' : 'chevron-forward'} 
-                  size={20} 
-                  color={isGoogleConnected ? colors.success : colors.text.tertiary} 
-                />
-              )}
-            </TouchableOpacity>
+          {canUseCloudIntegrations ? (
+            <>
+              <View style={styles.actionsCard}>
+                {/* Google Drive */}
+                <TouchableOpacity
+                  style={styles.actionItem}
+                  onPress={() => isGoogleConnected ? handleDisconnectCloud('google_drive') : handleConnectCloud('google_drive')}
+                  disabled={connectingCloud === 'google_drive'}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: '#4285F420' }]}>
+                    <Text style={{ fontSize: 20 }}>📁</Text>
+                  </View>
+                  <View style={styles.actionInfo}>
+                    <Text style={styles.actionTitle}>Google Drive</Text>
+                    <Text style={styles.actionSubtitle}>
+                      {isGoogleConnected
+                        ? (cloudStats.google_drive
+                            ? `${googleAccount?.email || googleAccount?.display_name || 'Connected'} • ${formatSize(cloudStats.google_drive.storage_used)} of ${formatSize(cloudStats.google_drive.storage_total)} used`
+                            : googleAccount?.email || googleAccount?.display_name || 'Connected')
+                        : 'Link Google Drive to sync files and storage'}
+                    </Text>
+                  </View>
+                  {connectingCloud === 'google_drive' ? (
+                    <ActivityIndicator size="small" color={colors.primary[500]} />
+                  ) : (
+                    <Icon
+                      name={isGoogleConnected ? 'checkmark-circle' : 'chevron-forward'}
+                      size={20}
+                      color={isGoogleConnected ? colors.success : colors.text.tertiary}
+                    />
+                  )}
+                </TouchableOpacity>
 
-            {/* OneDrive */}
-            <TouchableOpacity 
-              style={styles.actionItem}
-              onPress={() => isOneDriveConnected ? handleDisconnectCloud('onedrive') : handleConnectCloud('onedrive')}
-              disabled={connectingCloud === 'onedrive'}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#0078D420' }]}>
-                <Text style={{ fontSize: 20 }}>☁️</Text>
+                {/* My Drive */}
+                <TouchableOpacity
+                  style={styles.actionItem}
+                  onPress={() => isOneDriveConnected ? handleDisconnectCloud('onedrive') : handleConnectCloud('onedrive')}
+                  disabled={connectingCloud === 'onedrive'}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: '#0078D420' }]}>
+                    <Text style={{ fontSize: 20 }}>☁️</Text>
+                  </View>
+                  <View style={styles.actionInfo}>
+                    <Text style={styles.actionTitle}>My Drive</Text>
+                    <Text style={styles.actionSubtitle}>
+                      {isOneDriveConnected
+                        ? (cloudStats.onedrive
+                            ? `${myDriveAccount?.email || myDriveAccount?.display_name || 'Connected'} • ${formatSize(cloudStats.onedrive.storage_used)} of ${formatSize(cloudStats.onedrive.storage_total)} used`
+                            : myDriveAccount?.email || myDriveAccount?.display_name || 'Connected')
+                        : 'Link your Microsoft OneDrive storage'}
+                    </Text>
+                  </View>
+                  {connectingCloud === 'onedrive' ? (
+                    <ActivityIndicator size="small" color={colors.primary[500]} />
+                  ) : (
+                    <Icon
+                      name={isOneDriveConnected ? 'checkmark-circle' : 'chevron-forward'}
+                      size={20}
+                      color={isOneDriveConnected ? colors.success : colors.text.tertiary}
+                    />
+                  )}
+                </TouchableOpacity>
               </View>
-              <View style={styles.actionInfo}>
-                <Text style={styles.actionTitle}>OneDrive</Text>
-                <Text style={styles.actionSubtitle}>
-                  {isOneDriveConnected 
-                    ? (cloudStats.onedrive ? `${formatSize(cloudStats.onedrive.storage_used)} of ${formatSize(cloudStats.onedrive.storage_total)} used` : 'Connected')
-                    : 'Connect to import/export files'}
+
+              {(isGoogleConnected || isOneDriveConnected) && (
+                <View style={[styles.actionsCard, { marginTop: 12 }]}>
+                  {isGoogleConnected && (
+                    <TouchableOpacity
+                      style={styles.actionItem}
+                      onPress={() => handleSyncCloud('google_drive')}
+                      disabled={loadingCloud}
+                    >
+                      <View style={[styles.actionIcon, { backgroundColor: colors.primary[50] }]}>
+                        <Icon name="sync" size={22} color={colors.primary[500]} />
+                      </View>
+                      <View style={styles.actionInfo}>
+                        <Text style={styles.actionTitle}>Sync Google Drive</Text>
+                        <Text style={styles.actionSubtitle}>Refresh linked files and storage details</Text>
+                      </View>
+                      <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
+                    </TouchableOpacity>
+                  )}
+
+                  {isOneDriveConnected && (
+                    <TouchableOpacity
+                      style={styles.actionItem}
+                      onPress={() => handleSyncCloud('onedrive')}
+                      disabled={loadingCloud}
+                    >
+                      <View style={[styles.actionIcon, { backgroundColor: colors.accent[50] }]}>
+                        <Icon name="sync" size={22} color={colors.accent[500]} />
+                      </View>
+                      <View style={styles.actionInfo}>
+                        <Text style={styles.actionTitle}>Sync My Drive</Text>
+                        <Text style={styles.actionSubtitle}>Refresh your OneDrive connection and usage</Text>
+                      </View>
+                      <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </>
+          ) : (
+            <TouchableOpacity
+              style={styles.upgradeBanner}
+              onPress={() => router.push('/(student)/billing/plans' as any)}
+            >
+              <View style={styles.bannerIcon}>
+                <Icon name="lock-closed" size={18} color={colors.text.inverse} />
+              </View>
+              <View style={styles.bannerContent}>
+                <Text style={styles.bannerTitle}>Upgrade to link cloud drives</Text>
+                <Text style={styles.bannerSubtitle}>
+                  Google Drive and My Drive connections are available on upgraded plans.
                 </Text>
               </View>
-              {connectingCloud === 'onedrive' ? (
-                <ActivityIndicator size="small" color={colors.primary[500]} />
-              ) : (
-                <Icon 
-                  name={isOneDriveConnected ? 'checkmark-circle' : 'chevron-forward'} 
-                  size={20} 
-                  color={isOneDriveConnected ? colors.success : colors.text.tertiary} 
-                />
-              )}
+              <Icon name="chevron-forward" size={18} color={colors.text.inverse} />
             </TouchableOpacity>
-          </View>
-          
-          {(isGoogleConnected || isOneDriveConnected) && (
-            <View style={[styles.actionsCard, { marginTop: 12 }]}>
-              <TouchableOpacity style={styles.actionItem} onPress={() => handleSyncCloud('google_drive')} disabled={loadingCloud}>
-                <View style={[styles.actionIcon, { backgroundColor: colors.primary[50] }]}> 
-                  <Icon name="download" size={22} color={colors.primary[500]} />
-                </View>
-                <View style={styles.actionInfo}>
-                  <Text style={styles.actionTitle}>Import from Cloud</Text>
-                  <Text style={styles.actionSubtitle}>Add files from Google Drive or OneDrive</Text>
-                </View>
-                <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.actionItem} onPress={() => handleSyncCloud('onedrive')} disabled={loadingCloud}>
-                <View style={[styles.actionIcon, { backgroundColor: colors.accent[50] }]}> 
-                  <Icon name="cloud-upload" size={22} color={colors.accent[500]} />
-                </View>
-                <View style={styles.actionInfo}>
-                  <Text style={styles.actionTitle}>Export to Cloud</Text>
-                  <Text style={styles.actionSubtitle}>Backup resources to cloud storage</Text>
-                </View>
-                <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
-              </TouchableOpacity>
-            </View>
           )}
         </View>
 
@@ -579,13 +681,13 @@ const StorageScreen: React.FC = () => {
               This will remove temporary files and free up 120 MB of storage. Your important files will not be affected.
             </Text>
             <View style={styles.modalActions}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalCancelBtn}
                 onPress={() => setShowClearCacheModal(false)}
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalConfirmBtn}
                 onPress={handleClearCache}
               >
@@ -600,43 +702,43 @@ const StorageScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: colors.background.primary 
+  container: {
+    flex: 1,
+    backgroundColor: colors.background.primary
   },
-  header: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingHorizontal: spacing[4], 
-    paddingTop: spacing[10], 
-    paddingBottom: spacing[4], 
-    backgroundColor: colors.card.light, 
-    ...shadows.sm 
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[10],
+    paddingBottom: spacing[4],
+    backgroundColor: colors.card.light,
+    ...shadows.sm
   },
-  backBtn: { 
-    width: 40, 
-    height: 40, 
-    borderRadius: 20, 
-    justifyContent: 'center', 
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background.secondary,
   },
-  headerTitle: { 
-    flex: 1, 
-    fontSize: 18, 
-    fontWeight: '600', 
-    color: colors.text.primary, 
-    textAlign: 'center' 
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text.primary,
+    textAlign: 'center'
   },
-  placeholder: { 
-    width: 40 
+  placeholder: {
+    width: 40
   },
-  overviewCard: { 
-    backgroundColor: colors.card.light, 
-    margin: spacing[4], 
-    borderRadius: 24, 
-    padding: spacing[6], 
-    ...shadows.md 
+  overviewCard: {
+    backgroundColor: colors.card.light,
+    margin: spacing[4],
+    borderRadius: 24,
+    padding: spacing[6],
+    ...shadows.md
   },
   circleContainer: {
     alignItems: 'center',
@@ -667,17 +769,17 @@ const styles = StyleSheet.create({
     borderRightColor: 'transparent',
     borderBottomColor: 'transparent',
   },
-  progressCenter: { 
-    alignItems: 'center' 
+  progressCenter: {
+    alignItems: 'center'
   },
-  usedText: { 
-    fontSize: 28, 
-    fontWeight: '700', 
+  usedText: {
+    fontSize: 28,
+    fontWeight: '700',
   },
-  usedLabel: { 
-    fontSize: 13, 
-    color: colors.text.secondary, 
-    marginTop: 2 
+  usedLabel: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginTop: 2
   },
   warningBadge: {
     flexDirection: 'row',
@@ -692,129 +794,129 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  storageInfo: { 
-    borderTopWidth: 1, 
-    borderTopColor: colors.border.light, 
-    paddingTop: spacing[4] 
+  storageInfo: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    paddingTop: spacing[4]
   },
-  infoRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: spacing[3] 
+    paddingVertical: spacing[3]
   },
   infoLabelContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
   },
-  infoLabel: { 
-    fontSize: 14, 
-    color: colors.text.secondary 
+  infoLabel: {
+    fontSize: 14,
+    color: colors.text.secondary
   },
-  infoValue: { 
-    fontSize: 14, 
-    fontWeight: '600', 
-    color: colors.text.primary 
+  infoValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.primary
   },
-  section: { 
-    paddingHorizontal: spacing[4], 
-    marginTop: spacing[4] 
+  section: {
+    paddingHorizontal: spacing[4],
+    marginTop: spacing[4]
   },
-  sectionTitle: { 
-    fontSize: 16, 
-    fontWeight: '600', 
-    color: colors.text.primary, 
-    marginBottom: spacing[3] 
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: spacing[3]
   },
-  breakdownCard: { 
-    backgroundColor: colors.card.light, 
-    borderRadius: 20, 
-    padding: spacing[2], 
-    ...shadows.sm 
+  breakdownCard: {
+    backgroundColor: colors.card.light,
+    borderRadius: 20,
+    padding: spacing[2],
+    ...shadows.sm
   },
-  categoryItem: { 
-    paddingVertical: spacing[2], 
-    paddingHorizontal: spacing[2] 
+  categoryItem: {
+    paddingVertical: spacing[2],
+    paddingHorizontal: spacing[2]
   },
-  categoryHeader: { 
-    flexDirection: 'row', 
-    alignItems: 'center' 
+  categoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center'
   },
-  categoryIcon: { 
-    width: 40, 
-    height: 40, 
-    borderRadius: 12, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  categoryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center'
   },
-  categoryInfo: { 
-    flex: 1, 
-    marginLeft: spacing[3] 
+  categoryInfo: {
+    flex: 1,
+    marginLeft: spacing[3]
   },
-  categoryName: { 
-    fontSize: 14, 
-    fontWeight: '500', 
-    color: colors.text.primary, 
-    marginBottom: 6 
+  categoryName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.text.primary,
+    marginBottom: 6
   },
-  barContainer: { 
-    height: 6, 
-    backgroundColor: colors.gray[200], 
-    borderRadius: 3, 
-    overflow: 'hidden' 
+  barContainer: {
+    height: 6,
+    backgroundColor: colors.gray[200],
+    borderRadius: 3,
+    overflow: 'hidden'
   },
-  bar: { 
-    height: '100%', 
-    borderRadius: 3 
+  bar: {
+    height: '100%',
+    borderRadius: 3
   },
   categorySizeContainer: {
     alignItems: 'flex-end',
     marginLeft: spacing[2],
   },
-  categorySize: { 
-    fontSize: 13, 
-    fontWeight: '600', 
-    color: colors.text.primary 
+  categorySize: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.primary
   },
   categoryFiles: {
     fontSize: 11,
     color: colors.text.tertiary,
     marginTop: 2,
   },
-  actionsCard: { 
-    backgroundColor: colors.card.light, 
-    borderRadius: 20, 
-    overflow: 'hidden', 
-    ...shadows.sm 
+  actionsCard: {
+    backgroundColor: colors.card.light,
+    borderRadius: 20,
+    overflow: 'hidden',
+    ...shadows.sm
   },
-  actionItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    padding: spacing[4], 
-    borderBottomWidth: 1, 
-    borderBottomColor: colors.border.light 
+  actionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing[4],
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light
   },
-  actionIcon: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 14, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  actionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center'
   },
-  actionInfo: { 
-    flex: 1, 
-    marginLeft: spacing[3] 
+  actionInfo: {
+    flex: 1,
+    marginLeft: spacing[3]
   },
-  actionTitle: { 
-    fontSize: 15, 
-    fontWeight: '500', 
-    color: colors.text.primary 
+  actionTitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.text.primary
   },
-  actionSubtitle: { 
-    fontSize: 12, 
-    color: colors.text.secondary, 
-    marginTop: 2 
+  actionSubtitle: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginTop: 2
   },
   tipsCard: {
     backgroundColor: colors.card.light,
@@ -840,18 +942,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text.secondary,
   },
-  upgradeBanner: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: colors.primary[500], 
-    margin: spacing[4], 
-    borderRadius: 20, 
-    padding: spacing[4] 
+  upgradeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary[500],
+    margin: spacing[4],
+    borderRadius: 20,
+    padding: spacing[4]
   },
-  upgradeContent: { 
-    flex: 1, 
-    flexDirection: 'row', 
-    alignItems: 'center' 
+  bannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.text.inverse + '26',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing[3],
+  },
+  bannerContent: {
+    flex: 1,
+  },
+  bannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text.inverse,
+  },
+  bannerSubtitle: {
+    fontSize: 12,
+    color: colors.text.inverse,
+    opacity: 0.92,
+    marginTop: 4,
+  },
+  upgradeContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center'
   },
   upgradeIconContainer: {
     width: 48,
@@ -861,28 +986,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  upgradeInfo: { 
-    marginLeft: spacing[3] 
+  upgradeInfo: {
+    marginLeft: spacing[3]
   },
-  upgradeTitle: { 
-    fontSize: 16, 
-    fontWeight: '600', 
-    color: colors.text.inverse 
+  upgradeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.inverse
   },
-  upgradeText: { 
-    fontSize: 12, 
-    color: colors.text.inverse, 
-    opacity: 0.9 
+  upgradeText: {
+    fontSize: 12,
+    color: colors.text.inverse,
+    opacity: 0.9
   },
-  upgradeBtn: { 
-    backgroundColor: colors.text.inverse, 
-    paddingHorizontal: spacing[4], 
-    paddingVertical: spacing[2], 
-    borderRadius: 12, 
+  upgradeBtn: {
+    backgroundColor: colors.text.inverse,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+    borderRadius: 12,
   },
   upgradeBtnText: {
-    fontSize: 14, 
-    fontWeight: '600', 
+    fontSize: 14,
+    fontWeight: '600',
     color: colors.primary[500],
   },
   bottomSpacing: {

@@ -1,15 +1,15 @@
 // Resource Share Screen - Handle shared resource links
 // CampusHub Mobile App
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import { Stack,useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { resourcesAPI } from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface SharedResource {
   id: string;
@@ -27,28 +27,16 @@ export default function ResourceShareScreen() {
   const { token, resource_id } = useLocalSearchParams<{ token?: string; resource_id?: string }>();
   const router = useRouter();
   const { isAuthenticated, user } = useAuthStore();
-  
+
   const [loading, setLoading] = useState(true);
   const [resource, setResource] = useState<SharedResource | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (resource_id) {
-      fetchResource();
-    } else if (token) {
-      // Try to validate token and get resource info
-      validateShareLink();
-    } else {
-      setError('Invalid share link');
-      setLoading(false);
-    }
-  }, [token, resource_id]);
-
-  const fetchResource = async () => {
+  const fetchResource = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const response = await resourcesAPI.get(resource_id!);
       const data = response.data?.data || response.data;
       setResource(data);
@@ -57,13 +45,13 @@ export default function ResourceShareScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [resource_id]);
 
-  const validateShareLink = async () => {
+  const validateShareLink = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       // If there's a token, validate it via backend
       const response = await resourcesAPI.getSharedResource(token!);
       const data = response.data?.data || response.data;
@@ -78,7 +66,47 @@ export default function ResourceShareScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchResource, resource_id, token]);
+
+  useEffect(() => {
+    if (resource_id) {
+      void fetchResource();
+    } else if (token) {
+      // Try to validate token and get resource info
+      void validateShareLink();
+    } else {
+      setLoading(false);
+    }
+  }, [fetchResource, resource_id, token, validateShareLink]);
+
+  if (!token && !resource_id) {
+    return (
+      <View style={styles.container}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.errorContainer}>
+          <View style={styles.resourceIcon}>
+            <Icon name="share-social" size={40} color={colors.primary[500]} />
+          </View>
+          <Text style={styles.errorTitle}>Share a Resource</Text>
+          <Text style={styles.errorMessage}>
+            Open a share link to preview a resource here, or pick a resource from your library and use its share action.
+          </Text>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => router.push('/(student)/tabs/resources')}
+          >
+            <Text style={styles.primaryButtonText}>Browse Resources</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => router.push('/(student)/my-uploads')}
+          >
+            <Text style={styles.secondaryButtonText}>Open My Uploads</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   const handleViewResource = () => {
     if (!isAuthenticated) {
@@ -110,14 +138,18 @@ export default function ResourceShareScreen() {
 
   const handleLoginAndView = () => {
     // Store the resource ID for redirect after login
-    if (resource?.id) {
-      router.push({
-        pathname: '/(auth)/login',
-        params: { redirect: `/resource/${resource.id}` }
-      });
-    } else {
-      router.push('/(auth)/login');
-    }
+    const redirectTarget = resource?.id
+      ? `/resource/${resource.id}`
+      : token
+        ? `/resource-share?token=${token}`
+        : resource_id
+          ? `/resource-share?resource_id=${resource_id}`
+          : '';
+
+    router.push({
+      pathname: '/(auth)/login',
+      params: redirectTarget ? { redirect: redirectTarget } : {},
+    });
   };
 
   const formatFileSize = (bytes: number) => {
@@ -159,7 +191,7 @@ export default function ResourceShareScreen() {
           <Text style={styles.errorMessage}>
             {error || 'This shared resource is no longer available'}
           </Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.primaryButton}
             onPress={() => router.push('/(student)/tabs/resources')}
           >
@@ -173,26 +205,26 @@ export default function ResourceShareScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      
+
       <View style={styles.content}>
         {/* Resource Preview Card */}
         <View style={styles.previewCard}>
           <View style={styles.resourceIcon}>
             <Icon name="document-text" size={40} color={colors.primary[500]} />
           </View>
-          
+
           <Text style={styles.resourceTitle}>{resource.title}</Text>
-          
+
           <View style={styles.typeBadge}>
             <Text style={styles.typeText}>{resource.resource_type}</Text>
           </View>
-          
+
           {resource.course && (
             <Text style={styles.courseText}>
               {resource.course.code} - {resource.course.name}
             </Text>
           )}
-          
+
           <View style={styles.statsRow}>
             <View style={styles.stat}>
               <Icon name="document" size={16} color={colors.text.secondary} />
@@ -201,13 +233,13 @@ export default function ResourceShareScreen() {
               </Text>
             </View>
           </View>
-          
+
           {resource.description && (
             <Text style={styles.description} numberOfLines={3}>
               {resource.description}
             </Text>
           )}
-          
+
           <View style={styles.uploaderRow}>
             <View style={styles.uploaderAvatar}>
               <Text style={styles.uploaderInitial}>
@@ -247,29 +279,29 @@ export default function ResourceShareScreen() {
         {/* Action Buttons */}
         <View style={styles.actions}>
           {isAuthenticated && user?.is_active ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.primaryButton}
               onPress={handleViewResource}
             >
               <Text style={styles.primaryButtonText}>View Resource</Text>
             </TouchableOpacity>
           ) : isAuthenticated ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.primaryButton}
               onPress={() => Alert.alert('Account Inactive', 'Please contact support to activate your account.')}
             >
               <Text style={styles.primaryButtonText}>Contact Support</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.primaryButton}
               onPress={handleLoginAndView}
             >
               <Text style={styles.primaryButtonText}>Login to View</Text>
             </TouchableOpacity>
           )}
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.secondaryButton}
             onPress={() => router.push('/(student)/tabs/resources')}
           >

@@ -1,5 +1,5 @@
-import { Platform, Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { Platform,Share } from 'react-native';
 
 export const copyToClipboard = async (value: string): Promise<void> => {
   const text = String(value || '').trim();

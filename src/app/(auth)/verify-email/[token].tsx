@@ -1,5 +1,5 @@
-import React from 'react';
 import { useLocalSearchParams } from 'expo-router';
+import React from 'react';
 
 import { VerifyEmailScreen } from '../verify-email';
 

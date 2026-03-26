@@ -1,15 +1,14 @@
 // Forgot Password Screen for CampusHub
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
-import { useToast } from '../../components/ui/Toast';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import { authAPI } from '../../services/api';
-import Button from '../../components/ui/Button';
+import React,{ useState } from 'react';
+import { StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
+import { useToast } from '../../components/ui/Toast';
+import { authAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { spacing } from '../../theme/spacing';
 
 const ForgotPasswordScreen: React.FC = () => {
   const router = useRouter();

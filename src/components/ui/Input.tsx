@@ -1,19 +1,18 @@
 // Input Component for CampusHub
 // Modern, clean input field with memo optimization
 
-import React, { useState, memo, useCallback } from 'react';
+import React,{ memo,useCallback,useState } from 'react';
 import {
-  View,
-  TextInput,
-  Text,
   StyleSheet,
-  TouchableOpacity,
-  ViewStyle,
+  Text,
+  TextInput,
   TextInputProps,
+  TouchableOpacity,
+  View,
+  ViewStyle,
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
 
 interface InputProps extends Omit<TextInputProps, 'style'> {
   label?: string;
@@ -100,6 +99,8 @@ const Input: React.FC<InputProps> = memo(({
     </View>
   );
 });
+
+Input.displayName = 'Input';
 
 const styles = StyleSheet.create({
   container: {

@@ -3,6 +3,45 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+def readSecret = { String name ->
+    def gradleValue = findProperty(name)
+    if (gradleValue != null) {
+        def trimmed = gradleValue.toString().trim()
+        if (!trimmed.isEmpty()) {
+            return trimmed
+        }
+    }
+
+    def propertiesValue = keystoreProperties.getProperty(name)
+    if (propertiesValue != null) {
+        def trimmed = propertiesValue.toString().trim()
+        if (!trimmed.isEmpty()) {
+            return trimmed
+        }
+    }
+
+    def envValue = System.getenv(name)
+    if (envValue != null) {
+        def trimmed = envValue.toString().trim()
+        if (!trimmed.isEmpty()) {
+            return trimmed
+        }
+    }
+
+    return null
+}
+def releaseStoreFilePath = readSecret("ANDROID_UPLOAD_STORE_FILE")
+def releaseStorePassword = readSecret("ANDROID_UPLOAD_STORE_PASSWORD")
+def releaseKeyAlias = readSecret("ANDROID_UPLOAD_KEY_ALIAS")
+def releaseKeyPassword = readSecret("ANDROID_UPLOAD_KEY_PASSWORD")
+def hasReleaseSigning = [releaseStoreFilePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it }
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -10,8 +49,15 @@ def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
  */
 react {
     entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", projectRoot, "android", "absolute"].execute(null, rootDir).text.trim())
-    reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
-    hermesCommand = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/sdks/hermesc/%OS-BIN%/hermesc"
+    def reactNativePackagePath = ["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()
+    def reactNativePackageDir = new File(reactNativePackagePath).getParentFile().getAbsoluteFile()
+    def hermesCompilerPackageDir = new File(["node", "--print", "require.resolve('hermes-compiler/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
+    def hermesCompilerRoot = new File(reactNativePackageDir, "sdks/hermesc").exists()
+        ? new File(reactNativePackageDir, "sdks/hermesc").getAbsolutePath()
+        : new File(hermesCompilerPackageDir, "hermesc").getAbsolutePath()
+
+    reactNativeDir = reactNativePackageDir
+    hermesCommand = hermesCompilerRoot + "/%OS-BIN%/hermesc"
     codegenDir = new File(["node", "--print", "require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
 
     enableBundleCompression = (findProperty('android.enableBundleCompression') ?: false).toBoolean()
@@ -87,9 +133,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.campushub'
+    namespace 'com.campushub.app'
     defaultConfig {
-        applicationId 'com.campushub'
+        applicationId 'com.campushub.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -104,15 +150,28 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (releaseStoreFilePath) {
+                storeFile file(releaseStoreFilePath)
+            }
+            if (releaseStorePassword) {
+                storePassword releaseStorePassword
+            }
+            if (releaseKeyAlias) {
+                keyAlias releaseKeyAlias
+            }
+            if (releaseKeyPassword) {
+                keyPassword releaseKeyPassword
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Prefer a real upload key when available; keep debug signing as a local fallback.
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

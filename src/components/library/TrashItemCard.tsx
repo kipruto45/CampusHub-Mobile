@@ -1,9 +1,9 @@
 // Trash Item Card Component
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
-import Icon from '../ui/Icon';
-import { TrashItem, formatFileSize, formatRelativeTime } from '../../services/library.service';
+import { StyleSheet,Text,TouchableOpacity,View,ViewStyle } from 'react-native';
+import { TrashItem,formatFileSize,formatRelativeTime } from '../../services/library.service';
 import { colors } from '../../theme/colors';
+import Icon from '../ui/Icon';
 
 interface TrashItemCardProps {
   item: TrashItem;

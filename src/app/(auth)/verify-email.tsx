@@ -1,15 +1,15 @@
 // Verify Email Screen for CampusHub
 
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useEffect,useState } from 'react';
+import { Alert,KeyboardAvoidingView,Platform,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
+import Icon from '../../components/ui/Icon';
+import { resolveHomeRouteByRole } from '../../lib/auth-routing';
 import { authAPI } from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
-import { resolveHomeRouteByRole } from '../../lib/auth-routing';
-import Icon from '../../components/ui/Icon';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { spacing } from '../../theme/spacing';
 
 type VerifyEmailScreenProps = {
   tokenOverride?: string | string[] | null;

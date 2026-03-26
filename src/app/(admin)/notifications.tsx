@@ -1,15 +1,15 @@
 // Admin Notifications Screen for CampusHub
 // Admin-specific notifications
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,Linking,RefreshControl,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import ErrorState from '../../components/ui/ErrorState';
-import { notificationsApi, Notification } from '../../services/notifications-api.service';
+import Icon from '../../components/ui/Icon';
+import { Notification,notificationsApi } from '../../services/notifications-api.service';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 import { resolveAdminNotificationTarget } from '../../utils/notification-targets';
 
 const NotificationsScreen: React.FC = () => {

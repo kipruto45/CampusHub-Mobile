@@ -1,14 +1,14 @@
 // Activity Hook for CampusHub Mobile App
 // Provides state management and API calls for recent activity
 
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback,useEffect,useState } from 'react';
 import {
   activityApi,
-  RecentActivity,
-  RecentResource,
-  RecentFile,
-  ActivityStats,
   ActivityListResponse,
+  ActivityStats,
+  RecentActivity,
+  RecentFile,
+  RecentResource,
 } from '../services/activity.service';
 import { useAuthStore } from '../store/auth.store';
 
@@ -156,16 +156,6 @@ export function useActivity(): UseActivity {
     }
   }, [isAuthenticated]);
 
-  const clearOldActivities = useCallback(async (days: number = 90) => {
-    try {
-      const response = await activityApi.clearOldActivities(days);
-      console.log(response.message);
-      await refresh();
-    } catch (err: any) {
-      setError(err.message || 'Failed to clear old activities');
-    }
-  }, []);
-
   const refresh = useCallback(async () => {
     await fetchRecentActivity(20);
     await fetchRecentResources(10);
@@ -183,6 +173,16 @@ export function useActivity(): UseActivity {
     fetchDashboardRecentResources,
     fetchActivityStats,
   ]);
+
+  const clearOldActivities = useCallback(async (days: number = 90) => {
+    try {
+      const response = await activityApi.clearOldActivities(days);
+      console.log(response.message);
+      await refresh();
+    } catch (err: any) {
+      setError(err.message || 'Failed to clear old activities');
+    }
+  }, [refresh]);
 
   // Initial fetch
   useEffect(() => {

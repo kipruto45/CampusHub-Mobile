@@ -2,7 +2,7 @@
 // Provides consistent padding, headers, and layout for all screens
 
 import React from 'react';
-import { View, StyleSheet, ViewStyle, StatusBar } from 'react-native';
+import { StatusBar,StyleSheet,View,ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 

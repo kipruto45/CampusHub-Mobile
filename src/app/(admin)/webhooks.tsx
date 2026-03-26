@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  StyleSheet,
-  RefreshControl,
-  Modal,
-  Alert,
-} from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useEffect,useState } from 'react';
+import {
+  Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { adminManagementAPI } from '../../services/api';
 
 interface Webhook {
@@ -45,7 +45,7 @@ const AVAILABLE_EVENTS = [
 export default function Webhooks() {
   const router = useRouter();
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedWebhook, setSelectedWebhook] = useState<Webhook | null>(null);
@@ -98,7 +98,7 @@ export default function Webhooks() {
         auth_type: 'none',
       });
       fetchWebhooks();
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Network error');
     }
   };
@@ -110,7 +110,7 @@ export default function Webhooks() {
       await adminManagementAPI.updateWebhook(webhookId, { status: newStatus });
       Alert.alert('Success', `Webhook ${newStatus}`);
       fetchWebhooks();
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to update webhook');
     }
   };
@@ -119,7 +119,7 @@ export default function Webhooks() {
     try {
       await adminManagementAPI.testWebhook(webhookId);
       Alert.alert('Success', 'Test request sent! Check the webhook endpoint for the response.');
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Network error');
     }
   };
@@ -138,7 +138,7 @@ export default function Webhooks() {
               await adminManagementAPI.deleteWebhook(webhookId);
               Alert.alert('Success', 'Webhook deleted');
               fetchWebhooks();
-            } catch (error) {
+            } catch (_error) {
               Alert.alert('Error', 'Failed to delete webhook');
             }
           },

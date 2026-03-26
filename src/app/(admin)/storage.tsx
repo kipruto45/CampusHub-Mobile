@@ -1,14 +1,14 @@
 // Admin Storage/System Health Screen for CampusHub
 // Platform storage analytics and system health
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,RefreshControl,ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import api from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface SystemHealthData {
   storage: {
@@ -36,7 +36,7 @@ const StorageScreen: React.FC = () => {
     try {
       const response = await api.get('/admin-management/system-health/');
       setData(response.data);
-    } catch (err) { console.error('Failed to fetch system health'); }
+    } catch (_err) { console.error('Failed to fetch system health'); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 

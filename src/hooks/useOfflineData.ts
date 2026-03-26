@@ -1,8 +1,8 @@
 // Offline Data Hook - For screens to fetch and cache data with offline support
 
-import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { networkService, syncQueueService, QueuedActionType } from '../services/offline';
+import { useCallback,useEffect,useState } from 'react';
+import { networkService,QueuedActionType,syncQueueService } from '../services/offline';
 
 const CACHE_PREFIX = 'campushub_cache_';
 const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes default cache
@@ -123,7 +123,7 @@ export function useOfflineData<T>({
   // Initial load
   useEffect(() => {
     refresh();
-  }, []);
+  }, [refresh]);
 
   // Auto-refresh when coming back online
   useEffect(() => {

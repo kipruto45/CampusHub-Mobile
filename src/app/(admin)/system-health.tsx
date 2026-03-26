@@ -1,17 +1,21 @@
 // System Health Screen for Admin Dashboard
 // Shows server status, storage metrics, and system performance
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, 
-  ActivityIndicator, RefreshControl
-} from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useState } from 'react';
+import {
+  ActivityIndicator,RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface SystemHealthData {
   database: {
@@ -24,11 +28,11 @@ interface SystemHealthData {
     total_size_mb: number;
     total_size_gb: number;
     average_size_mb: number;
-    largest_resources: Array<{
+    largest_resources: {
       id: string;
       title: string;
       size_mb: number;
-    }>;
+    }[];
     error?: string;
   };
   api: {

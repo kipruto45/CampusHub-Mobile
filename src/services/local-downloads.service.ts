@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Linking, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { Linking,Platform } from 'react-native';
 
 import { getAuthToken } from './api';
 
@@ -299,7 +299,7 @@ class LocalDownloadsService {
           return;
         }
       }
-    } catch (error) {
+    } catch (_error) {
       // Fall through to alternate open methods below.
     }
 
@@ -388,7 +388,7 @@ class LocalDownloadsService {
 
   // Remove all locally cached downloads and metadata
   async clearAll(): Promise<{ deleted: number; bytes: number }> {
-    const records = await this.loadRecords();
+    const _records = await this.loadRecords();
     let deleted = 0;
     let bytes = 0;
 

@@ -1,23 +1,23 @@
 // Streak Screen
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-} from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Button from '../../../components/ui/Button';
+import Icon from '../../../components/ui/Icon';
 import { gamificationAPI } from '../../../services/api';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 const formatDate = (value?: string) => {
   if (!value) return '';

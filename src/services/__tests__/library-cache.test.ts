@@ -1,3 +1,6 @@
+import { libraryCacheService } from '../library-cache';
+import { networkService } from '../offline';
+
 const mockStorage = new Map<string, string>();
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -24,9 +27,6 @@ jest.mock('expo-network', () => ({
     type: 'WIFI',
   })),
 }));
-
-import { libraryCacheService } from '../library-cache';
-import { networkService } from '../offline';
 
 describe('library-cache', () => {
   beforeEach(async () => {

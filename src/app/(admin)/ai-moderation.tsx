@@ -3,19 +3,18 @@
  * Manage AI-powered content moderation queue and analysis
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
-  Alert,
-  ActivityIndicator,
-  ScrollView,
-} from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import { adminManagementAPI } from '../../services/api';
 
 interface ModerationResource {
@@ -60,7 +59,7 @@ const RISK_COLORS: { [key: string]: string } = {
 };
 
 export default function AIModerationScreen() {
-  const router = useRouter();
+  const _router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<ModerationStats | null>(null);

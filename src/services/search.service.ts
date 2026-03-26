@@ -1,5 +1,5 @@
+import { collectionAlgorithms,searchAlgorithms } from './algorithms.service';
 import { searchAPI } from './api';
-import { collectionAlgorithms, searchAlgorithms } from './algorithms.service';
 import { localRecentSearchAutomation } from './mobileAutomation.service';
 
 export type SearchSort =

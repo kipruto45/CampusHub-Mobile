@@ -1,4 +1,5 @@
-import React from 'react';
+import { useRouter } from 'expo-router';
+import React,{ useEffect,useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -6,14 +7,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 
+import Avatar from '../../../components/ui/Avatar';
 import Card from '../../../components/ui/Card';
 import Icon from '../../../components/ui/Icon';
+import { paymentsAPI } from '../../../services/api';
 import { useAuthStore } from '../../../store/auth.store';
 import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
 import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 interface MenuItem {
   id: string;
@@ -22,6 +24,7 @@ interface MenuItem {
   icon: string;
   iconColor: string;
   route: string;
+  featureKey?: string;
 }
 
 interface MenuSection {
@@ -47,6 +50,7 @@ const QUICK_ACTIONS: MenuItem[] = [
     icon: 'stats-chart',
     iconColor: colors.primary[500],
     route: '/(student)/my-progress',
+    featureKey: 'advanced_analytics',
   },
   {
     id: 'search',
@@ -79,6 +83,7 @@ const QUICK_ACTIONS: MenuItem[] = [
     icon: 'sparkles',
     iconColor: colors.primary[500],
     route: '/(student)/ai-chat',
+    featureKey: 'ai_chat',
   },
 ];
 
@@ -143,6 +148,7 @@ const MENU_SECTIONS: MenuSection[] = [
         icon: 'ribbon',
         iconColor: colors.accent[500],
         route: '/(student)/certificates',
+        featureKey: 'certificates',
       },
       {
         id: 'storage',
@@ -448,9 +454,64 @@ const MENU_SECTIONS: MenuSection[] = [
   },
 ];
 
+const buildUniqueMenuSections = (
+  quickActions: MenuItem[],
+  sections: MenuSection[]
+): MenuSection[] => {
+  const seenRoutes = new Set(quickActions.map((item) => item.route));
+
+  return sections.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => {
+      if (seenRoutes.has(item.route)) {
+        return false;
+      }
+      seenRoutes.add(item.route);
+      return true;
+    }),
+  })).filter((section) => section.items.length > 0);
+};
+
 const MoreScreen: React.FC = () => {
   const router = useRouter();
   const { user } = useAuthStore();
+  const [accessSummary, setAccessSummary] = useState<any | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAccess = async () => {
+      try {
+        const response = await paymentsAPI.getFeatureAccessSummary();
+        const payload = response?.data?.data ?? response?.data ?? null;
+        if (!cancelled) {
+          setAccessSummary(payload);
+        }
+      } catch (_error) {
+        if (!cancelled) {
+          setAccessSummary(null);
+        }
+      }
+    };
+
+    void loadAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const featureFlags = accessSummary?.feature_flags || {};
+  const hasFeatureAccess = (featureKey?: string) =>
+    !featureKey || !accessSummary || Boolean(featureFlags?.[featureKey]);
+  const quickActions = QUICK_ACTIONS.filter((item) =>
+    hasFeatureAccess(item.featureKey)
+  );
+  const filteredMenuSections = MENU_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => hasFeatureAccess(item.featureKey)),
+  })).filter((section) => section.items.length > 0);
+  const menuSections = buildUniqueMenuSections(quickActions, filteredMenuSections);
+  const upgradePrompt = accessSummary?.upgrade_prompt || null;
 
   const handleMenuPress = (item: MenuItem) => {
     router.push(item.route as any);
@@ -460,11 +521,6 @@ const MoreScreen: React.FC = () => {
     [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() ||
     user?.email ||
     'Student';
-  const avatarLabel =
-    user?.first_name?.[0] ||
-    user?.email?.[0]?.toUpperCase() ||
-    'S';
-
   return (
     <View style={styles.container}>
       <ScrollView
@@ -475,9 +531,12 @@ const MoreScreen: React.FC = () => {
           style={styles.profileCard}
           onPress={() => router.push('/(student)/tabs/profile')}
         >
-          <View style={styles.profileAvatar}>
-            <Text style={styles.profileAvatarText}>{avatarLabel}</Text>
-          </View>
+          <Avatar
+            source={user?.avatar}
+            name={displayName}
+            sizePx={56}
+            cacheKey={`student-more-${user?.id || 'guest'}`}
+          />
           <View style={styles.profileCopy}>
             <Text style={styles.profileName}>{displayName}</Text>
             <Text style={styles.profileEmail}>{user?.email}</Text>
@@ -488,10 +547,28 @@ const MoreScreen: React.FC = () => {
           <Icon name="chevron-forward" size={20} color={colors.text.tertiary} />
         </TouchableOpacity>
 
+        {upgradePrompt ? (
+          <TouchableOpacity
+            style={styles.upgradeCard}
+            onPress={() => router.push('/(student)/billing/plans' as any)}
+          >
+            <View style={styles.upgradeIcon}>
+              <Icon name="lock-closed" size={18} color={colors.warning} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.upgradeTitle}>{upgradePrompt.title || 'Upgrade your plan'}</Text>
+              <Text style={styles.upgradeText}>
+                {upgradePrompt.message || 'Upgrade to unlock your premium features.'}
+              </Text>
+            </View>
+            <Icon name="chevron-forward" size={18} color={colors.text.tertiary} />
+          </TouchableOpacity>
+        ) : null}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Access</Text>
           <View style={styles.quickGrid}>
-            {QUICK_ACTIONS.map((item) => (
+            {quickActions.map((item) => (
               <TouchableOpacity
                 key={item.id}
                 style={styles.quickCard}
@@ -512,7 +589,7 @@ const MoreScreen: React.FC = () => {
           </View>
         </View>
 
-        {MENU_SECTIONS.map((section) => (
+        {menuSections.map((section) => (
           <View key={section.id} style={styles.section}>
             <Text style={styles.sectionTitle}>{section.title}</Text>
             <Text style={styles.sectionDescription}>{section.description}</Text>
@@ -575,6 +652,36 @@ const styles = StyleSheet.create({
     padding: spacing[4],
     marginBottom: spacing[6],
     ...shadows.sm,
+  },
+  upgradeCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[3],
+    backgroundColor: colors.warning + '12',
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    marginBottom: spacing[6],
+    borderWidth: 1,
+    borderColor: colors.warning + '30',
+  },
+  upgradeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.warning + '20',
+  },
+  upgradeTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  upgradeText: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.text.secondary,
   },
   profileAvatar: {
     width: 56,

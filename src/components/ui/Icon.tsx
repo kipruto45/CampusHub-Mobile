@@ -1,11 +1,9 @@
 // Custom Icon Component for CampusHub
 // Uses real vector icons from Ionicons, MaterialCommunityIcons, and FontAwesome
 
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
+import React from 'react';
 
 type IconName = 
   // General

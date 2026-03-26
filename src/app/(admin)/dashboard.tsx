@@ -1,18 +1,25 @@
 // Comprehensive Admin Dashboard for CampusHub
 // A modern, data-rich control center for platform administration
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Modal, FlatList
-} from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import Icon from '../../components/ui/Icon';
-import { adminAPI, resourcesAPI } from '../../services/api';
+import { adminAPI,resourcesAPI } from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 import {
   AdminFeaturePermissions,
   AdminFeatureRequirement,
@@ -424,7 +431,7 @@ const AdminDashboard: React.FC = () => {
   const roleLabel = formatAdminRoleLabel(scopeInfo?.role);
   const enabledPermissionsCount = countEnabledAdminPermissions(featurePermissions);
 
-  const quickActions: Array<{
+  const quickActions: {
     id: string;
     title: string;
     subtitle: string;
@@ -432,7 +439,7 @@ const AdminDashboard: React.FC = () => {
     route: string;
     color: string;
     feature?: AdminFeatureRequirement;
-  }> = [
+  }[] = [
     { id: '1', title: 'Review Flagged', subtitle: 'Check auto-held resources', icon: 'flag', route: '/(admin)/resources', color: colors.warning, feature: 'moderate_content' },
     { id: '2', title: 'Manage Users', subtitle: 'View & manage users', icon: 'people', route: '/(admin)/users', color: colors.primary[500], feature: 'manage_users' },
     { id: '3', title: 'Role Invites', subtitle: 'Send and track invites', icon: 'mail-unread', route: '/(admin)/invitations', color: colors.accent[500], feature: 'manage_users' },

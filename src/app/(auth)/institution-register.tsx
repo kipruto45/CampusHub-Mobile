@@ -1,24 +1,24 @@
 // Institution Registration Screen for CampusHub Mobile App
 
-import React, { useState } from 'react';
+import { useRouter } from 'expo-router';
+import React,{ useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
+  Alert,
   KeyboardAvoidingView,
   Platform,
-  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useToast } from '../../components/ui/Toast';
-import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
+import { useToast } from '../../components/ui/Toast';
 import api from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 const InstitutionRegisterScreen: React.FC = () => {
   const router = useRouter();

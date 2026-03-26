@@ -1,24 +1,24 @@
 // Billing & Payments Hub
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-} from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Button from '../../../components/ui/Button';
+import Icon from '../../../components/ui/Icon';
 import { paymentsAPI } from '../../../services/api';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 type SubscriptionStatus =
   | 'active'
@@ -69,6 +69,7 @@ const BillingHome: React.FC = () => {
   const [upgrades, setUpgrades] = useState<any[]>([]);
   const [openingPortal, setOpeningPortal] = useState(false);
   const [updatingSubscription, setUpdatingSubscription] = useState(false);
+  const [startingTrial, setStartingTrial] = useState(false);
 
   const effectiveLimits = useMemo(
     () =>
@@ -123,6 +124,10 @@ const BillingHome: React.FC = () => {
       return status === 'active' && (!endsAt || endsAt > now);
     }).length;
   }, [upgrades]);
+
+  const subscriptionStatus = String(subscription?.status || '').toLowerCase();
+  const hasSubscription = Boolean(subscription?.id || plan?.id);
+  const canManageCycle = subscriptionStatus === 'active' || subscriptionStatus === 'trialing';
 
   const openBillingFallback = useCallback(() => {
     const hasSubscription = Boolean(subscription?.id || plan?.id);
@@ -225,6 +230,39 @@ const BillingHome: React.FC = () => {
       },
     ]);
   }, [loadBilling, subscription]);
+
+  const handleStartTrial = useCallback(() => {
+    Alert.alert('Start free trial', 'Start the trial available for this account?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Start trial',
+        onPress: async () => {
+          try {
+            setStartingTrial(true);
+            const response = await paymentsAPI.startTrial();
+            const payload = response?.data?.data ?? response?.data ?? {};
+            Alert.alert(
+              'Trial started',
+              payload?.trial_end
+                ? `Your ${payload?.tier_name || 'trial'} ends on ${new Date(payload.trial_end).toLocaleString()}.`
+                : payload?.message || 'Your trial has started.'
+            );
+            await loadBilling();
+          } catch (err: any) {
+            Alert.alert(
+              'Trial unavailable',
+              err?.response?.data?.error ||
+                err?.response?.data?.message ||
+                err?.message ||
+                'Unable to start trial.'
+            );
+          } finally {
+            setStartingTrial(false);
+          }
+        },
+      },
+    ]);
+  }, [loadBilling]);
 
   const pill = statusPill(subscription?.status);
 
@@ -344,11 +382,19 @@ const BillingHome: React.FC = () => {
             />
             <View style={{ width: spacing[3] }} />
             <Button
-              title={openingPortal ? 'Opening...' : 'Manage'}
-              onPress={handleOpenPortal}
+              title={
+                hasSubscription
+                  ? openingPortal
+                    ? 'Opening...'
+                    : 'Manage'
+                  : startingTrial
+                    ? 'Starting...'
+                    : 'Start Trial'
+              }
+              onPress={hasSubscription ? handleOpenPortal : handleStartTrial}
               variant="secondary"
-              disabled={openingPortal}
-              loading={openingPortal}
+              disabled={hasSubscription ? openingPortal : startingTrial}
+              loading={hasSubscription ? openingPortal : startingTrial}
               style={{ flex: 1 }}
             />
           </View>
@@ -362,11 +408,33 @@ const BillingHome: React.FC = () => {
             />
             <View style={{ width: spacing[3] }} />
             <Button
-              title={subscription?.cancel_at_period_end ? 'Reactivate' : 'Cancel'}
-              onPress={handleCancelOrReactivate}
-              variant={subscription?.cancel_at_period_end ? 'secondary' : 'danger'}
-              disabled={updatingSubscription}
-              loading={updatingSubscription}
+              title={
+                canManageCycle
+                  ? subscription?.cancel_at_period_end
+                    ? 'Reactivate'
+                    : 'Cancel'
+                  : hasSubscription
+                    ? 'Update Plan'
+                    : 'Tiers & Trial'
+              }
+              onPress={() => {
+                if (canManageCycle) {
+                  handleCancelOrReactivate();
+                  return;
+                }
+                router.push(
+                  (hasSubscription ? '/(student)/billing/plans' : '/(student)/billing/tiers') as any
+                );
+              }}
+              variant={
+                canManageCycle
+                  ? subscription?.cancel_at_period_end
+                    ? 'secondary'
+                    : 'danger'
+                  : 'secondary'
+              }
+              disabled={canManageCycle ? updatingSubscription : false}
+              loading={canManageCycle ? updatingSubscription : false}
               style={{ flex: 1 }}
             />
           </View>

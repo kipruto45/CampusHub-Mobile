@@ -1,15 +1,15 @@
 // Leaderboard Screen for CampusHub
 // Display top students by points, uploads, downloads
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,RefreshControl,ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Avatar from '../../components/ui/Avatar';
+import Icon from '../../components/ui/Icon';
 import { gamificationAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface LeaderboardEntry {
   rank: number;
@@ -172,7 +172,7 @@ const LeaderboardScreen: React.FC = () => {
         {/* Full Leaderboard */}
         <View style={styles.listContainer}>
           <Text style={styles.sectionTitle}>Full Rankings</Text>
-          {leaderboard.map((entry, index) => {
+          {leaderboard.map((entry, _index) => {
             const rankIcon = getRankIcon(entry.rank);
             return (
               <View key={entry.user.id} style={styles.leaderboardItem}>

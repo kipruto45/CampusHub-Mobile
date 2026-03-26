@@ -1,20 +1,20 @@
 // Saved Screen for CampusHub - Bookmarks & Favorites
 // Shows both bookmarks and favorites with tab switching
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useEffect,useMemo,useState } from 'react';
+import { Alert,FlatList,RefreshControl,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 
 import BookmarkedResourceCard from '../../../components/bookmarks/BookmarkedResourceCard';
 import FavoriteItemCard from '../../../components/favorites/FavoriteItemCard';
 import EmptyState from '../../../components/ui/EmptyState';
 import ErrorState from '../../../components/ui/ErrorState';
-import Loading from '../../../components/ui/Loading';
 import Icon from '../../../components/ui/Icon';
+import Loading from '../../../components/ui/Loading';
 import { useBookmarks } from '../../../hooks/useBookmarks';
 import { favoritesService } from '../../../services/favorites.service';
 import { colors } from '../../../theme/colors';
-import { spacing, borderRadius } from '../../../theme/spacing';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 type TabType = 'bookmarks' | 'favorites';
 

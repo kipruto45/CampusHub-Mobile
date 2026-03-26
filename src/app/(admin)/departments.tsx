@@ -1,15 +1,15 @@
 // Admin Departments Screen for CampusHub
 // Manage departments within faculties
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Modal, TextInput, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,Modal,RefreshControl,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import ErrorState from '../../components/ui/ErrorState';
+import Icon from '../../components/ui/Icon';
 import api from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface Department {
   id: string;
@@ -28,11 +28,11 @@ const DepartmentsScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [faculties, setFaculties] = useState<any[]>([]);
+  const [_faculties, setFaculties] = useState<any[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingDept, setEditingDept] = useState<Department | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFaculty, setSelectedFaculty] = useState<string | null>(null);
+  const [selectedFaculty, _setSelectedFaculty] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', code: '', faculty: '', description: '' });
 
   const fetchData = useCallback(async (isRefresh: boolean = false) => {
@@ -56,7 +56,8 @@ const DepartmentsScreen: React.FC = () => {
     }
   }, [searchQuery, selectedFaculty]);
 
-  useEffect(() => { fetchData(true); }, [searchQuery, selectedFaculty]);
+  useEffect(() => { fetchData(true); }, [fetchData]);
+
 
   const onRefresh = useCallback(() => { setRefreshing(true); fetchData(true); }, [fetchData]);
 
@@ -89,7 +90,7 @@ const DepartmentsScreen: React.FC = () => {
       }
       setModalVisible(false);
       fetchData(true);
-    } catch (err: any) {
+    } catch (_err: any) {
       Alert.alert('Error', 'Failed to save department');
     }
   };
@@ -102,7 +103,7 @@ const DepartmentsScreen: React.FC = () => {
           await api.delete(`/faculties/departments/${id}/`);
           Alert.alert('Success', 'Department deleted');
           fetchData(true);
-        } catch (err) { Alert.alert('Error', 'Failed to delete'); }
+        } catch (_err) { Alert.alert('Error', 'Failed to delete'); }
       }},
     ]);
   };

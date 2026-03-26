@@ -2,10 +2,10 @@
 // Premium rounded card with soft shadows
 
 import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import { StyleSheet,View,ViewStyle } from 'react-native';
 import { colors } from '../../theme/colors';
-import { borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
+import { borderRadius } from '../../theme/spacing';
 
 interface CardProps {
   children: React.ReactNode;

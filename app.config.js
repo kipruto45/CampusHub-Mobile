@@ -3,6 +3,7 @@ require('dotenv/config');
 module.exports = ({ config }) => {
   const baseConfig = config ?? {};
   const plugins = Array.isArray(baseConfig.plugins) ? [...baseConfig.plugins] : [];
+  const appScheme = String(process.env.EXPO_PUBLIC_APP_SCHEME || 'campushub').trim() || 'campushub';
 
   const hasPlugin = (name) =>
     plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] === name : plugin === name));
@@ -26,6 +27,7 @@ module.exports = ({ config }) => {
     
     // Orientation (previously in app.json)
     orientation: 'portrait',
+    scheme: appScheme,
     
     // Icon (previously in app.json)
     icon: './assets/icon.png',
@@ -43,7 +45,7 @@ module.exports = ({ config }) => {
     // iOS configuration (previously in app.json)
     ios: {
       supportsTablet: true,
-      bundleIdentifier: 'com.campushub.mobile',
+      bundleIdentifier: 'com.campushub.app',
     },
     
     // Android configuration (previously in app.json)
@@ -52,7 +54,7 @@ module.exports = ({ config }) => {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#ffffff',
       },
-      package: 'com.campushub.mobile',
+      package: 'com.campushub.app',
       permissions: [
         'android.permission.INTERNET',
         'android.permission.ACCESS_NETWORK_STATE',

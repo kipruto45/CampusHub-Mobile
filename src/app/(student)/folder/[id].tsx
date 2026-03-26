@@ -1,35 +1,50 @@
 // Folder Details Screen
-import React, { useMemo, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  RefreshControl,
-  TouchableOpacity,
-  ViewStyle,
-  TextInput,
-  Alert,
-} from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
-import Icon from '../../../components/ui/Icon';
-import { colors } from '../../../theme/colors';
-import { useFolders, useFiles, useStorage, useAllFolders } from '../../../hooks/useLibrary';
-import { FolderCard } from '../../../components/library/FolderCard';
+import { Stack,useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useMemo,useState } from 'react';
+import {
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  ViewStyle
+} from 'react-native';
 import { FileCard } from '../../../components/library/FileCard';
+import { FolderCard } from '../../../components/library/FolderCard';
 import { CreateFolderModal } from '../../../components/modals/CreateFolderModal';
+import Icon from '../../../components/ui/Icon';
+import { useAllFolders,useFiles,useFolders,useStorage } from '../../../hooks/useLibrary';
 import { folderAlgorithms } from '../../../services/algorithms.service';
 import { libraryService } from '../../../services/library.service';
 import { mobileAutomationService } from '../../../services/mobileAutomation.service';
+import { colors } from '../../../theme/colors';
 
 export default function FolderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   
   const folderId = id || '';
-  const { folders, createFolder, renameFolder, deleteFolder, favoriteFolder, refresh: refreshFolders } = useFolders(folderId);
-  const { files, uploadFile, renameFile, moveFile, duplicateFile, favoriteFile, deleteFile, refresh: refreshFiles } = useFiles(folderId);
+  const {
+    folders,
+    createFolder,
+    renameFolder: _renameFolder,
+    deleteFolder: _deleteFolder,
+    favoriteFolder: _favoriteFolder,
+    refresh: refreshFolders,
+  } = useFolders(folderId);
+  const {
+    files,
+    uploadFile,
+    renameFile: _renameFile,
+    moveFile: _moveFile,
+    duplicateFile: _duplicateFile,
+    favoriteFile: _favoriteFile,
+    deleteFile: _deleteFile,
+    refresh: refreshFiles,
+  } = useFiles(folderId);
   const { refresh: refreshStorage } = useStorage();
   const { folders: allFolders, refresh: refreshAllFolders } = useAllFolders();
   

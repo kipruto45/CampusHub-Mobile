@@ -1,11 +1,11 @@
 // Auth Layout for CampusHub
 
-import React, { useEffect } from 'react';
-import { Stack, useRouter, usePathname } from 'expo-router';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { colors } from '../../theme/colors';
-import { useAuthStore } from '../../store/auth.store';
+import { Stack,usePathname,useRouter } from 'expo-router';
+import React,{ useEffect } from 'react';
+import { ActivityIndicator,StyleSheet,View } from 'react-native';
 import { resolveHomeRouteByRole } from '../../lib/auth-routing';
+import { useAuthStore } from '../../store/auth.store';
+import { colors } from '../../theme/colors';
 
 // Public routes that should be accessible even when authenticated
 const PUBLIC_ROUTES = ['/privacy', '/terms', '/splash'];

@@ -3,25 +3,23 @@
  * Create and manage email campaigns for targeted announcements
  */
 
-import React, { useState, useCallback } from 'react';
+import { useFocusEffect,useRouter } from 'expo-router';
+import React,{ useCallback,useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  RefreshControl,
-  Alert,
-  TextInput,
-  Modal,
-  FlatList,
   ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useFocusEffect } from 'expo-router';
-import { useAuthStore } from '../../store/auth.store';
 import * as adminService from '../../services/admin-management.service';
-import { EmailCampaign, CampaignStats } from '../../services/admin-management.service';
+import { CampaignStats,EmailCampaign } from '../../services/admin-management.service';
 
 const CAMPAIGN_TYPES = [
   { value: 'general', label: 'General' },
@@ -42,7 +40,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function EmailCampaignsScreen() {
-  const router = useRouter();
+  const _router = useRouter();
   const [activeTab, setActiveTab] = useState<'campaigns' | 'create' | 'stats'>('campaigns');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -61,7 +59,7 @@ export default function EmailCampaignsScreen() {
     send_now: false,
   });
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       if (activeTab === 'campaigns') {
         const data = await adminService.getEmailCampaigns();
@@ -75,12 +73,12 @@ export default function EmailCampaignsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab]);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [activeTab])
+    }, [loadData])
   );
 
   const onRefresh = async () => {
@@ -111,7 +109,7 @@ export default function EmailCampaignsScreen() {
       });
       loadData();
       Alert.alert('Success', 'Campaign created successfully');
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to create campaign');
     }
   };
@@ -129,7 +127,7 @@ export default function EmailCampaignsScreen() {
               await adminService.sendEmailCampaign(campaign.id);
               loadData();
               Alert.alert('Success', 'Campaign sent successfully');
-            } catch (error) {
+            } catch (_error) {
               Alert.alert('Error', 'Failed to send campaign');
             }
           },
@@ -152,7 +150,7 @@ export default function EmailCampaignsScreen() {
               await adminService.cancelEmailCampaign(campaign.id);
               loadData();
               Alert.alert('Success', 'Campaign cancelled');
-            } catch (error) {
+            } catch (_error) {
               Alert.alert('Error', 'Failed to cancel campaign');
             }
           },
@@ -175,7 +173,7 @@ export default function EmailCampaignsScreen() {
               await adminService.deleteEmailCampaign(campaign.id);
               loadData();
               Alert.alert('Success', 'Campaign deleted');
-            } catch (error) {
+            } catch (_error) {
               Alert.alert('Error', 'Failed to delete campaign');
             }
           },

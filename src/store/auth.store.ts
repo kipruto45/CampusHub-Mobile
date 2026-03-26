@@ -1,24 +1,24 @@
 // Auth Store for CampusResources - Zustand
 
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import NetInfo from '@react-native-community/netinfo';
+import { create } from 'zustand';
+import { createJSONStorage,persist } from 'zustand/middleware';
+import type { AppRole } from '../lib/auth-routing';
+import { resolveHomeRouteByRole,STUDENT_HOME_ROUTE } from '../lib/auth-routing';
 import {
   authAPI,
-  setAuthToken,
   clearAuthToken,
+  normalizeAbsoluteAppUrl,
+  setAuthToken,
   setRefreshToken,
   setRefreshTokenCallback,
   setSessionInvalidationCallback,
-  normalizeAbsoluteAppUrl,
 } from '../services/api';
-import { notificationService } from '../services/notifications';
 import { biometricService } from '../services/biometric';
-import type { AppRole } from '../lib/auth-routing';
-import { resolveHomeRouteByRole, STUDENT_HOME_ROUTE } from '../lib/auth-routing';
+import { notificationService } from '../services/notifications';
 
 const memoryStorage = (() => {
   const store: Record<string, string> = {};
@@ -335,7 +335,7 @@ export const useAuthStore = create<AuthState>()(
       login: async (
         email: string,
         password: string,
-        rememberMe: boolean = false,
+        rememberMe: boolean = true,
         twoFactorCode?: string
       ) => {
         set({ isLoading: true, error: null });

@@ -3,17 +3,17 @@
  * View predictive analytics, churn risk, and content trends
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
-  ActivityIndicator,
-} from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { adminManagementAPI } from '../../services/api';
 
 interface ChurnRisk {
@@ -49,7 +49,7 @@ interface PredictiveSummary {
 }
 
 export default function PredictiveAnalyticsScreen() {
-  const router = useRouter();
+  const _router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [summary, setSummary] = useState<PredictiveSummary | null>(null);

@@ -1,25 +1,27 @@
 // AI Chat Screen for CampusHub
 // Mini ChatGPT-like interface
 
-import React, { useState, useRef, useEffect } from 'react';
+import axios,{ CancelTokenSource } from 'axios';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useRef,useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
   Linking,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import axios, { CancelTokenSource } from 'axios';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
 import Icon from '../../components/ui/Icon';
-import { aiAPI } from '../../services/api';
+import { aiAPI,resourcesAPI } from '../../services/api';
+import { voiceService } from '../../services/voice';
+import { colors } from '../../theme/colors';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface MessageSource {
   id?: string;
@@ -47,6 +49,114 @@ const QUICK_ACTIONS = [
   'Summarize this PDF I downloaded',
 ];
 
+const buildLocalHelpReply = async (
+  rawText: string
+): Promise<{
+  content: string;
+  sources?: MessageSource[];
+  suggestedActions?: string[];
+} | null> => {
+  const text = rawText.trim().toLowerCase();
+  if (!text) return null;
+
+  if (text.includes('upload')) {
+    return {
+      content:
+        'To upload a resource, open Upload Resource, choose your file, add the course details, then submit it for review.',
+      sources: [
+        {
+          title: 'Upload Resource',
+          subtitle: 'Share notes, slides, past papers, and tutorials',
+          route: '/(student)/upload-resource',
+        },
+      ],
+      suggestedActions: ['What files can I upload?', 'Open my uploads'],
+    };
+  }
+
+  if (text.includes('verify') || text.includes('account')) {
+    return {
+      content:
+        'If your account needs verification, open the verify-email screen and resend the email if needed.',
+      sources: [
+        {
+          title: 'Verify Email',
+          subtitle: 'Resend verification and finish account setup',
+          route: '/(auth)/verify-email',
+        },
+      ],
+      suggestedActions: ['How do I resend the email?', 'Open login'],
+    };
+  }
+
+  if (text.includes('storage')) {
+    return {
+      content:
+        'Your storage screen shows current usage, available space, cloud connections, and cleanup actions.',
+      sources: [
+        {
+          title: 'Storage',
+          subtitle: 'Usage, cleanup, downloads, and cloud connections',
+          route: '/(student)/storage',
+        },
+      ],
+      suggestedActions: ['Open storage', 'How do I clear space?'],
+    };
+  }
+
+  if (text.includes('study group') || text.includes('group')) {
+    return {
+      content:
+        'You can browse existing study groups, join one, or create a new focused group for classmates.',
+      sources: [
+        {
+          title: 'Study Groups',
+          subtitle: 'Browse your groups and community spaces',
+          route: '/(student)/study-groups',
+        },
+        {
+          title: 'Create Study Group',
+          subtitle: 'Start a new group for your class or topic',
+          route: '/(student)/create-study-group',
+        },
+      ],
+      suggestedActions: ['Browse study groups', 'Create a study group'],
+    };
+  }
+
+  if (
+    text.includes('find') ||
+    text.includes('notes') ||
+    text.includes('pdf') ||
+    text.includes('resource') ||
+    text.includes('slides') ||
+    text.includes('past paper')
+  ) {
+    try {
+      const response = await resourcesAPI.list({ search: rawText, limit: 3 });
+      const payload = response?.data?.data ?? response?.data ?? {};
+      const results = Array.isArray(payload?.results) ? payload.results : [];
+      if (results.length > 0) {
+        const sources = results.slice(0, 3).map((item: any) => ({
+          id: String(item?.id || ''),
+          title: String(item?.title || 'Resource'),
+          subtitle: String(item?.course?.name || item?.resource_type || 'CampusHub resource'),
+        }));
+        return {
+          content:
+            'The full AI service is unavailable right now, but I found a few matching resources you can open immediately.',
+          sources,
+          suggestedActions: ['Browse more resources', 'Open saved resources'],
+        };
+      }
+    } catch {
+      // Fall back to the generic helper below.
+    }
+  }
+
+  return null;
+};
+
 export default function AIChatScreen() {
   const router = useRouter();
   const { prefill } = useLocalSearchParams<{ prefill?: string }>();
@@ -63,6 +173,8 @@ export default function AIChatScreen() {
   const [isNewChat, setIsNewChat] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
   const [cancelSource, setCancelSource] = useState<CancelTokenSource | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const prefillSentRef = useRef(false);
 
@@ -74,14 +186,6 @@ export default function AIChatScreen() {
       }
     };
   }, [cancelSource]);
-
-  // Auto-run a prefill prompt once (for deep links like AI notes)
-  useEffect(() => {
-    if (prefill && !prefillSentRef.current) {
-      prefillSentRef.current = true;
-      void sendMessage(String(prefill), { clearContext: true });
-    }
-  }, [prefill]);
 
   const handleSourcePress = async (source: MessageSource) => {
     if (source.route) {
@@ -99,7 +203,7 @@ export default function AIChatScreen() {
     }
   };
 
-  const sendMessage = async (text: string, { clearContext = false } = {}) => {
+  const sendMessage = useCallback(async (text: string, { clearContext = false } = {}) => {
     if (!text.trim() || loading) return;
 
     const userMessage: Message = {
@@ -136,10 +240,24 @@ export default function AIChatScreen() {
       if (axios.isCancel(error)) {
         return;
       }
+      const fallback = await buildLocalHelpReply(text);
+      const backendError =
+        error?.response?.data?.error?.message ||
+        error?.response?.data?.error ||
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.message;
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: error.response?.data?.error || "I'm having trouble connecting. Please try again.",
+        content:
+          fallback?.content ||
+          backendError ||
+          "I'm having trouble connecting. Please try again.",
+        sources: fallback?.sources,
+        suggestedActions:
+          fallback?.suggestedActions ||
+          ['Browse resources', 'Open support'],
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -147,7 +265,15 @@ export default function AIChatScreen() {
       setLoading(false);
       setCancelSource(null);
     }
-  };
+  }, [isNewChat, loading]);
+
+  // Auto-run a prefill prompt once (for deep links like AI notes)
+  useEffect(() => {
+    if (prefill && !prefillSentRef.current) {
+      prefillSentRef.current = true;
+      void sendMessage(String(prefill), { clearContext: true });
+    }
+  }, [prefill, sendMessage]);
 
   const regenerateLast = async () => {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
@@ -169,6 +295,57 @@ export default function AIChatScreen() {
   const handleStop = () => {
     if (cancelSource) {
       cancelSource.cancel('User stopped generation');
+    }
+  };
+
+  const handleVoiceInput = async () => {
+    try {
+      if (isRecording) {
+        // Stop recording
+        const audioUri = await voiceService.stopRecording();
+        setIsRecording(false);
+
+        if (audioUri) {
+          // For now, we'll use a placeholder for speech-to-text
+          // In a real implementation, you'd send the audio to a speech-to-text API
+          setInputText('Voice input recorded. Speech-to-text integration needed.');
+        }
+      } else {
+        // Start recording
+        const started = await voiceService.startRecording();
+        if (started) {
+          setIsRecording(true);
+        } else {
+          Alert.alert(
+            'Permission Required',
+            'Please grant microphone permission to use voice input.'
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Voice input error:', error);
+      setIsRecording(false);
+      Alert.alert('Error', 'Failed to process voice input.');
+    }
+  };
+
+  const handleSpeakMessage = async (text: string) => {
+    try {
+      if (isSpeaking) {
+        await voiceService.stopSpeaking();
+        setIsSpeaking(false);
+      } else {
+        setIsSpeaking(true);
+        await voiceService.speak(text, {
+          language: 'en-US',
+          pitch: 1.0,
+          rate: 0.9,
+        });
+        setIsSpeaking(false);
+      }
+    } catch (error) {
+      console.error('Speech error:', error);
+      setIsSpeaking(false);
     }
   };
 
@@ -242,6 +419,21 @@ export default function AIChatScreen() {
               </TouchableOpacity>
             ))}
           </View>
+        )}
+        {item.role === 'assistant' && (
+          <TouchableOpacity
+            style={styles.speakButton}
+            onPress={() => handleSpeakMessage(item.content)}
+          >
+            <Icon
+              name={isSpeaking ? 'pause' : 'play'}
+              size={16}
+              color={colors.primary[500]}
+            />
+            <Text style={styles.speakButtonText}>
+              {isSpeaking ? 'Pause' : 'Listen'}
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
     </View>
@@ -321,6 +513,20 @@ export default function AIChatScreen() {
         keyboardVerticalOffset={90}
       >
         <View style={styles.inputContainer}>
+          <TouchableOpacity
+            style={[
+              styles.voiceButton,
+              isRecording && styles.voiceButtonActive,
+            ]}
+            onPress={handleVoiceInput}
+            disabled={loading}
+          >
+            <Icon
+              name={isRecording ? 'close' : 'mic'}
+              size={20}
+              color={isRecording ? colors.error : colors.text.secondary}
+            />
+          </TouchableOpacity>
           <TextInput
             style={styles.input}
             placeholder="Ask me anything..."
@@ -580,5 +786,35 @@ const styles = StyleSheet.create({
   },
   stopButton: {
     backgroundColor: colors.error,
+  },
+  voiceButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.background.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing[2],
+  },
+  voiceButtonActive: {
+    backgroundColor: colors.error + '20',
+    borderWidth: 2,
+    borderColor: colors.error,
+  },
+  speakButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing[2],
+    paddingVertical: spacing[1],
+    paddingHorizontal: spacing[2],
+    backgroundColor: colors.primary[50],
+    borderRadius: borderRadius.md,
+    alignSelf: 'flex-start',
+  },
+  speakButtonText: {
+    marginLeft: spacing[1],
+    fontSize: 12,
+    color: colors.primary[500],
+    fontWeight: '600',
   },
 });

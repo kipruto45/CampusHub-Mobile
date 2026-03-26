@@ -1,27 +1,27 @@
 // Security Screen for CampusHub
 // Backend-driven with real API integration
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Switch,
-  Alert,
-  ActivityIndicator,
-  Modal,
-  TextInput,
-} from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Icon from '../../components/ui/Icon';
-import { securityAPI, userAPI } from '../../services/api';
+import { securityAPI,userAPI } from '../../services/api';
+import { canUseNativeProvider,signInWithNativeProvider,type NativeProvider } from '../../services/nativeSocialAuth';
 import { useAuthStore } from '../../store/auth.store';
-import { canUseNativeProvider, signInWithNativeProvider, type NativeProvider } from '../../services/nativeSocialAuth';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 import { copyToClipboard } from '../../utils/share';
 
 interface LinkedAccount {
@@ -39,7 +39,7 @@ interface TwoFactorStatus {
   verified_at?: string | null;
 }
 
-const PROVIDERS: Array<{ id: NativeProvider; label: string; icon: string; color: string }> = [
+const PROVIDERS: { id: NativeProvider; label: string; icon: string; color: string }[] = [
   { id: 'google', label: 'Google', icon: 'logo-google', color: '#DB4437' },
   { id: 'microsoft', label: 'Microsoft', icon: 'logo-microsoft', color: '#00A4EF' },
 ];

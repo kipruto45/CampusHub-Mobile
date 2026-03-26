@@ -1,17 +1,17 @@
 // Upload Resource Screen for CampusHub
 // File upload with backend API integration
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import { useFocusEffect,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useRef,useState } from 'react';
+import { ActivityIndicator,Alert,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { useToast } from '../../components/ui/Toast';
-import { resourcesAPI, coursesAPI, publicAcademicAPI } from '../../services/api';
+import { coursesAPI,publicAcademicAPI,resourcesAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface SelectedFile {
   name: string;
@@ -774,7 +774,7 @@ const UploadResourceScreen: React.FC = () => {
       } as any);
 
       // Upload to backend
-      const response = await resourcesAPI.create(formData);
+      const _response = await resourcesAPI.create(formData);
       
       setUploadProgress(1);
       setUploadStatus('success');

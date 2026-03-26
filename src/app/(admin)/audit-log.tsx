@@ -3,16 +3,16 @@
  * View and search admin activity logs
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React,{ useCallback,useEffect,useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
   ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
   TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { adminManagementAPI } from '../../services/api';
 
@@ -60,9 +60,9 @@ export default function AuditLogScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
-  const fetchAuditLog = useCallback(async (reset: boolean = false) => {
+  const fetchAuditLog = useCallback(async (reset: boolean = false, pageNum: number = 1) => {
     try {
-      const currentPage = reset ? 1 : page;
+      const currentPage = reset ? 1 : pageNum;
 
       const response = await adminManagementAPI.listAuditLogs({
         page: currentPage,
@@ -73,19 +73,20 @@ export default function AuditLogScreen() {
 
       if (reset) {
         setEntries(newEntries);
+        setPage(2);
       } else {
         setEntries(prev => [...prev, ...newEntries]);
+        setPage(currentPage + 1);
       }
 
       setHasMore(Boolean(data?.next) || newEntries.length >= 20);
-      setPage(currentPage + 1);
     } catch (error) {
       console.error('Error fetching audit log:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [page, selectedFilter]);
+  }, [selectedFilter]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -95,11 +96,11 @@ export default function AuditLogScreen() {
 
   useEffect(() => {
     fetchAuditLog(true);
-  }, [selectedFilter]);
+  }, [fetchAuditLog]);
 
   const loadMore = () => {
     if (hasMore && !loading) {
-      fetchAuditLog(false);
+      fetchAuditLog(false, page);
     }
   };
 

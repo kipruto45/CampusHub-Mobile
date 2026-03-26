@@ -3,27 +3,27 @@
  * Browse and join live video study sessions
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import type { ImageStyle,TextStyle,ViewStyle } from 'react-native';
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  Alert,
   FlatList,
-  TouchableOpacity,
+  Image,
+  Modal,
   RefreshControl,
   SafeAreaView,
+  StyleSheet,
+  Text,
   TextInput,
-  Modal,
-  Alert,
-  Image,
-  ActivityIndicator,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import type { ImageStyle, TextStyle, ViewStyle } from 'react-native';
-import { useRouter } from 'expo-router';
 
+import { liveRoomsService,StudyRoom } from '../../services/live-rooms.service';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { liveRoomsService, StudyRoom } from '../../services/live-rooms.service';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 type CreateRoomType = StudyRoom['room_type'];
 type CreateRoomPrivacy = 'public' | 'private';
@@ -176,7 +176,7 @@ export default function LiveRoomsScreen() {
     { key: 'tutoring', label: 'Tutoring' },
     { key: 'group_project', label: 'Group' },
     { key: 'exam_prep', label: 'Exam Prep' },
-  ] satisfies Array<{ key: CreateRoomType | null; label: string }>;
+  ] satisfies { key: CreateRoomType | null; label: string }[];
 
   if (loading) {
     return (

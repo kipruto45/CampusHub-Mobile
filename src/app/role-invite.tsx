@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -7,7 +8,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -18,10 +18,10 @@ import Input from '../components/ui/Input';
 import ScreenContainer from '../components/ui/ScreenContainer';
 import { useToast } from '../components/ui/Toast';
 import { resolveHomeRouteByRole } from '../lib/auth-routing';
-import { adminAPI, setAuthToken, setRefreshToken } from '../services/api';
+import { adminAPI,setAuthToken,setRefreshToken } from '../services/api';
 import { useAuthStore } from '../store/auth.store';
 import { colors } from '../theme/colors';
-import { borderRadius, spacing } from '../theme/spacing';
+import { borderRadius,spacing } from '../theme/spacing';
 
 type ValidationPayload = {
   valid: boolean;
@@ -30,12 +30,12 @@ type ValidationPayload = {
   role?: string;
   roles?: string[];
   role_names?: string[];
-  role_details?: Array<{
+  role_details?: {
     code: string;
     name: string;
     description?: string;
     permission_preset?: string[];
-  }>;
+  }[];
   email?: string;
   note?: string;
   expires_at?: string;

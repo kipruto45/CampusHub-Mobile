@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
+import React,{ useEffect,useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,13 +11,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 
 import Icon from '../../components/ui/Icon';
+import { coursesAPI,studyGroupsAPI } from '../../services/api';
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
-import { coursesAPI, studyGroupsAPI } from '../../services/api';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface CourseOption {
   id: string;

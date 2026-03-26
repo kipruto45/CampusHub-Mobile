@@ -11,6 +11,7 @@ export type AppRole =
 export const AUTH_LOGIN_ROUTE = '/(auth)/login' as const;
 export const STUDENT_HOME_ROUTE = '/(student)/tabs/home' as const;
 export const ADMIN_HOME_ROUTE = '/(admin)/dashboard' as const;
+export const ADMIN_ACCESS_ROUTE = '/(admin)/access' as const;
 
 export const normalizeRole = (role?: string | null): AppRole => {
   const value = String(role || '').trim().toLowerCase();

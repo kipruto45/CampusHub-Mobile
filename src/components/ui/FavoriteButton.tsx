@@ -1,10 +1,10 @@
 // Favorite Button Component
 
-import React, { useState, useCallback } from 'react';
-import { TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import Icon from './Icon';
+import React,{ useCallback,useState } from 'react';
+import { ActivityIndicator,StyleSheet,TouchableOpacity } from 'react-native';
+import { FavoriteTargetType,useFavorites } from '../../hooks/useFavorites';
 import { colors } from '../../theme/colors';
-import { useFavorites, FavoriteTargetType } from '../../hooks/useFavorites';
+import Icon from './Icon';
 
 interface FavoriteButtonProps {
   targetType: FavoriteTargetType;

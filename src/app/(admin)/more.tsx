@@ -1,14 +1,14 @@
 // Admin More Screen (Admin Tools Hub) for CampusHub
 // Central hub for all admin tools
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useEffect,useState } from 'react';
+import { ActivityIndicator,ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 import {
   AdminFeaturePermissions,
   AdminFeatureRequirement,
@@ -105,10 +105,7 @@ const MoreScreen: React.FC = () => {
     void loadAdminAccess();
   }, []);
 
-  const visibleTools = useMemo(
-    () => tools.filter((tool) => hasAccess(tool.feature)),
-    [tools, featurePermissions]
-  );
+  const visibleTools = tools.filter((tool) => hasAccess(tool.feature));
   const academicTools = visibleTools.filter((tool) => ['0', '1', '2', '3', '4'].includes(tool.id));
   const platformTools = visibleTools.filter((tool) =>
     ['5', '6', '7', '8', '9', '10', '11', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30'].includes(tool.id)

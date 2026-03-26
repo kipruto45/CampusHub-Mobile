@@ -1,9 +1,9 @@
 // File Card Component
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
-import Icon from '../ui/Icon';
-import { LibraryFile, formatFileSize } from '../../services/library.service';
+import { StyleSheet,Text,TouchableOpacity,View,ViewStyle } from 'react-native';
+import { LibraryFile,formatFileSize } from '../../services/library.service';
 import { colors } from '../../theme/colors';
+import Icon from '../ui/Icon';
 
 interface FileCardProps {
   file: LibraryFile;

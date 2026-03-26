@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback,useEffect,useMemo,useState } from 'react';
 
 import { bookmarksAPI } from '../services/api';
-import { networkService, syncQueueService } from '../services/offline';
+import { networkService,syncQueueService } from '../services/offline';
 
 export interface Bookmark {
   id: string;

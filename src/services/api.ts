@@ -1,14 +1,13 @@
 // API Service for CampusHub Mobile App
 // Backend/mobile integration layer with endpoint and response normalization.
 
-import axios from 'axios';
-import {
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios,{
   AxiosError,
   AxiosInstance,
   AxiosResponse,
   InternalAxiosRequestConfig,
 } from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
@@ -329,7 +328,7 @@ let refreshTokenCallback: ((
 ) => void) | null = null;
 let sessionInvalidationCallback: ((reason?: string) => void) | null = null;
 let isRefreshing = false;
-let failedQueue: Array<{ resolve: (value?: any) => void; reject: (reason?: any) => void }> = [];
+let failedQueue: { resolve: (value?: any) => void; reject: (reason?: any) => void }[] = [];
 
 const processQueue = (error: AxiosError | null, token: string | null = null) => {
   failedQueue.forEach((prom) => {
@@ -1480,7 +1479,7 @@ api.interceptors.response.use(
 export {
   getDevFallbackApiBaseUrl,
   getDevRetryBaseUrl,
-  getExpoHost,
+  getExpoHost
 };
 
 export const authAPI = {
@@ -1488,7 +1487,7 @@ export const authAPI = {
     email: string,
     password: string,
     registration_number?: string,
-    remember_me: boolean = true, // Default to true for 90-day session
+    rememberMe: boolean = true,
     two_factor_code?: string
   ) =>
     api
@@ -1496,7 +1495,7 @@ export const authAPI = {
         email,
         password,
         registration_number,
-        remember_me: true, // Always remember for 90 days
+        remember_me: rememberMe,
         ...(two_factor_code ? { two_factor_code } : {}),
       })
       .then((response) => {
@@ -2878,7 +2877,18 @@ export const paymentsAPI = {
         stripe_yearly_price_id: String(plan?.stripe_yearly_price_id || ''),
       }));
 
-      return toEnvelopeResponse(response, { plans });
+      return toEnvelopeResponse(response, {
+        plans,
+        providers: payload?.providers || {},
+      });
+    }),
+
+  getPaymentProviders: () =>
+    api.get('/payments/providers/').then((response) => {
+      const payload = extractData<any>(response.data) || {};
+      return toEnvelopeResponse(response, {
+        providers: payload?.providers || {},
+      });
     }),
 
   getSubscription: () =>
@@ -2893,6 +2903,8 @@ export const paymentsAPI = {
   createSubscription: (payload: {
     plan_id: string;
     billing_period?: 'monthly' | 'yearly';
+    provider?: 'stripe' | 'paypal' | 'mobile_money';
+    phone_number?: string;
   }) =>
     api.post('/payments/subscription/', payload).then((response) => {
       const data = extractData<any>(response.data) || {};
@@ -2952,7 +2964,10 @@ export const paymentsAPI = {
       .post('/payments/checkout/', {
         provider: payload.provider || 'stripe',
         amount: payload.amount,
-        currency: payload.currency || 'USD',
+        currency:
+          payload.provider === 'mobile_money'
+            ? 'KES'
+            : payload.currency || 'USD',
         description: payload.description || 'CampusHub payment',
         payment_type: payload.payment_type || 'one_time',
         ...(payload.phone_number ? { phone_number: payload.phone_number } : {}),

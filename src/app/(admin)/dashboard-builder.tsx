@@ -3,16 +3,16 @@
  * Customize admin dashboard with widgets and layouts
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React,{ useCallback,useEffect,useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
   ActivityIndicator,
   Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { adminManagementAPI } from '../../services/api';
 

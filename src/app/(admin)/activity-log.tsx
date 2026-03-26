@@ -1,14 +1,14 @@
 // Admin Activity Log Screen for CampusHub
 // Audit log of admin actions
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,FlatList,RefreshControl,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import api from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface LogEntry {
   id: string;
@@ -30,7 +30,7 @@ const ActivityLogScreen: React.FC = () => {
     try {
       const response = await api.get('/admin/activity-log/');
       setLogs(response.data?.results || response.data || []);
-    } catch (err) { console.error('Failed to fetch logs'); }
+    } catch (_err) { console.error('Failed to fetch logs'); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 

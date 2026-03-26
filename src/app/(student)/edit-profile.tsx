@@ -1,16 +1,16 @@
 // Edit Profile Screen for CampusHub
 // Backend-driven with real API integration
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator, Modal, FlatList, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,Image,Modal,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
-import { userAPI, publicAcademicAPI } from '../../services/api';
+import { publicAcademicAPI,userAPI } from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface UserProfile {
   id: string;
@@ -101,7 +101,7 @@ const normalizeDateOfBirth = (value: string): { value: string | null; error?: st
 
 const resolveAcademicSelection = (
   selectedId: string,
-  options: Array<{ id: string | number }>
+  options: { id: string | number }[]
 ): { value: string | number | null | undefined; invalid: boolean } => {
   if (!selectedId) return { value: undefined, invalid: false };
   if (!options.length) {
@@ -166,7 +166,7 @@ const EditProfileScreen: React.FC = () => {
   
   // Avatar
   const [avatar, setAvatar] = useState<string | null>(null);
-  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
+  const [_profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
 
   const resolveAvatar = useCallback((profile: UserProfile | null): string | null => {
     const profileAvatar =
@@ -223,7 +223,7 @@ const EditProfileScreen: React.FC = () => {
         setFacultyName(foundFaculty.name);
         
         // Fetch departments for faculty
-        let departmentsData: Array<{ id: string; name: string; code: string }> = [];
+        let departmentsData: { id: string; name: string; code: string }[] = [];
         try {
           const departmentsResponse = await publicAcademicAPI.getDepartments(String(profileData.faculty));
           departmentsData = departmentsResponse.data?.data?.departments || departmentsResponse.data?.data?.results || [];
@@ -375,7 +375,7 @@ const EditProfileScreen: React.FC = () => {
     setShowFacultyPicker(false);
     
     // Fetch departments for selected faculty
-    let departmentsData: Array<{ id: string; name: string; code: string }> = [];
+    let departmentsData: { id: string; name: string; code: string }[] = [];
     try {
       setLoadingDepartments(true);
       const departmentsResponse = await publicAcademicAPI.getDepartments(faculty.id);
@@ -653,7 +653,7 @@ const EditProfileScreen: React.FC = () => {
     }
   };
 
-  const getYearLabel = (yearValue?: string) => {
+  const _getYearLabel = (yearValue?: string) => {
     if (!yearValue) return 'Select Year';
     const yearNum = parseInt(yearValue, 10);
     switch (yearNum) {

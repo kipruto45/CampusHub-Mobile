@@ -2,9 +2,9 @@
 // For destructive actions and important confirmations
 
 import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, TouchableWithoutFeedback } from 'react-native';
+import { Modal,StyleSheet,Text,TouchableOpacity,TouchableWithoutFeedback,View } from 'react-native';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
 import Icon from './Icon';
 
 interface ConfirmationModalProps {

@@ -1,10 +1,10 @@
 // Loading Skeleton Component for CampusHub
 // Shimmer placeholders while content loads
 
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import React,{ useEffect,useRef } from 'react';
+import { Animated,Dimensions,StyleSheet,Text,View } from 'react-native';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 const { width: screenWidth } = Dimensions.get('window');
 

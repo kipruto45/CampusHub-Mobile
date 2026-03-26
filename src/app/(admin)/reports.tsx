@@ -1,15 +1,15 @@
 // Admin Reports Management for CampusHub
 // View and manage user-generated reports
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,RefreshControl,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import ErrorState from '../../components/ui/ErrorState';
+import Icon from '../../components/ui/Icon';
 import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 type ReportStatus = 'open' | 'in_review' | 'resolved' | 'dismissed';
 type ReportType = 'resource' | 'comment' | 'unknown';
@@ -73,7 +73,7 @@ const ReportsScreen: React.FC = () => {
 
   useEffect(() => {
     fetchReports(true);
-  }, [selectedFilter]);
+  }, [fetchReports]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -83,7 +83,7 @@ const ReportsScreen: React.FC = () => {
   const handleRetry = useCallback(() => {
     setLoading(true);
     fetchReports(true);
-  }, []);
+  }, [fetchReports]);
 
   const handleUpdateStatus = async (reportId: string, newStatus: ReportStatus) => {
     try {
@@ -98,7 +98,7 @@ const ReportsScreen: React.FC = () => {
         r.id === reportId ? { ...r, status: newStatus } : r
       ));
       Alert.alert('Success', `Report marked as ${newStatus}`);
-    } catch (err: any) {
+    } catch (_err: any) {
       Alert.alert('Error', 'Failed to update report');
     }
   };

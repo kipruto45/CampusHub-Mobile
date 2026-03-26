@@ -3,34 +3,34 @@
  * Lightweight room detail + participants + chat.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
-  RefreshControl,
   Alert,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
-import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
+import Card from '../../../components/ui/Card';
+import Icon from '../../../components/ui/Icon';
 import {
   liveRoomsService,
-  StudyRoom,
   RoomMessage,
   RoomParticipant,
+  StudyRoom,
 } from '../../../services/live-rooms.service';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 const formatTime = (value?: string | null) => {
   const cleaned = String(value || '').trim();

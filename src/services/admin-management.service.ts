@@ -33,25 +33,25 @@ export interface UserGamification {
   total_ratings: number;
   total_comments: number;
   consecutive_login_days: number;
-  earned_badges: Array<{
+  earned_badges: {
     badge_id: number;
     badge_name: string;
     badge_icon: string;
     badge_category: string;
     earned_at: string;
-  }>;
-  points_history: Array<{
+  }[];
+  points_history: {
     action: string;
     points: number;
     description: string;
     created_at: string;
-  }>;
-  achievements: Array<{
+  }[];
+  achievements: {
     title: string;
     description: string;
     points_earned: number;
     created_at: string;
-  }>;
+  }[];
 }
 
 export interface LeaderboardEntry {
@@ -72,20 +72,20 @@ export interface GamificationStats {
   total_badges_earned: number;
   total_users_with_gamification: number;
   total_achievements: number;
-  badges_by_category: Array<{ category: string; count: number }>;
-  top_uploaders: Array<any>;
+  badges_by_category: { category: string; count: number }[];
+  top_uploaders: any[];
   total_badges_available: number;
   active_badges: number;
 }
 
 export interface PointsConfig {
   default_points: Record<string, number>;
-  action_statistics: Array<{
+  action_statistics: {
     action: string;
     total_points: number;
     count: number;
     avg_points: number;
-  }>;
+  }[];
   total_transactions: number;
 }
 
@@ -196,7 +196,7 @@ export interface CampaignStats {
   total_clicked: number;
   open_rate: number;
   click_rate: number;
-  recent_campaigns: Array<{
+  recent_campaigns: {
     id: string;
     name: string;
     status: string;
@@ -204,7 +204,7 @@ export interface CampaignStats {
     opened_count: number;
     clicked_count: number;
     sent_at?: string;
-  }>;
+  }[];
 }
 
 // Get all campaigns
@@ -274,18 +274,18 @@ export interface APIUsageStats {
   total_requests: number;
   average_response_time_ms: number;
   error_rate: number;
-  status_distribution: Array<{ status_code: number; count: number }>;
-  requests_over_time: Array<{ hour: string; count: number }>;
-  top_endpoints: Array<{
+  status_distribution: { status_code: number; count: number }[];
+  requests_over_time: { hour: string; count: number }[];
+  top_endpoints: {
     endpoint: string;
     count: number;
     avg_time_ms: number;
-  }>;
-  top_users: Array<{
+  }[];
+  top_users: {
     email: string;
     count: number;
     avg_time_ms: number;
-  }>;
+  }[];
 }
 
 export interface APIEndpointStats {
@@ -294,8 +294,8 @@ export interface APIEndpointStats {
   avg_response_time_ms: number;
   max_response_time_ms: number;
   min_response_time_ms: number;
-  status_distribution: Array<{ status_code: number; count: number }>;
-  method_distribution: Array<{ method: string; count: number }>;
+  status_distribution: { status_code: number; count: number }[];
+  method_distribution: { method: string; count: number }[];
 }
 
 export interface UserAPIUsage {
@@ -303,14 +303,14 @@ export interface UserAPIUsage {
   user_email: string;
   total_requests: number;
   avg_response_time_ms: number;
-  top_endpoints: Array<{ endpoint: string; count: number }>;
-  recent_requests: Array<{
+  top_endpoints: { endpoint: string; count: number }[];
+  recent_requests: {
     endpoint: string;
     method: string;
     status_code: number;
     response_time_ms: number;
     created_at: string;
-  }>;
+  }[];
 }
 
 // Get API usage stats

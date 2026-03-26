@@ -1,17 +1,17 @@
 // Admin Users Management for CampusHub
 // Manage users, roles, and account statuses
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,FlatList,RefreshControl,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import ErrorState from '../../components/ui/ErrorState';
-import { adminAPI } from '../../services/api';
+import Icon from '../../components/ui/Icon';
 import { useToast } from '../../components/ui/Toast';
 import { strings } from '../../constants/strings';
+import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface User {
   id: string;
@@ -102,7 +102,7 @@ const UsersScreen: React.FC = () => {
 
   useEffect(() => {
     fetchUsers(1, true);
-  }, [searchQuery, selectedFilter]);
+  }, [fetchUsers]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -130,7 +130,7 @@ const UsersScreen: React.FC = () => {
   const handleRetry = useCallback(() => {
     setLoading(true);
     fetchUsers(1, true);
-  }, []);
+  }, [fetchUsers]);
 
   const handleToggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
@@ -139,7 +139,7 @@ const UsersScreen: React.FC = () => {
         u.id === userId ? { ...u, is_active: !currentStatus } : u
       ));
       showToast('success', !currentStatus ? strings.users.activate : strings.users.deactivate);
-    } catch (err: any) {
+    } catch (_err: any) {
       showToast('error', strings.users.updateFailed);
     }
   };
@@ -158,7 +158,7 @@ const UsersScreen: React.FC = () => {
       );
       showToast('success', isActive ? strings.users.bulkActivate : strings.users.bulkDeactivate);
       setSelectedIds(new Set());
-    } catch (err) {
+    } catch (_err) {
       showToast('error', strings.users.updateFailed);
     } finally {
       setBulkLoading(false);
@@ -179,7 +179,7 @@ const UsersScreen: React.FC = () => {
       );
       showToast('success', strings.users.bulkRoleUpdate);
       setSelectedIds(new Set());
-    } catch (err) {
+    } catch (_err) {
       showToast('error', strings.users.roleUpdateFailed);
     } finally {
       setBulkLoading(false);

@@ -1,10 +1,10 @@
 // Toast Notification Component for CampusHub
 // Success, error, info, and warning toasts
 
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
+import React,{ createContext,useCallback,useContext,useEffect,useRef,useState } from 'react';
+import { Animated,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
 import Icon from './Icon';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -58,6 +58,21 @@ const Toast: React.FC<ToastProps> = ({
   const translateY = useRef(new Animated.Value(-100)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
+  const hideToast = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: -100,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => onHide());
+  }, [onHide, opacity, translateY]);
+
   useEffect(() => {
     if (visible) {
       // Show animation
@@ -82,22 +97,7 @@ const Toast: React.FC<ToastProps> = ({
 
       return () => clearTimeout(timer);
     }
-  }, [visible]);
-
-  const hideToast = () => {
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: -100,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start(() => onHide());
-  };
+  }, [duration, hideToast, opacity, translateY, visible]);
 
   if (!visible) return null;
 
@@ -162,8 +162,6 @@ interface ToastContextValue {
     duration?: number;
   };
 }
-
-import { createContext, useContext, useState, useCallback } from 'react';
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 

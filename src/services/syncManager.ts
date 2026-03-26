@@ -1,6 +1,6 @@
 // Sync Manager - Processes queued actions when back online
 
-import { syncQueueService, networkService, QueuedAction, QueuedActionType } from './offline';
+import { networkService,QueuedActionType,syncQueueService } from './offline';
 
 const MAX_RETRIES = 3;
 const SYNC_DELAY_MS = 2000; // Delay before syncing to allow network to stabilize
@@ -13,8 +13,8 @@ interface SyncHandler {
 class SyncManager {
   private handlers: Map<QueuedActionType, SyncHandler['handler']> = new Map();
   private isSyncing: boolean = false;
-  private listeners: Array<(status: SyncStatus) => void> = [];
-  private unsubscribers: Array<() => void> = [];
+  private listeners: ((status: SyncStatus) => void)[] = [];
+  private unsubscribers: (() => void)[] = [];
 
   constructor() {
     this.setupNetworkListener();
@@ -210,5 +210,5 @@ interface SyncResult {
 }
 
 export const syncManager = new SyncManager();
-export type { SyncStatus, SyncResult };
+export type { SyncResult,SyncStatus };
 export default syncManager;

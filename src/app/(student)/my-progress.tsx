@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect,useRouter } from 'expo-router';
+import React,{ useCallback,useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -8,15 +9,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
 
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState from '../../components/ui/ErrorState';
 import Icon from '../../components/ui/Icon';
-import { courseProgressAPI, gamificationAPI } from '../../services/api';
+import { courseProgressAPI,gamificationAPI,paymentsAPI } from '../../services/api';
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface CourseProgress {
   course_id: string;
@@ -224,6 +224,7 @@ const MyProgressScreen: React.FC = () => {
   const [gamification, setGamification] = useState<GamificationSnapshot>(
     EMPTY_GAMIFICATION_SNAPSHOT
   );
+  const [featureSummary, setFeatureSummary] = useState<any | null>(null);
 
   const fetchData = useCallback(async (options?: { silent?: boolean }) => {
     try {
@@ -232,7 +233,8 @@ const MyProgressScreen: React.FC = () => {
       }
       setError(null);
 
-      const [progressRes, gamificationRes] = await Promise.all([
+      const [featureRes, progressRes, gamificationRes] = await Promise.allSettled([
+        paymentsAPI.getFeatureAccessSummary(),
         courseProgressAPI.getAllProgress(),
         (async () => {
           await gamificationAPI.checkBadges().catch(() => null);
@@ -240,7 +242,28 @@ const MyProgressScreen: React.FC = () => {
         })(),
       ]);
 
-      const progressPayload = progressRes?.data?.data ?? progressRes?.data ?? [];
+      const featurePayload =
+        featureRes.status === 'fulfilled'
+          ? featureRes.value?.data?.data ?? featureRes.value?.data ?? null
+          : null;
+      setFeatureSummary(featurePayload);
+
+      const hasAdvancedAnalytics = featurePayload
+        ? Boolean(featurePayload?.feature_flags?.advanced_analytics)
+        : true;
+      if (!hasAdvancedAnalytics) {
+        setProgressData([]);
+        setGamification(EMPTY_GAMIFICATION_SNAPSHOT);
+        setHasLoadedOnce(true);
+        return;
+      }
+
+      const partialErrors: string[] = [];
+
+      const progressPayload =
+        progressRes.status === 'fulfilled'
+          ? progressRes.value?.data?.data ?? progressRes.value?.data ?? []
+          : [];
       setProgressData(
         Array.isArray(progressPayload)
           ? progressPayload
@@ -263,12 +286,40 @@ const MyProgressScreen: React.FC = () => {
           : []
       );
 
-      const gamificationPayload = gamificationRes?.data?.data ?? gamificationRes?.data ?? null;
+      if (progressRes.status === 'rejected') {
+        partialErrors.push(
+          progressRes.reason?.response?.data?.message ||
+            progressRes.reason?.response?.data?.detail ||
+            progressRes.reason?.message ||
+            'course progress'
+        );
+      }
+
+      const gamificationPayload =
+        gamificationRes.status === 'fulfilled'
+          ? gamificationRes.value?.data?.data ?? gamificationRes.value?.data ?? null
+          : null;
       setGamification(
         gamificationPayload
           ? normalizeGamificationSnapshot(gamificationPayload)
           : EMPTY_GAMIFICATION_SNAPSHOT
       );
+
+      if (gamificationRes.status === 'rejected') {
+        partialErrors.push(
+          gamificationRes.reason?.response?.data?.message ||
+            gamificationRes.reason?.response?.data?.detail ||
+            gamificationRes.reason?.message ||
+            'gamification'
+        );
+      }
+
+      if (partialErrors.length === 2) {
+        throw new Error('Failed to load your progress.');
+      }
+      if (partialErrors.length > 0) {
+        setError('Some progress details are temporarily unavailable, but the rest of your dashboard is ready.');
+      }
       setHasLoadedOnce(true);
     } catch (err: any) {
       console.error('Failed to fetch progress:', err);
@@ -300,6 +351,7 @@ const MyProgressScreen: React.FC = () => {
     setLoading(true);
     void fetchData();
   }, [fetchData]);
+  const analyticsLocked = featureSummary?.feature_flags?.advanced_analytics === false;
 
   const getOverallStats = () => {
     const totalCourses = progressData.length;
@@ -418,6 +470,20 @@ const MyProgressScreen: React.FC = () => {
         onRetry={handleRetry}
         onBack={() => router.back()}
       />
+    );
+  }
+
+  if (analyticsLocked) {
+    return (
+      <View style={styles.container}>
+        <EmptyState
+          icon="lock-closed"
+          title="Upgrade to view your progress"
+          description="Advanced progress insights are limited on the Free plan. Upgrade to unlock detailed tracking, analytics, and premium study insights."
+          actionLabel="View Plans"
+          onAction={() => router.push('/(student)/billing/plans' as any)}
+        />
+      </View>
     );
   }
 

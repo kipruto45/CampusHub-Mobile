@@ -12,7 +12,7 @@
 
 ### APK (Android)
 - **Location:** `mobile/android/app/build/outputs/apk/release/app-release.apk`
-- **Size:** ~83 MB
+- **Size:** ~40 MB
 
 ---
 
@@ -59,6 +59,19 @@ Use EAS Build to submit to Google Play:
 cd mobile
 npx eas build -p android --profile production
 ```
+
+If you are building locally with Gradle instead of EAS, provide these release-signing values as
+environment variables, Gradle properties, or `mobile/android/keystore.properties`
+before building:
+
+```bash
+ANDROID_UPLOAD_STORE_FILE=/absolute/path/to/your-upload-key.jks
+ANDROID_UPLOAD_STORE_PASSWORD=your-store-password
+ANDROID_UPLOAD_KEY_ALIAS=your-key-alias
+ANDROID_UPLOAD_KEY_PASSWORD=your-key-password
+```
+
+You can start from [keystore.properties.example](/home/kipruto/Desktop/CampusHub/mobile/android/keystore.properties.example).
 
 ### Option 3: Firebase App Distribution
 ```bash

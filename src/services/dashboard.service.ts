@@ -1,7 +1,7 @@
 // Dashboard API Service for CampusHub Mobile App
 // Handles normalized dashboard-related API calls with lightweight caching
 
-import api, { normalizeAbsoluteAppUrl } from './api';
+import api,{ normalizeAbsoluteAppUrl } from './api';
 
 // User Summary Types
 export interface DashboardUser {

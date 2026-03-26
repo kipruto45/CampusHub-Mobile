@@ -1,28 +1,27 @@
 // Calendar Management for CampusHub Admin
 // Admin panel for managing academic calendars, timetables, and calendar sync
 
-import React, { useState, useCallback, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-  Modal,
-  TextInput,
-  ScrollView,
-  Switch,
-} from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import React,{ useCallback,useEffect,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import Button from '../../components/ui/Button';
+import Icon from '../../components/ui/Icon';
 import { calendarAdminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 type CalendarTab = 'calendars' | 'timetables' | 'overrides' | 'schedules' | 'exports' | 'accounts' | 'sync' | 'events';
 
@@ -163,7 +162,7 @@ const CalendarManagementScreen: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
 
   // Modal states
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [_showCreateModal, _setShowCreateModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 

@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  RefreshControl,
-  Dimensions,
-} from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useEffect,useState } from 'react';
+import {
+  Dimensions,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { adminManagementAPI } from '../../services/api';
 
 interface FunnelData {
@@ -43,7 +43,7 @@ export default function FunnelAnalytics() {
   const [funnels, setFunnels] = useState<FunnelData[]>([]);
   const [selectedFunnel, setSelectedFunnel] = useState<FunnelData | null>(null);
   const [dropOffData, setDropOffData] = useState<DropOffData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'dropoff'>('overview');
 

@@ -1,22 +1,22 @@
 // Settings Screen for CampusHub
 // Backend-driven with real API integration
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert, ActivityIndicator, Linking, Platform, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,Linking,Modal,Platform,ScrollView,StyleSheet,Switch,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { userAPI } from '../../services/api';
-import { biometricService } from '../../services/biometric';
-import { useAuthStore } from '../../store/auth.store';
 import {
   clearNotificationUndoMs,
   getDefaultNotificationUndoMs,
   getNotificationUndoMs,
   setNotificationUndoMs,
 } from '../../services/app-settings';
+import { biometricService } from '../../services/biometric';
+import { useAuthStore } from '../../store/auth.store';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface UserPreferences {
   id: number;
@@ -99,21 +99,21 @@ const SettingsScreen: React.FC = () => {
         // Fallback to web URL if native URL doesn't work
         await Linking.openURL(APP_STORE_URLS.web);
       }
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Unable to open app store. Please try again later.');
     }
   }, []);
   
   // Loading state
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [_saving, setSaving] = useState(false);
   
   // Preferences state
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   
   // Local toggles synced with preferences
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [autosave, setAutosave] = useState(true);
+  const [_autosave, _setAutosave] = useState(true);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [undoDurationMs, setUndoDurationMs] = useState(defaultUndoDurationMs);

@@ -1,25 +1,25 @@
 // Collections Screen for CampusHub
 // Shows all resources saved/collected by the student
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-} from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import React,{ useCallback,useEffect,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import ErrorState from '../../components/ui/ErrorState';
+import Icon from '../../components/ui/Icon';
 import { bookmarksService } from '../../services/bookmarks.service';
 import { favoritesService } from '../../services/favorites.service';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface CollectionItem {
   id: string;
@@ -137,7 +137,7 @@ const CollectionsScreen: React.FC = () => {
     }
   }, []);
 
-  const fetchCollectionResources = async (
+  const fetchCollectionResources = useCallback(async (
     collectionId: string,
     options?: { silent?: boolean }
   ) => {
@@ -181,7 +181,7 @@ const CollectionsScreen: React.FC = () => {
       setLoadingResources(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchCollections(true);

@@ -1,14 +1,14 @@
 // Academic Management Screen for CampusHub
 // Allows admins to manage faculties, courses, and units
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, ViewStyle, TextStyle } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,ScrollView,StyleSheet,Text,TextInput,TextStyle,TouchableOpacity,View,ViewStyle } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface Faculty {
   id: string;
@@ -214,7 +214,7 @@ const AcademicManagementScreen: React.FC = () => {
                 await adminAPI.deleteUnit(item.id);
               }
               fetchData();
-            } catch (err) {
+            } catch (_err) {
               Alert.alert('Error', 'Failed to delete');
             }
           },

@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -8,7 +9,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
@@ -21,7 +21,7 @@ import { useToast } from '../../components/ui/Toast';
 import { adminAPI } from '../../services/api';
 import { colors } from '../../theme/colors';
 import { shadows } from '../../theme/shadows';
-import { borderRadius, spacing } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 type InvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
 
@@ -30,11 +30,11 @@ type Invitation = {
   email: string;
   role: string;
   roles: string[];
-  role_details: Array<{
+  role_details: {
     code: string;
     name: string;
     is_primary: boolean;
-  }>;
+  }[];
   status: InvitationStatus;
   note?: string;
   invited_by_name?: string;
@@ -44,7 +44,7 @@ type Invitation = {
   created_at: string;
 };
 
-const STATUS_FILTERS: Array<{ key: 'all' | InvitationStatus; label: string }> = [
+const STATUS_FILTERS: { key: 'all' | InvitationStatus; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'pending', label: 'Pending' },
   { key: 'accepted', label: 'Accepted' },

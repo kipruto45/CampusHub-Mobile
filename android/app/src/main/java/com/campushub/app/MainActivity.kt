@@ -1,4 +1,4 @@
-package com.campushub
+package com.campushub.app
 
 import android.os.Build
 import android.os.Bundle

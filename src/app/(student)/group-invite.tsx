@@ -1,15 +1,15 @@
 // Group Invite Screen - Handle invite link opening
 // CampusHub Mobile App
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
+import { Stack,useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { studyGroupsAPI } from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface GroupInfo {
   id: string;
@@ -23,10 +23,10 @@ interface GroupInfo {
 }
 
 export default function GroupInviteScreen() {
-  const { token } = useLocalSearchParams<{ token: string }>();
+  const { token } = useLocalSearchParams<{ token?: string }>();
   const router = useRouter();
   const { isAuthenticated, user } = useAuthStore();
-  
+
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [groupInfo, setGroupInfo] = useState<GroupInfo | null>(null);
@@ -36,20 +36,14 @@ export default function GroupInviteScreen() {
   // Check if user is active
   const isUserActive = user?.is_active !== false;
 
-  useEffect(() => {
-    if (token) {
-      validateInvite();
-    }
-  }, [token]);
-
-  const validateInvite = async () => {
+  const validateInvite = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const response = await studyGroupsAPI.validateInviteLink(token!);
-      const data = response.data;
-      
+      const data = response.data?.data || response.data || {};
+
       setValidation(data);
       if (data.valid && data.group) {
         setGroupInfo(data.group);
@@ -59,7 +53,17 @@ export default function GroupInviteScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (token) {
+      void validateInvite();
+    } else {
+      setLoading(false);
+      setValidation(null);
+      setGroupInfo(null);
+    }
+  }, [token, validateInvite]);
 
   const handleJoin = async () => {
     if (!isAuthenticated) {
@@ -87,13 +91,13 @@ export default function GroupInviteScreen() {
     try {
       setJoining(true);
       const response = await studyGroupsAPI.joinViaInvite(token!);
-      const data = response.data;
-      
+      const data = response.data?.data || response.data || {};
+
       if (data.success) {
         Alert.alert(
           'Success!',
           data.message,
-          [{ text: 'OK', onPress: () => router.push(`/study-group/${groupInfo?.id}`) }]
+          [{ text: 'OK', onPress: () => router.push(`/(student)/study-group/${groupInfo?.id}` as any) }]
         );
       } else {
         Alert.alert('Error', data.message);
@@ -106,8 +110,40 @@ export default function GroupInviteScreen() {
   };
 
   const handleLoginAndJoin = async () => {
-    router.push('/(auth)/login');
+    router.push({
+      pathname: '/(auth)/login',
+      params: token ? { redirect: `/group-invite?token=${token}` } : {},
+    });
   };
+
+  if (!token) {
+    return (
+      <View style={styles.container}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.errorContainer}>
+          <View style={styles.errorIcon}>
+            <Icon name="mail-unread" size={64} color={colors.primary[500]} />
+          </View>
+          <Text style={styles.errorTitle}>Open a Group Invite</Text>
+          <Text style={styles.errorMessage}>
+            Group invite links open here automatically. If you do not have a token yet, browse your study groups or ask for a fresh invite link.
+          </Text>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => router.push('/(student)/study-groups')}
+          >
+            <Text style={styles.primaryButtonText}>Browse Groups</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => router.push('/(student)/create-study-group')}
+          >
+            <Text style={styles.secondaryButtonText}>Create a Group</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -133,9 +169,9 @@ export default function GroupInviteScreen() {
           <Text style={styles.errorMessage}>
             {validation?.message || error || 'This invite link is invalid or has expired'}
           </Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => router.push('/study-groups')}
+            onPress={() => router.push('/(student)/study-groups')}
           >
             <Text style={styles.primaryButtonText}>Browse Groups</Text>
           </TouchableOpacity>
@@ -156,9 +192,9 @@ export default function GroupInviteScreen() {
           <Text style={styles.alreadyMemberText}>
             You are already a member of {groupInfo?.name}
           </Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => router.push(`/study-group/${groupInfo?.id}`)}
+            onPress={() => router.push(`/(student)/study-group/${groupInfo?.id}` as any)}
           >
             <Text style={styles.primaryButtonText}>Open Group</Text>
           </TouchableOpacity>
@@ -170,20 +206,20 @@ export default function GroupInviteScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      
+
       <View style={styles.content}>
         {/* Group Preview Card */}
         <View style={styles.previewCard}>
           <View style={styles.groupIcon}>
             <Icon name="people" size={40} color={colors.primary[500]} />
           </View>
-          
+
           <Text style={styles.groupName}>{groupInfo?.name}</Text>
-          
+
           {groupInfo?.course && (
             <Text style={styles.courseText}>{groupInfo.course}</Text>
           )}
-          
+
           <View style={styles.statsRow}>
             <View style={styles.stat}>
               <Icon name="people" size={18} color={colors.text.secondary} />
@@ -191,20 +227,20 @@ export default function GroupInviteScreen() {
                 {groupInfo?.member_count}/{groupInfo?.max_members} members
               </Text>
             </View>
-            
+
             <View style={styles.privacyBadge}>
-              <Icon 
-                name={groupInfo?.privacy === 'public' ? 'globe' : groupInfo?.privacy === 'private' ? 'lock-closed' : 'mail'} 
-                size={14} 
-                color={colors.primary[500]} 
+              <Icon
+                name={groupInfo?.privacy === 'public' ? 'globe' : groupInfo?.privacy === 'private' ? 'lock-closed' : 'mail'}
+                size={14}
+                color={colors.primary[500]}
               />
               <Text style={styles.privacyText}>
-                {groupInfo?.privacy === 'public' ? 'Public' : 
+                {groupInfo?.privacy === 'public' ? 'Public' :
                  groupInfo?.privacy === 'private' ? 'Private' : 'Invite Only'}
               </Text>
             </View>
           </View>
-          
+
           {groupInfo?.description && (
             <Text style={styles.description} numberOfLines={3}>
               {groupInfo.description}
@@ -234,7 +270,7 @@ export default function GroupInviteScreen() {
         {/* Action Buttons */}
         <View style={styles.actions}>
           {isAuthenticated ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.primaryButton, joining && styles.buttonDisabled]}
               onPress={handleJoin}
               disabled={joining}
@@ -248,17 +284,17 @@ export default function GroupInviteScreen() {
               )}
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.primaryButton}
               onPress={handleLoginAndJoin}
             >
               <Text style={styles.primaryButtonText}>Login to Join</Text>
             </TouchableOpacity>
           )}
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.secondaryButton}
-            onPress={() => router.push('/study-groups')}
+            onPress={() => router.push('/(student)/study-groups')}
           >
             <Text style={styles.secondaryButtonText}>Browse Groups</Text>
           </TouchableOpacity>

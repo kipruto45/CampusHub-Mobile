@@ -1,11 +1,11 @@
 // Tooltip Component for CampusHub
 // Simple tooltip with help information
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
-import Icon from './Icon';
+import React,{ useState } from 'react';
+import { Modal,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
+import Icon from './Icon';
 
 interface TooltipProps {
   title: string;

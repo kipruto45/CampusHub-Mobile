@@ -2,11 +2,11 @@
 // Displays a single notification item
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import Icon from '../ui/Icon';
+import { StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import { Notification } from '../../services/notifications-api.service';
+import { colors } from '../../theme/colors';
+import { spacing } from '../../theme/spacing';
+import Icon from '../ui/Icon';
 
 interface NotificationItemProps {
   notification: Notification;

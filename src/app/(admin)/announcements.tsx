@@ -1,8 +1,9 @@
 // Admin Announcements Management for CampusHub
 // Create, edit, publish, and manage announcement attachments
 
-import React, { useCallback, useEffect, useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
+import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,18 +17,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
-import ErrorState from '../../components/ui/ErrorState';
 import Button from '../../components/ui/Button';
+import ErrorState from '../../components/ui/ErrorState';
+import Icon from '../../components/ui/Icon';
 import {
   announcementsApi,
   type Announcement,
   type AnnouncementAttachment,
 } from '../../services/announcements.service';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 type AnnouncementStatus = 'draft' | 'published' | 'archived';
 type AnnouncementType =
@@ -54,7 +54,7 @@ interface AnnouncementFormState {
   is_pinned: boolean;
 }
 
-const TYPE_OPTIONS: Array<{ value: AnnouncementType; label: string }> = [
+const TYPE_OPTIONS: { value: AnnouncementType; label: string }[] = [
   { value: 'general', label: 'General' },
   { value: 'academic', label: 'Academic' },
   { value: 'maintenance', label: 'Maintenance' },
@@ -63,7 +63,7 @@ const TYPE_OPTIONS: Array<{ value: AnnouncementType; label: string }> = [
   { value: 'system_notice', label: 'System Notice' },
 ];
 
-const STATUS_OPTIONS: Array<{ value: AnnouncementStatus; label: string }> = [
+const STATUS_OPTIONS: { value: AnnouncementStatus; label: string }[] = [
   { value: 'draft', label: 'Draft' },
   { value: 'published', label: 'Published' },
   { value: 'archived', label: 'Archived' },

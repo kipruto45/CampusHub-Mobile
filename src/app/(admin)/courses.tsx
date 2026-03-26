@@ -1,15 +1,15 @@
 // Admin Courses Management for CampusHub
 // Manage academic courses
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Modal, TextInput, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,Modal,RefreshControl,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import ErrorState from '../../components/ui/ErrorState';
+import Icon from '../../components/ui/Icon';
 import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface Department {
   id: string;
@@ -164,7 +164,7 @@ const CoursesScreen: React.FC = () => {
               await adminAPI.deleteCourse(id);
               Alert.alert('Success', 'Course deleted');
               fetchData(true);
-            } catch (err: any) {
+            } catch (_err: any) {
               Alert.alert('Error', 'Failed to delete');
             }
           },

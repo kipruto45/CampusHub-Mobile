@@ -153,7 +153,7 @@ class SearchAlgorithms {
 
   mergeSuggestions<T extends SuggestionCandidate>(
     typedSuggestions: T[],
-    recentQueries: Array<{ query?: string }>,
+    recentQueries: { query?: string }[],
     limit: number = 10
   ): SuggestionCandidate[] {
     const recentSuggestions: SuggestionCandidate[] = recentQueries

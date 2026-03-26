@@ -2,42 +2,42 @@
 // Premium, mobile-first student dashboard design
 // Backend-driven with comprehensive sections
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useRef,useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
   RefreshControl,
-  TextInput,
+  ScrollView,
   Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { colors } from '../../../theme/colors';
-import { spacing, borderRadius } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Card from '../../../components/ui/Card';
-import Loading from '../../../components/ui/Loading';
-import ErrorState from '../../../components/ui/ErrorState';
-import Icon from '../../../components/ui/Icon';
 import BookmarkButton from '../../../components/resources/BookmarkButton';
 import FavoriteButton from '../../../components/resources/FavoriteButton';
-import { notificationService } from '../../../services/notifications';
-import { useAuthStore } from '../../../store/auth.store';
-import { analyticsAPI, resourcesAPI, aiAPI, paymentsAPI } from '../../../services/api';
+import Avatar from '../../../components/ui/Avatar';
+import Card from '../../../components/ui/Card';
+import ErrorState from '../../../components/ui/ErrorState';
+import Icon from '../../../components/ui/Icon';
+import Loading from '../../../components/ui/Loading';
 import { announcementsApi } from '../../../services/announcements.service';
+import { aiAPI,analyticsAPI,gamificationAPI,paymentsAPI,resourcesAPI } from '../../../services/api';
 import { bookmarksService } from '../../../services/bookmarks.service';
-import { favoritesService } from '../../../services/favorites.service';
 import {
-  dashboardApi,
   DashboardActivityItem,
-  DashboardData as StudentDashboardPayload,
+  dashboardApi,
   DashboardRecommendation,
+  DashboardData as StudentDashboardPayload,
 } from '../../../services/dashboard.service';
+import { favoritesService } from '../../../services/favorites.service';
+import { notificationService } from '../../../services/notifications';
 import { notificationsApi } from '../../../services/notifications-api.service';
-import { gamificationAPI } from '../../../services/api';
+import { useAuthStore } from '../../../store/auth.store';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 // Types matching backend response
 interface Resource {
@@ -109,12 +109,12 @@ interface QuickAction {
 }
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { id: 'upload', name: 'Upload', icon: 'cloud-upload', color: colors.success, route: '/(student)/upload-resource' },
-  { id: 'progress', name: 'Progress', icon: 'stats-chart', color: colors.primary[500], route: '/(student)/my-progress' },
+  { id: 'search', name: 'Search', icon: 'search', color: colors.primary[500], route: '/(student)/search' },
+  { id: 'challenges', name: 'Challenges', icon: 'diamond', color: colors.warning, route: '/(student)/gamification/achievements' },
   { id: 'groups', name: 'Groups', icon: 'people', color: colors.accent[500], route: '/(student)/study-groups' },
   { id: 'announcements', name: 'Updates', icon: 'megaphone', color: colors.info, route: '/(student)/announcements' },
   { id: 'favorites', name: 'Favorites', icon: 'heart', color: colors.error, route: '/(student)/favorites' },
-  { id: 'storage', name: 'Storage', icon: 'folder-open', color: colors.warning, route: '/(student)/storage' },
+  { id: 'requests', name: 'Requests', icon: 'help-circle', color: colors.success, route: '/(student)/resource-requests' },
 ];
 
 const ANNOUNCEMENT_READ_STORAGE_PREFIX = '@campushub/announcements/read';
@@ -170,6 +170,7 @@ interface StudentServiceCard {
   icon: string;
   color: string;
   badge?: string;
+  featureKey?: string;
 }
 
 interface ActivityFeedEntry {
@@ -232,7 +233,7 @@ const buildActivityFeed = (dashboard: StudentDashboardPayload | null): ActivityF
 const HomeScreen: React.FC = () => {
   const router = useRouter();
   const { user } = useAuthStore();
-  
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -261,13 +262,13 @@ const HomeScreen: React.FC = () => {
     plan: null,
     features: null,
   });
-  
+
   // Gamification state
   const [gamificationStats, setGamificationStats] = useState<{
     total_points: number;
     leaderboard_rank: number | null;
     consecutive_login_days: number;
-    earned_badges: Array<{ id: string; name: string; icon: string; category: string }>;
+    earned_badges: { id: string; name: string; icon: string; category: string }[];
   } | null>(null);
   const lastHeaderBadgeRefreshAtRef = useRef(0);
   const lastQuickActionBadgeRefreshAtRef = useRef(0);
@@ -357,7 +358,7 @@ const HomeScreen: React.FC = () => {
   const fetchDashboardData = useCallback(async () => {
     try {
       setError(null);
-      
+
       // Fetch all data in parallel
       const [
         dashboardRes,
@@ -381,7 +382,7 @@ const HomeScreen: React.FC = () => {
         paymentsAPI.getFeatureAccessSummary().catch(() => ({ data: { data: null } })),
       ]);
       const favoritesPagination = (favoritesRes as any)?.pagination;
-      
+
       const data = dashboardRes.data.data as MobileDashboardData;
       setStudentDashboard(studentDashboardRes);
       setDashboardData(data);
@@ -403,7 +404,7 @@ const HomeScreen: React.FC = () => {
         features: featureAccessRes?.data?.data ?? featureAccessRes?.data ?? null,
       });
       lastQuickActionBadgeRefreshAtRef.current = Date.now();
-      
+
       setRecommendations(studentDashboardRes.recommendations);
       const aiList =
         aiRecsRes?.data?.data?.recommendations ||
@@ -495,7 +496,7 @@ const HomeScreen: React.FC = () => {
     switch (type?.toLowerCase()) {
       case 'notes': return colors.primary[500];
       case 'past_exam':
-      case 'past exam': 
+      case 'past exam':
       case 'past_paper':
       case 'past paper': return colors.warning;
       case 'slides': return colors.info;
@@ -508,11 +509,11 @@ const HomeScreen: React.FC = () => {
     }
   };
 
-  const getResourceTypeIcon = (type: string) => {
+  const _getResourceTypeIcon = (type: string) => {
     switch (type?.toLowerCase()) {
       case 'notes': return 'document-text';
       case 'past_exam':
-      case 'past exam': 
+      case 'past exam':
       case 'past_paper':
       case 'past paper': return 'document';
       case 'slides': return 'images';
@@ -534,7 +535,7 @@ const HomeScreen: React.FC = () => {
     const diff = now.getTime() - date.getTime();
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(hours / 24);
-    
+
     if (hours < 1) return 'Just now';
     if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
     if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`;
@@ -547,7 +548,7 @@ const HomeScreen: React.FC = () => {
         message: `Check out this resource on CampusHub: ${resourceTitle}`,
         title: resourceTitle,
       });
-    } catch (error) {
+    } catch (_error) {
       console.log('Share cancelled or failed');
     }
   };
@@ -623,7 +624,7 @@ const HomeScreen: React.FC = () => {
   }
 
   const stats = dashboardData?.stats || { total_uploads: 0, total_downloads: 0, total_bookmarks: 0, total_favorites: 0 };
-  const recentResources = dashboardData?.recent_resources || [];
+  const _recentResources = dashboardData?.recent_resources || [];
   const announcements =
     dashboardData?.announcements?.length
       ? dashboardData.announcements
@@ -641,6 +642,13 @@ const HomeScreen: React.FC = () => {
   const pendingUploadsCount = studentDashboard?.pending_uploads.total_pending ?? 0;
   const rejectedUploadsCount = studentDashboard?.pending_uploads.total_rejected ?? 0;
   const activityFeed = buildActivityFeed(studentDashboard);
+  const featureFlags = billingSnapshot.features?.feature_flags || {};
+  const hasPlanFeature = (featureKey?: string) =>
+    !featureKey || !billingSnapshot.features || Boolean(featureFlags?.[featureKey]);
+  const upgradeBanner =
+    billingSnapshot.features?.trial_banner ||
+    billingSnapshot.features?.upgrade_prompt ||
+    null;
 
   const getQuickActionBadgeCount = (actionId: QuickAction['id']): number => {
     if (actionId === 'announcements') return unreadAnnouncementsCount;
@@ -694,17 +702,31 @@ const HomeScreen: React.FC = () => {
     },
     {
       id: 'progress',
-      title:
-        (gamificationStats?.consecutive_login_days || 0) > 0
+      title: hasPlanFeature('advanced_analytics')
+        ? (gamificationStats?.consecutive_login_days || 0) > 0
           ? `Keep your ${gamificationStats?.consecutive_login_days}-day streak alive`
-          : 'Review your learning progress',
-      subtitle:
-        gamificationStats?.leaderboard_rank
+          : 'Review your learning progress'
+        : 'Unlock progress insights',
+      subtitle: hasPlanFeature('advanced_analytics')
+        ? gamificationStats?.leaderboard_rank
           ? `You are ranked #${gamificationStats.leaderboard_rank}. Track progress and level up.`
-          : 'Check performance, progress, points, and what to study next.',
-      route: '/(student)/my-progress',
-      icon: 'trending-up',
-      color: colors.accent[500],
+          : 'Check performance, progress, points, and what to study next.'
+        : 'Upgrade to unlock advanced analytics, learning insights, and premium progress tools.',
+      route: hasPlanFeature('advanced_analytics')
+        ? (gamificationStats?.consecutive_login_days || 0) > 0
+          ? '/(student)/gamification/streak'
+          : '/(student)/my-progress'
+        : '/(student)/billing/plans',
+      icon: hasPlanFeature('advanced_analytics')
+        ? (gamificationStats?.consecutive_login_days || 0) > 0
+          ? 'flame'
+          : 'trending-up'
+        : 'lock-closed',
+      color: hasPlanFeature('advanced_analytics')
+        ? (gamificationStats?.consecutive_login_days || 0) > 0
+          ? colors.warning
+          : colors.accent[500]
+        : colors.warning,
     },
   ];
 
@@ -755,6 +777,7 @@ const HomeScreen: React.FC = () => {
       icon: 'sparkles',
       color: colors.primary[500],
       badge: aiPicks.length > 0 ? formatBadgeCount(aiPicks.length) : undefined,
+      featureKey: 'ai_chat',
     },
     {
       id: 'live-rooms',
@@ -789,6 +812,9 @@ const HomeScreen: React.FC = () => {
       color: colors.info,
     },
   ];
+  const visibleServiceCards = serviceCards.filter((card) =>
+    hasPlanFeature(card.featureKey)
+  );
 
   const supportCards: StudentServiceCard[] = [
     {
@@ -840,81 +866,105 @@ const HomeScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <View style={styles.topNav}>
+        <View style={styles.topNavLeft}>
+          <View style={styles.logoContainer}>
+            <Icon name="book" size={24} color={colors.primary[500]} />
+          </View>
+          <View>
+            <Text style={styles.logoText}>CampusHub</Text>
+            {user?.course && (
+              <Text style={styles.courseText} numberOfLines={1}>
+                {user.course}
+              </Text>
+            )}
+          </View>
+        </View>
+        <View style={styles.topNavRight}>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => router.push('/(student)/notifications')}
+          >
+            <Icon name="notifications" size={24} color={colors.text.primary} />
+            {unreadCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.profileButton}
+            onPress={() => router.push('/(student)/tabs/profile')}
+          >
+            <Avatar
+              source={user?.avatar}
+              name={[user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || 'Student'}
+              sizePx={44}
+              cacheKey={`student-home-${user?.id || 'guest'}`}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor={colors.primary[500]}
             colors={[colors.primary[500]]}
           />
         }
       >
-        {/* 1. Top Navigation Header */}
-        <View style={styles.topNav}>
-          <View style={styles.topNavLeft}>
-            <View style={styles.logoContainer}>
-              <Icon name="book" size={24} color={colors.primary[500]} />
-            </View>
-            <View>
-              <Text style={styles.logoText}>CampusHub</Text>
-              {user?.course && (
-                <Text style={styles.courseText} numberOfLines={1}>
-                  {user.course}
-                </Text>
-              )}
-            </View>
-          </View>
-          <View style={styles.topNavRight}>
-            <TouchableOpacity 
-              style={styles.iconButton}
-              onPress={() => router.push('/(student)/notifications')}
-            >
-              <Icon name="notifications" size={24} color={colors.text.primary} />
-              {unreadCount > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationBadgeText}>
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.profileButton}
-              onPress={() => router.push('/(student)/tabs/profile')}
-            >
-              <View style={styles.avatarContainer}>
-                <Text style={styles.avatarText}>
-                  {user?.first_name?.[0] || user?.email?.[0]?.toUpperCase() || 'U'}
-                  {user?.last_name?.[0] || ''}
+        {upgradeBanner ? (
+          <View style={styles.trialBannerCard}>
+            <View style={styles.trialBannerTop}>
+              <View style={styles.trialBannerIcon}>
+                <Icon name="time" size={18} color={colors.accent[500]} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.trialBannerTitle}>{upgradeBanner.title || 'Upgrade your plan'}</Text>
+                <Text style={styles.trialBannerText}>
+                  {upgradeBanner.message || 'Upgrade to unlock your premium tools and higher limits.'}
                 </Text>
               </View>
+            </View>
+            <TouchableOpacity
+              style={styles.trialBannerButton}
+              onPress={() => router.push('/(student)/billing/plans')}
+            >
+              <Text style={styles.trialBannerButtonText}>
+                {upgradeBanner.cta_label || 'Upgrade'}
+              </Text>
+              <Icon name="arrow-forward" size={16} color={colors.text.inverse} />
             </TouchableOpacity>
           </View>
-        </View>
+        ) : null}
 
-        {/* 2. Welcome Hero Card */}
+        {/* 1. Welcome Hero Card */}
         <View style={styles.heroCard}>
           <View style={styles.heroContent}>
             <Text style={styles.heroGreeting}>{getGreeting()},</Text>
             <Text style={styles.heroName}>{user?.first_name || 'Student'}!</Text>
             <Text style={styles.heroSubtext}>
-              {user?.department 
+              {user?.department
                 ? `${user.department} • Ready to learn?`
                 : 'Ready to continue learning?'
               }
             </Text>
               <View style={styles.heroButtons}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.primaryButton, { backgroundColor: colors.success }]}
                   onPress={() => router.push('/(student)/upload-resource')}
                 >
                   <Icon name="cloud-upload" size={20} color={colors.text.inverse} />
                   <Text style={[styles.primaryButtonText, { color: colors.text.inverse }]}>Upload</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.secondaryButton}
                   onPress={() => router.push('/(student)/tabs/resources')}
                 >
@@ -939,13 +989,13 @@ const HomeScreen: React.FC = () => {
         </View>
 
         {/* 3. Global Search Bar */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.searchContainer}
           onPress={() => router.push('/(student)/search')}
         >
           <View style={styles.searchBar}>
             <Icon name="search" size={20} color={colors.text.tertiary} />
-            <TextInput 
+            <TextInput
               style={styles.searchInput}
               placeholder="Search notes, books, past papers, tutorials..."
               placeholderTextColor={colors.text.tertiary}
@@ -1092,7 +1142,7 @@ const HomeScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
           <View style={styles.serviceGrid}>
-            {serviceCards.map((card) => (
+            {visibleServiceCards.map((card) => (
               <TouchableOpacity
                 key={card.id}
                 style={styles.serviceCard}
@@ -1295,15 +1345,15 @@ const HomeScreen: React.FC = () => {
                 <Text style={styles.viewAll}>View All</Text>
               </TouchableOpacity>
             </View>
-            
-            <ScrollView 
-              horizontal 
+
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalScroll}
             >
               {recentlyUploaded.slice(0, 5).map((resource) => (
-                <TouchableOpacity 
-                  key={resource.id} 
+                <TouchableOpacity
+                  key={resource.id}
                   style={styles.resourceCard}
                   onPress={() => router.push(`/(student)/resource/${resource.id}`)}
                 >
@@ -1348,15 +1398,15 @@ const HomeScreen: React.FC = () => {
                 <Text style={styles.viewAll}>View All</Text>
               </TouchableOpacity>
             </View>
-            
-            <ScrollView 
-              horizontal 
+
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalScroll}
             >
               {recentlyViewed.slice(0, 5).map((resource) => (
-                <TouchableOpacity 
-                  key={resource.id} 
+                <TouchableOpacity
+                  key={resource.id}
                   style={styles.resourceCard}
                   onPress={() => router.push(`/(student)/resource/${resource.id}`)}
                 >
@@ -1412,15 +1462,15 @@ const HomeScreen: React.FC = () => {
                 <Text style={styles.viewAll}>View All</Text>
               </TouchableOpacity>
             </View>
-            
-            <ScrollView 
-              horizontal 
+
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalScroll}
             >
               {recommendations.for_you.slice(0, 5).map((resource) => (
-                <TouchableOpacity 
-                  key={resource.id} 
+                <TouchableOpacity
+                  key={resource.id}
                   style={styles.resourceCard}
                   onPress={() => router.push(`/(student)/resource/${resource.id}`)}
                 >
@@ -1446,24 +1496,24 @@ const HomeScreen: React.FC = () => {
                     </View>
                   </View>
                   <View style={styles.cardQuickActions}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.quickActionBtn}
                       onPress={() => handleToggleFavorite(resource.id)}
                     >
                       <Icon name="heart-outline" size={18} color={colors.text.tertiary} />
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.quickActionBtn}
                       onPress={() => handleToggleBookmark(resource.id)}
                     >
                       <Icon name="bookmark-outline" size={18} color={colors.text.tertiary} />
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.quickActionBtn}
                     >
                       <Icon name="download" size={18} color={colors.text.tertiary} />
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.quickActionBtn}
                       onPress={() => handleShare(resource.id, resource.title || 'Resource')}
                     >
@@ -1485,9 +1535,9 @@ const HomeScreen: React.FC = () => {
                 <Text style={styles.viewAll}>View All</Text>
               </TouchableOpacity>
             </View>
-            
-            <ScrollView 
-              horizontal 
+
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalScroll}
             >
@@ -1496,8 +1546,8 @@ const HomeScreen: React.FC = () => {
                 const resourceTypeColor = getResourceTypeColor(resourceType);
 
                 return (
-                  <TouchableOpacity 
-                    key={resource.id} 
+                  <TouchableOpacity
+                    key={resource.id}
                     style={styles.resourceCard}
                     onPress={() => router.push(`/(student)/resource/${resource.id}`)}
                   >
@@ -1523,24 +1573,24 @@ const HomeScreen: React.FC = () => {
                     </View>
                   </View>
                   <View style={styles.cardQuickActions}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.quickActionBtn}
                       onPress={() => handleToggleFavorite(resource.id)}
                     >
                       <Icon name="heart-outline" size={18} color={colors.text.tertiary} />
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.quickActionBtn}
                       onPress={() => handleToggleBookmark(resource.id)}
                     >
                       <Icon name="bookmark-outline" size={18} color={colors.text.tertiary} />
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.quickActionBtn}
                     >
                       <Icon name="download" size={18} color={colors.text.tertiary} />
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.quickActionBtn}
                       onPress={() => handleShare(resource.id, resource.title || 'Resource')}
                     >
@@ -1569,15 +1619,15 @@ const HomeScreen: React.FC = () => {
                 <Text style={styles.viewAll}>View All</Text>
               </TouchableOpacity>
             </View>
-            
-            <ScrollView 
-              horizontal 
+
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalScroll}
             >
               {recommendations.trending.slice(0, 5).map((resource) => (
-                <TouchableOpacity 
-                  key={resource.id} 
+                <TouchableOpacity
+                  key={resource.id}
                   style={styles.resourceCard}
                   onPress={() => router.push(`/(student)/resource/${resource.id}`)}
                 >
@@ -1625,14 +1675,14 @@ const HomeScreen: React.FC = () => {
                 <Text style={styles.viewAll}>View All</Text>
               </TouchableOpacity>
             </View>
-            <ScrollView 
-              horizontal 
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalScroll}
             >
               {recommendations.course_related.slice(0, 5).map((resource) => (
-                <TouchableOpacity 
-                  key={resource.id} 
+                <TouchableOpacity
+                  key={resource.id}
                   style={styles.resourceCard}
                   onPress={() => router.push(`/(student)/resource/${resource.id}`)}
                 >
@@ -1751,7 +1801,56 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: 100,
   },
-  
+  trialBannerCard: {
+    marginHorizontal: spacing[6],
+    marginTop: spacing[4],
+    marginBottom: spacing[2],
+    padding: spacing[4],
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.accent[50],
+    borderWidth: 1,
+    borderColor: colors.accent[100],
+  },
+  trialBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[3],
+  },
+  trialBannerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background.primary,
+  },
+  trialBannerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.text.primary,
+    marginBottom: spacing[1],
+  },
+  trialBannerText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.text.secondary,
+  },
+  trialBannerButton: {
+    marginTop: spacing[4],
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    backgroundColor: colors.accent[500],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.full,
+  },
+  trialBannerButtonText: {
+    color: colors.text.inverse,
+    fontWeight: '700',
+  },
+
   // Top Navigation
   topNav: {
     flexDirection: 'row',
@@ -1761,6 +1860,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing[12],
     paddingBottom: spacing[4],
     backgroundColor: colors.card.light,
+    ...shadows.sm,
   },
   topNavLeft: {
     flexDirection: 'row',

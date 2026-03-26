@@ -1,14 +1,14 @@
 // OAuth Callback Handler
 // Handles the redirect from Google/Microsoft OAuth
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { colors } from '../../../theme/colors';
+import { Stack,useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useEffect,useState } from 'react';
+import { ActivityIndicator,StyleSheet,Text,View } from 'react-native';
+import Icon from '../../../components/ui/Icon';
+import { resolveHomeRouteByRole } from '../../../lib/auth-routing';
 import { exchangeCodeForTokens } from '../../../services/socialAuth';
 import { useAuthStore } from '../../../store/auth.store';
-import { resolveHomeRouteByRole } from '../../../lib/auth-routing';
-import Icon from '../../../components/ui/Icon';
+import { colors } from '../../../theme/colors';
 
 const OAuthCallback: React.FC = () => {
   const { provider, code, error, error_description } = useLocalSearchParams<{

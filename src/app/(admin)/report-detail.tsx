@@ -1,15 +1,15 @@
 // Admin Report Detail Screen for CampusHub
 // Detailed view of a report
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,ScrollView,StyleSheet,Text,TextInput,TouchableOpacity,View } from 'react-native';
 import ErrorState from '../../components/ui/ErrorState';
+import Icon from '../../components/ui/Icon';
 import { adminAPI } from '../../services/api';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 interface ReportDetail {
   id: string;
@@ -64,7 +64,7 @@ const ReportDetailScreen: React.FC = () => {
       setReport(response.data.data);
       setAdminNote(response.data.data.admin_note || '');
       Alert.alert('Success', `Report ${status}`);
-    } catch (err) { Alert.alert('Error', 'Failed to update'); }
+    } catch (_err) { Alert.alert('Error', 'Failed to update'); }
   };
 
   if (loading) return <View style={[styles.container, styles.center]}><ActivityIndicator size="large" color={colors.primary[500]} /></View>;

@@ -69,7 +69,7 @@ export const validateFileSize = (size: number, maxSizeMB: number): string | null
 // Combine multiple validators
 export const validateField = (
   value: string,
-  validators: Array<(value: string) => string | null>
+  validators: ((value: string) => string | null)[]
 ): string | null => {
   for (const validator of validators) {
     const error = validator(value);
@@ -90,7 +90,7 @@ export interface ValidationValues {
 export const validateForm = (
   values: ValidationValues,
   rules: {
-    [key: string]: Array<(value: string) => string | null>;
+    [key: string]: ((value: string) => string | null)[];
   }
 ): ValidationErrors => {
   const errors: ValidationErrors = {};

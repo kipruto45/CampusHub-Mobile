@@ -182,7 +182,7 @@ class LibraryCacheService {
   }
 
   async invalidateMany(
-    targets: Array<{ scope: LibraryCacheScope; identifier?: string | null }>
+    targets: { scope: LibraryCacheScope; identifier?: string | null }[]
   ): Promise<void> {
     for (const target of targets) {
       await this.invalidate(target.scope, target.identifier);

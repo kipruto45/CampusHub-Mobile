@@ -1,9 +1,9 @@
-import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React,{ useMemo,useState } from 'react';
+import { ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 
 import { SearchFilters } from '../../services/search.service';
 import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
 import { BottomSheet } from '../ui/BottomSheet';
 
 interface SearchFiltersSheetProps {

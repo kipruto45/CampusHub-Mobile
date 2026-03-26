@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -8,13 +9,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import Icon from '../../../components/ui/Icon';
+import { courseProgressAPI,coursesAPI } from '../../../services/api';
 import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
 import { shadows } from '../../../theme/shadows';
-import { courseProgressAPI, coursesAPI } from '../../../services/api';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 interface CourseProgressSummary {
   course_id: string;

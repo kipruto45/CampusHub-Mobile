@@ -1,31 +1,31 @@
 // Comprehensive Share Bottom Sheet for CampusHub
 // Includes: Copy Link, Native Share, Send to Student, Share to Study Group
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React,{ useCallback,useEffect,useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  FlatList,
   ActivityIndicator,
-  ScrollView,
+  FlatList,
   Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors } from '../../theme/colors';
-import { borderRadius, spacing } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import BottomSheet from '../ui/BottomSheet';
-import Icon from '../ui/Icon';
 import {
   resourcesService,
   StudentSearchResult,
   StudyGroupInfo,
 } from '../../services/resources.service';
-import { copyToClipboard, openNativeShareSheet } from '../../utils/share';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
+import { copyToClipboard,openNativeShareSheet } from '../../utils/share';
+import BottomSheet from '../ui/BottomSheet';
+import Icon from '../ui/Icon';
 
 type ShareableResource = {
   id: string;
@@ -60,9 +60,9 @@ const ResourceShareSheet: React.FC<Props> = ({
   visible,
   onClose,
   resource,
-  loading: externalLoading,
+  loading: _externalLoading,
 }) => {
-  const insets = useSafeAreaInsets();
+  const _insets = useSafeAreaInsets();
   const [mode, setMode] = useState<ShareMode>('main');
   const [loading, setLoading] = useState(false);
   const [studentQuery, setStudentQuery] = useState('');
@@ -91,7 +91,7 @@ const ResourceShareSheet: React.FC<Props> = ({
     if (mode === 'groups' && visible && groups.length === 0) {
       loadGroups();
     }
-  }, [mode, visible]);
+  }, [groups.length, mode, visible]);
 
   const loadGroups = async () => {
     setGroupsLoading(true);

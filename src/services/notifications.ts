@@ -3,9 +3,9 @@
 // Note: Requires development build for full functionality in SDK 53+
 // This service gracefully skips push notifications when running in Expo Go
 
-import { AppState, AppStateStatus, Platform } from 'react-native';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
-import api, { getAuthToken } from './api';
+import Constants,{ ExecutionEnvironment } from 'expo-constants';
+import { AppState,AppStateStatus,Platform } from 'react-native';
+import api,{ getAuthToken } from './api';
 import { notificationsApi } from './notifications-api.service';
 
 // Check if we're running in Expo Go (where push notifications are not supported)
@@ -42,7 +42,7 @@ const loadNotificationsModule = async (): Promise<boolean> => {
     Notifications = notificationsModule;
     Device = deviceModule;
     return true;
-  } catch (e) {
+  } catch (_e) {
     console.log('expo-notifications not available - using fallback mode');
     return false;
   }
@@ -68,7 +68,7 @@ const configureNotificationHandler = async (): Promise<void> => {
         shouldShowList: true,
       }),
     });
-  } catch (e) {
+  } catch (_e) {
     console.log('Could not set notification handler');
   }
 };
@@ -497,5 +497,5 @@ class NotificationService {
   }
 }
 
-export type { NotificationService, RealtimeNotificationListener };
+export type { NotificationService,RealtimeNotificationListener };
 export const notificationService = new NotificationService();

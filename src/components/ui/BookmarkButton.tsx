@@ -1,10 +1,10 @@
 // Bookmark Button Component
 
-import React, { useState, useCallback } from 'react';
-import { TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import Icon from './Icon';
-import { colors } from '../../theme/colors';
+import React,{ useCallback,useState } from 'react';
+import { ActivityIndicator,StyleSheet,TouchableOpacity } from 'react-native';
 import { useBookmarks } from '../../hooks/useBookmarks';
+import { colors } from '../../theme/colors';
+import Icon from './Icon';
 
 interface BookmarkButtonProps {
   resourceId: string;

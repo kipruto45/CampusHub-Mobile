@@ -1,27 +1,29 @@
 // Storage Add-ons Screen
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-} from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Button from '../../../components/ui/Button';
+import Icon from '../../../components/ui/Icon';
 import Input from '../../../components/ui/Input';
 import { paymentsAPI } from '../../../services/api';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 type Provider = 'stripe' | 'paypal' | 'mobile_money';
+type ProviderStatus = { configured?: boolean; error?: string };
+type ProviderStatusMap = Partial<Record<Provider, ProviderStatus>>;
 
 const STORAGE_OPTIONS = [5, 10, 20, 50, 100] as const;
 const DURATION_OPTIONS = [30, 90, 365] as const;
@@ -31,6 +33,25 @@ const formatDateTime = (value?: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString();
+};
+
+const normalizePaymentError = (error: any): string => {
+  const message = String(
+    error?.response?.data?.error ||
+      error?.response?.data?.message ||
+      error?.message ||
+      ''
+  ).trim();
+
+  if (/you did not provide an api key/i.test(message) || /set stripe_secret_key/i.test(message)) {
+    return 'Card payments are not configured on the server yet. Please add a Stripe secret key before retrying.';
+  }
+
+  if (/failed to get paypal access token/i.test(message) || /paypal_client_id|paypal_client_secret/i.test(message)) {
+    return 'PayPal payments are not configured on the server yet. Please add valid PayPal credentials before retrying.';
+  }
+
+  return message || 'Unable to start payment.';
 };
 
 const StorageAddonsScreen: React.FC = () => {
@@ -43,12 +64,36 @@ const StorageAddonsScreen: React.FC = () => {
   const [provider, setProvider] = useState<Provider>('stripe');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [providers, setProviders] = useState<ProviderStatusMap>({});
+  const paymentCurrency = provider === 'mobile_money' ? 'KES' : 'USD';
+  const providerStatusAvailable = useMemo(() => Object.keys(providers).length > 0, [providers]);
 
   const loadUpgrades = useCallback(async () => {
     try {
-      const response = await paymentsAPI.getStorageUpgrades();
+      const [response, providerResponse] = await Promise.all([
+        paymentsAPI.getStorageUpgrades(),
+        paymentsAPI.getPaymentProviders().catch(() => null),
+      ]);
       const payload = response?.data?.data ?? response?.data ?? {};
+      const providerPayload =
+        providerResponse?.data?.data?.providers ??
+        providerResponse?.data?.providers ??
+        {};
       setUpgrades(Array.isArray(payload?.upgrades) ? payload.upgrades : []);
+      setProviders(providerPayload as ProviderStatusMap);
+      setProvider((current) => {
+        if ((providerPayload as ProviderStatusMap)?.[current]?.configured) {
+          return current;
+        }
+        return (
+          ([
+            'stripe',
+            'paypal',
+            'mobile_money',
+          ] as Provider[]).find((item) => (providerPayload as ProviderStatusMap)?.[item]?.configured) ||
+          current
+        );
+      });
     } catch (err: any) {
       Alert.alert(
         'Storage Add-ons',
@@ -67,6 +112,21 @@ const StorageAddonsScreen: React.FC = () => {
     loadUpgrades();
   }, [loadUpgrades]);
 
+  const isProviderConfigured = useCallback(
+    (providerId: Provider) => {
+      if (!providerStatusAvailable) return true;
+      return Boolean(providers?.[providerId]?.configured);
+    },
+    [providerStatusAvailable, providers]
+  );
+
+  const selectedProviderError = useMemo(() => {
+    if (!providerStatusAvailable || isProviderConfigured(provider)) {
+      return '';
+    }
+    return String(providers?.[provider]?.error || 'This payment method is not configured right now.');
+  }, [isProviderConfigured, provider, providerStatusAvailable, providers]);
+
   const activeUpgrades = useMemo(() => {
     const now = Date.now();
     return upgrades.filter((u) => {
@@ -77,6 +137,11 @@ const StorageAddonsScreen: React.FC = () => {
   }, [upgrades]);
 
   const handlePurchase = async () => {
+    if (!isProviderConfigured(provider)) {
+      Alert.alert('Payment method unavailable', selectedProviderError);
+      return;
+    }
+
     if (provider === 'mobile_money' && !String(phoneNumber || '').trim()) {
       Alert.alert('Phone number required', 'Add your phone number to receive the payment instructions.');
       return;
@@ -109,13 +174,7 @@ const StorageAddonsScreen: React.FC = () => {
 
       await loadUpgrades();
     } catch (err: any) {
-      Alert.alert(
-        'Purchase Failed',
-        err?.response?.data?.error ||
-          err?.response?.data?.message ||
-          err?.message ||
-          'Unable to start payment.'
-      );
+      Alert.alert('Purchase Failed', normalizePaymentError(err));
     } finally {
       setSubmitting(false);
     }
@@ -225,14 +284,27 @@ const StorageAddonsScreen: React.FC = () => {
                 style={[
                   styles.providerChip,
                   provider === opt.id ? styles.providerChipActive : null,
+                  !isProviderConfigured(opt.id as Provider) ? styles.providerChipDisabled : null,
                 ]}
                 onPress={() => setProvider(opt.id as Provider)}
+                disabled={!isProviderConfigured(opt.id as Provider)}
               >
-                <Icon name={opt.icon as any} size={16} color={provider === opt.id ? colors.primary[600] : colors.text.tertiary} />
+                <Icon
+                  name={opt.icon as any}
+                  size={16}
+                  color={
+                    !isProviderConfigured(opt.id as Provider)
+                      ? colors.text.tertiary
+                      : provider === opt.id
+                        ? colors.primary[600]
+                        : colors.text.tertiary
+                  }
+                />
                 <Text
                   style={[
                     styles.providerChipText,
                     provider === opt.id ? styles.providerChipTextActive : null,
+                    !isProviderConfigured(opt.id as Provider) ? styles.providerChipTextDisabled : null,
                   ]}
                 >
                   {opt.label}
@@ -240,6 +312,16 @@ const StorageAddonsScreen: React.FC = () => {
               </TouchableOpacity>
             ))}
           </View>
+
+          <Text style={styles.currencyHint}>
+            {provider === 'mobile_money'
+              ? 'Mobile Money purchases are charged in KES automatically.'
+              : `This payment method will use ${paymentCurrency}.`}
+          </Text>
+
+          {selectedProviderError ? (
+            <Text style={styles.providerError}>{selectedProviderError}</Text>
+          ) : null}
 
           {provider === 'mobile_money' ? (
             <Input
@@ -259,7 +341,7 @@ const StorageAddonsScreen: React.FC = () => {
               title={submitting ? 'Starting...' : 'Purchase'}
               onPress={handlePurchase}
               loading={submitting}
-              disabled={submitting}
+              disabled={submitting || !isProviderConfigured(provider)}
               fullWidth
               icon={<Icon name="cart" size={18} color={colors.text.inverse} />}
             />
@@ -361,8 +443,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.gray[100],
   },
   providerChipActive: { backgroundColor: colors.primary[50], borderWidth: 1, borderColor: colors.primary[200] },
+  providerChipDisabled: { opacity: 0.45 },
   providerChipText: { fontSize: 13, fontWeight: '700', color: colors.text.secondary },
   providerChipTextActive: { color: colors.primary[700] },
+  providerChipTextDisabled: { color: colors.text.tertiary },
+  currencyHint: { marginTop: spacing[3], fontSize: 12, color: colors.text.secondary },
+  providerError: { marginTop: spacing[2], fontSize: 12, color: colors.error, lineHeight: 18 },
 
   emptyInline: { paddingVertical: spacing[6], alignItems: 'center' },
   emptyInlineTitle: { marginTop: spacing[2], fontSize: 14, fontWeight: '800', color: colors.text.primary },
@@ -386,4 +472,3 @@ const styles = StyleSheet.create({
 });
 
 export default StorageAddonsScreen;
-

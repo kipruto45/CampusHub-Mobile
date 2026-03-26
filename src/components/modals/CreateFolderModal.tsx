@@ -1,18 +1,18 @@
 // Create Folder Modal Component
-import React, { useState } from 'react';
+import React,{ useState } from 'react';
 import {
-  View,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  StyleSheet,
   Text,
   TextInput,
-  StyleSheet,
-  ViewStyle,
   TouchableOpacity,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
+  View,
+  ViewStyle,
 } from 'react-native';
-import Icon from '../ui/Icon';
 import { colors } from '../../theme/colors';
+import Icon from '../ui/Icon';
 
 interface CreateFolderModalProps {
   visible: boolean;

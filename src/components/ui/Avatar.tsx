@@ -1,7 +1,7 @@
 // Avatar Component for CampusHub
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import React,{ useEffect,useMemo,useState } from 'react';
+import { Image,StyleSheet,Text,View } from 'react-native';
 import { colors } from '../../theme/colors';
 
 interface AvatarProps {
@@ -115,7 +115,7 @@ export const Avatar: React.FC<AvatarProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [source, cacheKeyValue, displayUri]);
+  }, [source, cacheKeyValue, displayUri, forceInitials]);
 
   const resolvedSource = forceInitials ? null : displayUri || source?.trim() || null;
 

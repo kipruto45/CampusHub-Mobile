@@ -1,11 +1,11 @@
 // Error State Component for CampusHub
 // Handles retry, no internet, server error, unauthorized, not found states
 
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
+import React from 'react';
+import { StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
+import { borderRadius,spacing } from '../../theme/spacing';
 import Icon from './Icon';
 
 export type ErrorType = 

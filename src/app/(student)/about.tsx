@@ -1,21 +1,21 @@
 // About Screen for CampusHub (Student)
 
-import React, { useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Linking,
-  Alert,
-  Platform,
-} from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useCallback } from 'react';
+import {
+  Alert,
+  Linking,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Icon from '../../components/ui/Icon';
 import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
 import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 const AboutScreen: React.FC = () => {
   const router = useRouter();

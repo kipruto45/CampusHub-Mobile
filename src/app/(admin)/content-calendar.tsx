@@ -1,17 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  StyleSheet,
   Alert,
   Modal,
-  FlatList,
   RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { adminManagementAPI } from '../../services/api';
 
 interface CalendarEvent {
@@ -39,7 +38,7 @@ const EVENT_COLORS = {
 export default function ContentCalendar() {
   const router = useRouter();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showModal, setShowModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -56,11 +55,7 @@ export default function ContentCalendar() {
 
   const currentMonth = selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' });
 
-  useEffect(() => {
-    fetchEvents();
-  }, [selectedDate]);
-
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     try {
       const monthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
       const monthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
@@ -77,7 +72,11 @@ export default function ContentCalendar() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [selectedDate]);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -107,7 +106,7 @@ export default function ContentCalendar() {
         color: EVENT_COLORS.announcement,
       });
       fetchEvents();
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Network error');
     }
   };

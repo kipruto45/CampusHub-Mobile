@@ -1,3 +1,5 @@
+import { getDevFallbackApiBaseUrl,getDevRetryBaseUrl } from '../api';
+
 jest.mock('expo/virtual/env', () => ({ env: {} }), { virtual: true });
 
 jest.mock('react-native', () => ({
@@ -12,8 +14,6 @@ jest.mock('expo-constants', () => ({
     },
   },
 }));
-
-import { getDevFallbackApiBaseUrl, getDevRetryBaseUrl } from '../api';
 
 describe('api dev fallback', () => {
   const previousDev = (global as any).__DEV__;

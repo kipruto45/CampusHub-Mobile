@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  StyleSheet,
-  RefreshControl,
-  Modal,
-  Alert,
-} from 'react-native';
 import { useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useState } from 'react';
+import {
+  Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { adminManagementAPI } from '../../services/api';
 
 interface Incident {
@@ -49,7 +49,7 @@ export default function Incidents() {
   const router = useRouter();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [filter, setFilter] = useState<'all' | 'active' | 'resolved'>('all');
@@ -61,11 +61,7 @@ export default function Incidents() {
     severity: 'medium',
   });
 
-  useEffect(() => {
-    fetchIncidents();
-  }, [filter]);
-
-  const fetchIncidents = async () => {
+  const fetchIncidents = useCallback(async () => {
     try {
       const params: { status?: string } = {};
       if (filter === 'active') {
@@ -83,7 +79,11 @@ export default function Incidents() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [filter]);
+
+  useEffect(() => {
+    fetchIncidents();
+  }, [fetchIncidents]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -107,7 +107,7 @@ export default function Incidents() {
         severity: 'medium',
       });
       fetchIncidents();
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Network error');
     }
   };
@@ -117,7 +117,7 @@ export default function Incidents() {
       await adminManagementAPI.updateIncidentStatus(incidentId, newStatus);
       Alert.alert('Success', 'Status updated');
       fetchIncidents();
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to update status');
     }
   };

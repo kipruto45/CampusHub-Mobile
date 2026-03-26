@@ -1,4 +1,4 @@
-import { authAPI, setSessionInvalidationCallback } from '../../services/api';
+import { authAPI,setSessionInvalidationCallback } from '../../services/api';
 import { useAuthStore } from '../auth.store';
 
 jest.mock('../../services/api', () => ({

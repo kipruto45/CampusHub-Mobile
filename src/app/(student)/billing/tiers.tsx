@@ -1,23 +1,23 @@
 // Tier & Trial Screen (Freemium Access)
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-} from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../../theme/colors';
-import { borderRadius, spacing } from '../../../theme/spacing';
-import { shadows } from '../../../theme/shadows';
-import Icon from '../../../components/ui/Icon';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Button from '../../../components/ui/Button';
+import Icon from '../../../components/ui/Icon';
 import { paymentsAPI } from '../../../services/api';
+import { colors } from '../../../theme/colors';
+import { shadows } from '../../../theme/shadows';
+import { borderRadius,spacing } from '../../../theme/spacing';
 
 type TierFeature = {
   key: string;
@@ -95,7 +95,7 @@ const TierScreen: React.FC = () => {
   const downloadLimit = userTier?.limits?.download_limit_monthly ?? 50;
 
   const handleStartTrial = useCallback(() => {
-    Alert.alert('Start free trial', 'Start a Premium trial on this account?', [
+    Alert.alert('Start free trial', 'Start the trial available for this account?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Start trial',
@@ -107,7 +107,7 @@ const TierScreen: React.FC = () => {
             Alert.alert(
               'Trial started',
               payload?.trial_end
-                ? `Your trial ends on ${new Date(payload.trial_end).toLocaleString()}.`
+                ? `Your ${payload?.tier_name || 'trial'} ends on ${new Date(payload.trial_end).toLocaleString()}.`
                 : payload?.message || 'Your trial has started.'
             );
             await load();

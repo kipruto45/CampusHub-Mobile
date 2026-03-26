@@ -2,33 +2,33 @@
 // User notifications with read/unread states and actions
 // Backend-driven - no mock data
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useFocusEffect,useRouter } from 'expo-router';
+import React,{ useCallback,useEffect,useRef,useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
-  Alert,
   ActivityIndicator,
+  Alert,
+  FlatList,
   Linking,
   Modal,
+  RefreshControl,
   ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
 import ErrorState from '../../components/ui/ErrorState';
-import { notificationsAPI } from '../../services/api';
-import { resolveStudentNotificationTarget } from '../../utils/notification-targets';
+import Icon from '../../components/ui/Icon';
 import { useToast } from '../../components/ui/Toast';
+import { notificationsAPI } from '../../services/api';
 import {
   getDefaultNotificationUndoMs,
   getNotificationUndoMs,
 } from '../../services/app-settings';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { spacing } from '../../theme/spacing';
+import { resolveStudentNotificationTarget } from '../../utils/notification-targets';
 
 // Notification Types - matches backend response
 interface Notification {

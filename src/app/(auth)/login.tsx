@@ -1,39 +1,43 @@
 // Login Screen for CampusHub
 // Premium white card design with social login
 
-import React, { useEffect, useState } from 'react';
+import { useLocalSearchParams,useRouter } from 'expo-router';
+import React,{ useEffect,useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   Image,
+  KeyboardAvoidingView,
   Linking,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useToast } from '../../components/ui/Toast';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
-import { useAuthStore } from '../../store/auth.store';
+import Input from '../../components/ui/Input';
+import { useToast } from '../../components/ui/Toast';
 import { authAPI } from '../../services/api';
-import { exchangeNativeTokens } from '../../services/socialAuth';
-import { canUseNativeProvider, signInWithNativeProvider } from '../../services/nativeSocialAuth';
 import { biometricService } from '../../services/biometric';
+import { canUseNativeProvider,signInWithNativeProvider } from '../../services/nativeSocialAuth';
+import { exchangeNativeTokens } from '../../services/socialAuth';
+import { useAuthStore } from '../../store/auth.store';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { borderRadius,spacing } from '../../theme/spacing';
 
 const LoginScreen: React.FC = () => {
   const router = useRouter();
   const { showToast } = useToast();
-  const { redirect, reason } = useLocalSearchParams<{ redirect?: string; reason?: string }>();
+  const { redirect, reason, email: prefilledEmail } = useLocalSearchParams<{
+    redirect?: string;
+    reason?: string;
+    email?: string;
+  }>();
   const { login, loginWithBiometric, isLoading } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(true); // Default to true - stays logged in for 2 years
+  const [rememberMe, setRememberMe] = useState(true);
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
   const [googleIconLoadError, setGoogleIconLoadError] = useState(false);
@@ -42,6 +46,31 @@ const LoginScreen: React.FC = () => {
   const [biometricBusy, setBiometricBusy] = useState(false);
   const [magicBusy, setMagicBusy] = useState(false);
   const sessionExpired = reason === 'session_expired';
+
+  const resolveRedirectPath = (value?: string | string[]) => {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (
+      trimmed.startsWith('/(student)/') ||
+      trimmed.startsWith('/(auth)/') ||
+      trimmed.startsWith('/role-invite')
+    ) {
+      return trimmed;
+    }
+
+    if (trimmed.startsWith('/')) {
+      return `/(student)${trimmed}`;
+    }
+
+    return `/(student)/${trimmed}`;
+  };
 
   useEffect(() => {
     const initBiometric = async () => {
@@ -64,6 +93,12 @@ const LoginScreen: React.FC = () => {
     initBiometric();
   }, []);
 
+  useEffect(() => {
+    if (typeof prefilledEmail === 'string' && prefilledEmail.trim()) {
+      setEmail(prefilledEmail.trim().toLowerCase());
+    }
+  }, [prefilledEmail]);
+
   const handleLogin = async () => {
     if (!email || !password) {
       showToast('error', 'Please fill in all fields');
@@ -75,11 +110,10 @@ const LoginScreen: React.FC = () => {
     }
     
     try {
-      // Always use remember_me = true for 2-year session persistence (forever-ish)
       const nextRoute = await login(
         email,
         password,
-        true, // Always remember - stays logged in for 2 years
+        rememberMe,
         needsTwoFactor ? twoFactorCode.trim() : undefined
       );
       console.log('Login successful, redirecting to:', nextRoute);
@@ -87,7 +121,7 @@ const LoginScreen: React.FC = () => {
       setTwoFactorCode('');
       
       // Navigate to the appropriate dashboard based on role or redirect
-      const redirectPath = redirect ? `/(student)/${redirect}` : null;
+      const redirectPath = resolveRedirectPath(redirect);
       if (redirectPath) {
         router.replace(redirectPath as any);
       } else if (nextRoute) {
@@ -163,10 +197,13 @@ const LoginScreen: React.FC = () => {
 
     try {
       setMagicBusy(true);
-      await authAPI.requestMagicLink(email.trim().toLowerCase());
+      const normalizedEmail = email.trim().toLowerCase();
+      await authAPI.requestMagicLink(normalizedEmail);
       showToast('success', 'If your account exists, a one-tap link is on the way.');
-      // Offer quick navigation to the magic link screen to paste token if needed
-      router.push('/(auth)/magic-link');
+      router.push({
+        pathname: '/(auth)/magic-link',
+        params: { email: normalizedEmail, requested: '1' },
+      });
     } catch (err: any) {
       const message =
         err?.response?.data?.detail ||
@@ -336,7 +373,7 @@ const LoginScreen: React.FC = () => {
                 <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
                   {rememberMe && <Icon name="checkmark" size={14} color="#FFFFFF" />}
                 </View>
-                <Text style={styles.checkboxLabel}>Remember</Text>
+                <Text style={styles.checkboxLabel}>Keep me signed in for 30 days</Text>
               </TouchableOpacity>
 
               <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')}>

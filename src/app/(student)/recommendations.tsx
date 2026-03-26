@@ -1,19 +1,19 @@
 // Recommendations Screen for CampusHub
 // Personalized recommendations based on user activity - Backend-driven
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator, FlatList, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/spacing';
-import { shadows } from '../../theme/shadows';
-import Icon from '../../components/ui/Icon';
-import { resourcesAPI } from '../../services/api';
-import { resourcesService } from '../../services/resources.service';
+import React,{ useCallback,useEffect,useState } from 'react';
+import { ActivityIndicator,Alert,FlatList,RefreshControl,ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
 import BookmarkButton from '../../components/resources/BookmarkButton';
 import FavoriteButton from '../../components/resources/FavoriteButton';
+import Icon from '../../components/ui/Icon';
+import { resourcesAPI } from '../../services/api';
 import { bookmarksService } from '../../services/bookmarks.service';
 import { favoritesService } from '../../services/favorites.service';
+import { resourcesService } from '../../services/resources.service';
+import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+import { spacing } from '../../theme/spacing';
 import { openNativeShareSheet } from '../../utils/share';
 
 // Types
