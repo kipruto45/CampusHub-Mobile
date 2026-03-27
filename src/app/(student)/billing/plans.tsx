@@ -106,6 +106,10 @@ const normalizePaymentError = (error: any): string => {
     return 'Card subscriptions are not configured on the server yet. Please add a Stripe secret key before retrying.';
   }
 
+  if (/invalid api key/i.test(message) || /must be a valid secret key/i.test(message)) {
+    return 'Card subscriptions are misconfigured on the server. Add a valid Stripe secret key before retrying.';
+  }
+
   if (/failed to get paypal access token/i.test(message) || /paypal_client_id|paypal_client_secret/i.test(message)) {
     return 'PayPal subscriptions are not configured on the server yet. Please add valid PayPal credentials before retrying.';
   }

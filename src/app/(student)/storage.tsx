@@ -3,8 +3,9 @@
 
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import React,{ useCallback,useEffect,useState } from 'react';
+import React,{ useCallback,useEffect,useMemo,useState } from 'react';
 import { ActivityIndicator,Alert,Modal,RefreshControl,ScrollView,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
+import PlanSpotlight from '../../components/billing/PlanSpotlight';
 import Icon from '../../components/ui/Icon';
 import { paymentsAPI,trashAPI,userAPI } from '../../services/api';
 import {
@@ -41,6 +42,7 @@ interface StorageData {
 
 const StorageScreen: React.FC = () => {
   const router = useRouter();
+  const freeStorageFallbackBytes = 1 * 1024 * 1024 * 1024;
   const [showClearCacheModal, setShowClearCacheModal] = useState(false);
   const [cloudAccounts, setCloudAccounts] = useState<CloudAccount[]>([]);
   const [cloudStats, setCloudStats] = useState<{ google_drive?: CloudStorageStats; onedrive?: CloudStorageStats }>({});
@@ -54,8 +56,23 @@ const StorageScreen: React.FC = () => {
   const [_trashItems, setTrashItems] = useState<any[]>([]);
   const googleAccount = cloudAccounts.find((account) => account.provider === 'google_drive');
   const myDriveAccount = cloudAccounts.find((account) => account.provider === 'onedrive');
-  const canUseCloudIntegrations =
-    featureSummary?.feature_flags?.all_integrations !== false;
+  const featureFlags = featureSummary?.feature_flags || {};
+  const cloudLimits = featureSummary?.limits || {};
+  const canUseBasicCloudStorage = Boolean(featureFlags?.basic_cloud_storage);
+  const canUseFullCloudIntegrations = Boolean(featureFlags?.all_integrations);
+  const canUseCloudStorage = canUseBasicCloudStorage || canUseFullCloudIntegrations;
+  const cloudAccountLimit = Number(cloudLimits?.cloud_storage_accounts ?? -1);
+  const cloudImportLimit = Number(cloudLimits?.cloud_imports_per_month ?? -1);
+  const cloudExportLimit = Number(cloudLimits?.cloud_exports_per_month ?? -1);
+  const cloudLimitSummary = useMemo(() => {
+    const accountLabel = cloudAccountLimit < 0 ? 'Unlimited accounts' : `${cloudAccountLimit} account${cloudAccountLimit === 1 ? '' : 's'}`;
+    const importLabel = cloudImportLimit < 0 ? 'unlimited imports' : `${cloudImportLimit} imports/mo`;
+    const exportLabel = cloudExportLimit < 0 ? 'unlimited exports' : `${cloudExportLimit} exports/mo`;
+    return `${accountLabel} • ${importLabel} • ${exportLabel}`;
+  }, [cloudAccountLimit, cloudExportLimit, cloudImportLimit]);
+  const showPlanSpotlight =
+    Boolean(featureSummary?.is_free_plan) ||
+    Boolean(featureSummary?.show_upgrade_prompt);
 
   const fetchStorageData = useCallback(async () => {
     try {
@@ -74,9 +91,9 @@ const StorageScreen: React.FC = () => {
       if (dashboardRes.status === 'fulfilled') {
         const data = dashboardRes.value.data?.data || dashboardRes.value.data || {};
         setStorageData({
-          total_storage: data.storage_limit || 5 * 1024 * 1024 * 1024,
+          total_storage: data.storage_limit || freeStorageFallbackBytes,
           storage_used: data.storage_used || 0,
-          storage_limit: data.storage_limit || 5 * 1024 * 1024 * 1024,
+          storage_limit: data.storage_limit || freeStorageFallbackBytes,
         });
       }
 
@@ -105,7 +122,7 @@ const StorageScreen: React.FC = () => {
   }, []);
 
   const fetchCloudAccounts = useCallback(async () => {
-    if (!canUseCloudIntegrations) {
+    if (!canUseCloudStorage) {
       setCloudAccounts([]);
       setCloudStats({});
       return;
@@ -127,20 +144,20 @@ const StorageScreen: React.FC = () => {
     } catch (err) {
       console.error('Failed to fetch cloud accounts:', err);
     }
-  }, [canUseCloudIntegrations]);
+  }, [canUseCloudStorage]);
 
   useEffect(() => {
     fetchStorageData();
-    if (canUseCloudIntegrations) {
+    if (canUseCloudStorage) {
       fetchCloudAccounts();
     } else {
       setCloudAccounts([]);
       setCloudStats({});
     }
-  }, [canUseCloudIntegrations, fetchCloudAccounts, fetchStorageData]);
+  }, [canUseCloudStorage, fetchCloudAccounts, fetchStorageData]);
 
   const handleConnectCloud = async (provider: CloudProvider) => {
-    if (!canUseCloudIntegrations) {
+    if (!canUseCloudStorage) {
       Alert.alert('Upgrade required', 'Cloud integrations are available on upgraded plans. Open Plans to continue.');
       return;
     }
@@ -209,13 +226,13 @@ const StorageScreen: React.FC = () => {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchStorageData();
-    if (canUseCloudIntegrations) {
+    if (canUseCloudStorage) {
       fetchCloudAccounts();
     }
-  }, [canUseCloudIntegrations, fetchCloudAccounts, fetchStorageData]);
+  }, [canUseCloudStorage, fetchCloudAccounts, fetchStorageData]);
 
   // Storage data from API
-  const totalStorage = storageData?.storage_limit || 5 * 1024 * 1024 * 1024;
+  const totalStorage = storageData?.storage_limit || freeStorageFallbackBytes;
   const usedStorage = storageData?.storage_used || 0;
   const availableStorage = totalStorage - usedStorage;
   const percentage = totalStorage > 0 ? (usedStorage / totalStorage) * 100 : 0;
@@ -270,7 +287,7 @@ const StorageScreen: React.FC = () => {
   const handleManageDownloads = () => router.push('/(student)/downloads');
 
   const handleSyncCloud = async (provider: CloudProvider) => {
-    if (!canUseCloudIntegrations) {
+    if (!canUseCloudStorage) {
       Alert.alert('Upgrade required', 'Cloud syncing is available on upgraded plans. Open Plans to continue.');
       return;
     }
@@ -496,8 +513,24 @@ const StorageScreen: React.FC = () => {
         {/* Cloud Storage Connections */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Cloud Storage</Text>
-          {canUseCloudIntegrations ? (
+          {canUseCloudStorage ? (
             <>
+              <View style={styles.cloudPlanBanner}>
+                <View style={styles.cloudPlanIcon}>
+                  <Icon
+                    name={canUseFullCloudIntegrations ? 'cloud-done' : 'information-circle'}
+                    size={16}
+                    color={canUseFullCloudIntegrations ? colors.success : colors.primary[600]}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cloudPlanTitle}>
+                    {canUseFullCloudIntegrations ? 'Your plan includes full cloud access' : 'Your current plan includes limited cloud access'}
+                  </Text>
+                  <Text style={styles.cloudPlanText}>{cloudLimitSummary}</Text>
+                </View>
+              </View>
+
               <View style={styles.actionsCard}>
                 {/* Google Drive */}
                 <TouchableOpacity
@@ -609,7 +642,7 @@ const StorageScreen: React.FC = () => {
               <View style={styles.bannerContent}>
                 <Text style={styles.bannerTitle}>Upgrade to link cloud drives</Text>
                 <Text style={styles.bannerSubtitle}>
-                  Google Drive and My Drive connections are available on upgraded plans.
+                  Cloud storage linking is not available on your current plan.
                 </Text>
               </View>
               <Icon name="chevron-forward" size={18} color={colors.text.inverse} />
@@ -642,24 +675,32 @@ const StorageScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Upgrade Banner */}
-        <TouchableOpacity
-          style={styles.upgradeBanner}
-          onPress={() => router.push('/(student)/billing' as any)}
-        >
-          <View style={styles.upgradeContent}>
-            <View style={styles.upgradeIconContainer}>
-              <Icon name="diamond" size={24} color={colors.text.inverse} />
+        {showPlanSpotlight ? (
+          <PlanSpotlight
+            title="Upgrade for more storage and cloud sync"
+            subtitle="Paid plans increase your file limits and unlock cloud-drive integrations right from this storage screen."
+            currentTier={String(featureSummary?.tier || 'free')}
+            compact
+          />
+        ) : (
+          <TouchableOpacity
+            style={styles.upgradeBanner}
+            onPress={() => router.push('/(student)/billing/storage' as any)}
+          >
+            <View style={styles.upgradeContent}>
+              <View style={styles.upgradeIconContainer}>
+                <Icon name="server" size={24} color={colors.text.inverse} />
+              </View>
+              <View style={styles.upgradeInfo}>
+                <Text style={styles.upgradeTitle}>Need More Storage?</Text>
+                <Text style={styles.upgradeText}>Open storage add-ons and expand your limit when you need more room.</Text>
+              </View>
             </View>
-            <View style={styles.upgradeInfo}>
-              <Text style={styles.upgradeTitle}>Need More Storage?</Text>
-              <Text style={styles.upgradeText}>Get 50 GB for just $2.99/month</Text>
+            <View style={styles.upgradeBtn}>
+              <Text style={styles.upgradeBtnText}>Add Storage</Text>
             </View>
-          </View>
-          <View style={styles.upgradeBtn}>
-            <Text style={styles.upgradeBtnText}>Upgrade</Text>
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
@@ -828,6 +869,36 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text.primary,
     marginBottom: spacing[3]
+  },
+  cloudPlanBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[3],
+    marginBottom: spacing[3],
+    padding: spacing[3],
+    borderRadius: 16,
+    backgroundColor: colors.primary[50],
+    borderWidth: 1,
+    borderColor: colors.primary[100],
+  },
+  cloudPlanIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background.primary,
+  },
+  cloudPlanTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  cloudPlanText: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.text.secondary,
   },
   breakdownCard: {
     backgroundColor: colors.card.light,

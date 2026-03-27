@@ -7,6 +7,7 @@ import React,{ useCallback,useEffect,useRef,useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   FlatList,
   KeyboardAvoidingView,
   Linking,
@@ -18,7 +19,7 @@ import {
   View,
 } from 'react-native';
 import Icon from '../../components/ui/Icon';
-import { aiAPI,resourcesAPI } from '../../services/api';
+import { aiAPI,paymentsAPI,resourcesAPI } from '../../services/api';
 import { voiceService } from '../../services/voice';
 import { colors } from '../../theme/colors';
 import { borderRadius,spacing } from '../../theme/spacing';
@@ -175,8 +176,49 @@ export default function AIChatScreen() {
   const [cancelSource, setCancelSource] = useState<CancelTokenSource | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [accessSummary, setAccessSummary] = useState<any | null>(null);
+  const [loadingAccess, setLoadingAccess] = useState(true);
   const flatListRef = useRef<FlatList>(null);
   const prefillSentRef = useRef(false);
+  const featureFlags = accessSummary?.feature_flags || {};
+  const hasAiChatAccess = Boolean(featureFlags?.ai_chat);
+  const aiMessagesRemaining = Number(
+    accessSummary?.limits?.ai_messages_remaining_today ??
+      accessSummary?.ai_messages_remaining_today ??
+      -1
+  );
+  const aiMessagesPerDay = Number(
+    accessSummary?.limits?.ai_messages_per_day ??
+      accessSummary?.ai_messages_per_day ??
+      -1
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAccess = async () => {
+      try {
+        const response = await paymentsAPI.getFeatureAccessSummary();
+        const payload = response?.data?.data ?? response?.data ?? null;
+        if (!cancelled) {
+          setAccessSummary(payload);
+        }
+      } catch {
+        if (!cancelled) {
+          setAccessSummary(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingAccess(false);
+        }
+      }
+    };
+
+    void loadAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Cancel in-flight request on unmount to avoid leaks
   useEffect(() => {
@@ -205,6 +247,8 @@ export default function AIChatScreen() {
 
   const sendMessage = useCallback(async (text: string, { clearContext = false } = {}) => {
     if (!text.trim() || loading) return;
+    if (!hasAiChatAccess) return;
+    if (aiMessagesRemaining === 0) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -236,12 +280,39 @@ export default function AIChatScreen() {
 
       setMessages((prev) => [...prev, assistantMessage]);
       setIsNewChat(false);
+      setAccessSummary((prev: any) => {
+        if (!prev) return prev;
+        const remaining = Number(
+          prev?.limits?.ai_messages_remaining_today ??
+            prev?.ai_messages_remaining_today ??
+            -1
+        );
+        const used = Number(
+          prev?.limits?.ai_messages_used_today ??
+            prev?.ai_messages_used_today ??
+            0
+        );
+        if (remaining < 0) return prev;
+        const nextRemaining = Math.max(remaining - 1, 0);
+        const nextUsed = used + 1;
+        return {
+          ...prev,
+          ai_messages_used_today: nextUsed,
+          ai_messages_remaining_today: nextRemaining,
+          limits: {
+            ...(prev?.limits || {}),
+            ai_messages_used_today: nextUsed,
+            ai_messages_remaining_today: nextRemaining,
+          },
+        };
+      });
     } catch (error: any) {
       if (axios.isCancel(error)) {
         return;
       }
       const fallback = await buildLocalHelpReply(text);
       const backendError =
+        error?.response?.data?.reason ||
         error?.response?.data?.error?.message ||
         error?.response?.data?.error ||
         error?.response?.data?.detail ||
@@ -265,15 +336,15 @@ export default function AIChatScreen() {
       setLoading(false);
       setCancelSource(null);
     }
-  }, [isNewChat, loading]);
+  }, [aiMessagesRemaining, hasAiChatAccess, isNewChat, loading]);
 
   // Auto-run a prefill prompt once (for deep links like AI notes)
   useEffect(() => {
-    if (prefill && !prefillSentRef.current) {
+    if (!loadingAccess && prefill && !prefillSentRef.current) {
       prefillSentRef.current = true;
       void sendMessage(String(prefill), { clearContext: true });
     }
-  }, [prefill, sendMessage]);
+  }, [loadingAccess, prefill, sendMessage]);
 
   const regenerateLast = async () => {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
@@ -439,163 +510,250 @@ export default function AIChatScreen() {
     </View>
   );
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <View style={styles.headerTitle}>
-          <Icon name="chatbubbles" size={24} color={colors.primary[500]} />
-          <Text style={styles.headerTitleText}>AI Assistant</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => {
-            setMessages([{
-              id: '1',
-              role: 'assistant',
-              content: "New chat started. I'm a mini ChatGPT for CampusHub — ask me anything!",
-              timestamp: new Date(),
-            }]);
-            setIsNewChat(true);
-          }}
-          style={styles.clearButton}
-        >
-          <Icon name="refresh" size={20} color={colors.text.secondary} />
-        </TouchableOpacity>
-      </View>
+  const lockedTitle =
+    aiMessagesRemaining === 0
+      ? 'Daily AI limit reached'
+      : accessSummary?.upgrade_prompt?.title || 'Upgrade to use AI chat';
+  const lockedMessage =
+    aiMessagesRemaining === 0
+      ? `You have used all ${aiMessagesPerDay} AI chat messages available today on your current plan. Upgrade for higher limits or come back tomorrow.`
+      : accessSummary?.upgrade_prompt?.message ||
+        accessSummary?.admin_access_reason ||
+        'AI chat is not available on your current plan. Upgrade to unlock it.';
 
-      {/* Messages */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.messagesList}
-        showsVerticalScrollIndicator={false}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
-        ListFooterComponent={loading ? (
-          <View style={[styles.messageContainer, styles.assistantMessage]}>
-            <View style={styles.avatar}>
-              <Icon name="chatbubbles" size={16} color={colors.primary[500]} />
+  return (
+    <View style={styles.screen}>
+      <View style={styles.backdrop} />
+      <View style={styles.container}>
+        {/* Drag Handle */}
+        <View style={styles.dragHandle} />
+
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerTitle}>
+            <Icon name="chatbubbles" size={24} color={colors.primary[500]} />
+            <Text style={styles.headerTitleText}>AI Assistant</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={() => {
+                setMessages([{
+                  id: '1',
+                  role: 'assistant',
+                  content: "New chat started. I'm a mini ChatGPT for CampusHub — ask me anything!",
+                  timestamp: new Date(),
+                }]);
+                setIsNewChat(true);
+              }}
+              style={styles.clearButton}
+            >
+              <Icon name="refresh" size={20} color={colors.text.secondary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+              <Icon name="close" size={24} color={colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {loadingAccess ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator size="small" color={colors.primary[500]} />
+            <Text style={styles.typingText}>Checking your plan…</Text>
+          </View>
+        ) : !hasAiChatAccess || aiMessagesRemaining === 0 ? (
+          <View style={styles.lockedState}>
+            <View style={styles.lockedIcon}>
+              <Icon
+                name={aiMessagesRemaining === 0 ? 'time' : 'lock-closed'}
+                size={22}
+                color={colors.primary[600]}
+              />
             </View>
-            <View style={[styles.messageBubble, styles.assistantBubble, styles.typingBubble]}>
-              <ActivityIndicator size="small" color={colors.primary[500]} />
-              <Text style={styles.typingText}>Thinking…</Text>
+            <Text style={styles.lockedTitle}>{lockedTitle}</Text>
+            <Text style={styles.lockedText}>{lockedMessage}</Text>
+            {aiMessagesPerDay > 0 ? (
+              <View style={styles.lockedMeta}>
+                <Text style={styles.lockedMetaText}>
+                  Daily AI cap: {aiMessagesPerDay < 0 ? 'Unlimited' : aiMessagesPerDay}
+                </Text>
+              </View>
+            ) : null}
+            <View style={styles.lockedActions}>
+              <TouchableOpacity
+                style={styles.primaryAction}
+                onPress={() => router.push('/(student)/billing/plans' as any)}
+              >
+                <Text style={styles.primaryActionText}>View Plans</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryAction}
+                onPress={() => router.back()}
+              >
+                <Text style={styles.secondaryActionText}>Close</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        ) : null}
-      />
+        ) : (
+          <>
 
-      {/* Quick Actions (shown when input is empty) */}
-          {!inputText && messages.length < 3 && (
-            <View style={styles.quickActions}>
-              <Text style={styles.quickActionsTitle}>Quick Questions</Text>
-              <View style={styles.quickActionsGrid}>
-                {QUICK_ACTIONS.slice(0, 4).map((action, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={styles.quickActionButton}
-                    onPress={() => sendMessage(action)}
-                    disabled={loading}
-                  >
-                    <Text style={styles.quickActionText}>{action}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
-
-      {/* Input Area */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={90}
-      >
-        <View style={styles.inputContainer}>
-          <TouchableOpacity
-            style={[
-              styles.voiceButton,
-              isRecording && styles.voiceButtonActive,
-            ]}
-            onPress={handleVoiceInput}
-            disabled={loading}
-          >
-            <Icon
-              name={isRecording ? 'close' : 'mic'}
-              size={20}
-              color={isRecording ? colors.error : colors.text.secondary}
+            {/* Messages */}
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.messagesList}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
+              ListFooterComponent={loading ? (
+                <View style={[styles.messageContainer, styles.assistantMessage]}>
+                  <View style={styles.avatar}>
+                    <Icon name="chatbubbles" size={16} color={colors.primary[500]} />
+                  </View>
+                  <View style={[styles.messageBubble, styles.assistantBubble, styles.typingBubble]}>
+                    <ActivityIndicator size="small" color={colors.primary[500]} />
+                    <Text style={styles.typingText}>Thinking…</Text>
+                  </View>
+                </View>
+              ) : null}
             />
-          </TouchableOpacity>
-          <TextInput
-            style={styles.input}
-            placeholder="Ask me anything..."
-            placeholderTextColor={colors.text.tertiary}
-            value={inputText}
-            onChangeText={setInputText}
-            multiline
-            maxLength={500}
-          />
-          <TouchableOpacity
-            style={[
-              styles.sendButton,
-              (!inputText.trim() || loading) && styles.sendButtonDisabled,
-            ]}
-            onPress={() => sendMessage(inputText)}
-            disabled={!inputText.trim() || loading}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color={colors.text.inverse} />
-            ) : (
-              <Icon name="send" size={20} color={colors.text.inverse} />
+
+            {/* Quick Actions (shown when input is empty) */}
+            {!inputText && messages.length < 3 && (
+              <View style={styles.quickActions}>
+                <Text style={styles.quickActionsTitle}>Quick Questions</Text>
+                <View style={styles.quickActionsGrid}>
+                  {QUICK_ACTIONS.slice(0, 4).map((action, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.quickActionButton}
+                      onPress={() => sendMessage(action)}
+                      disabled={loading}
+                    >
+                      <Text style={styles.quickActionText}>{action}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.sendButton,
-              styles.regenButton,
-              (!messages.some((m) => m.role === 'user') || loading) && styles.sendButtonDisabled,
-            ]}
-            onPress={regenerateLast}
-            disabled={!messages.some((m) => m.role === 'user') || loading}
-          >
-            {regenerating ? (
-              <ActivityIndicator size="small" color={colors.text.inverse} />
-            ) : (
-              <Icon name="refresh" size={18} color={colors.text.inverse} />
-            )}
-          </TouchableOpacity>
-          {loading && (
-            <TouchableOpacity
-              style={[styles.sendButton, styles.stopButton]}
-              onPress={handleStop}
+
+            {/* Input Area */}
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={90}
             >
-              <Icon name="close" size={18} color={colors.text.inverse} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </KeyboardAvoidingView>
+              <View style={styles.inputContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.voiceButton,
+                    isRecording && styles.voiceButtonActive,
+                  ]}
+                  onPress={handleVoiceInput}
+                  disabled={loading}
+                >
+                  <Icon
+                    name={isRecording ? 'close' : 'mic'}
+                    size={20}
+                    color={isRecording ? colors.error : colors.text.secondary}
+                  />
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ask me anything..."
+                  placeholderTextColor={colors.text.tertiary}
+                  value={inputText}
+                  onChangeText={setInputText}
+                  multiline
+                  maxLength={500}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.sendButton,
+                    (!inputText.trim() || loading) && styles.sendButtonDisabled,
+                  ]}
+                  onPress={() => sendMessage(inputText)}
+                  disabled={!inputText.trim() || loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator size="small" color={colors.text.inverse} />
+                  ) : (
+                    <Icon name="send" size={20} color={colors.text.inverse} />
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.sendButton,
+                    styles.regenButton,
+                    (!messages.some((m) => m.role === 'user') || loading) && styles.sendButtonDisabled,
+                  ]}
+                  onPress={regenerateLast}
+                  disabled={!messages.some((m) => m.role === 'user') || loading}
+                >
+                  {regenerating ? (
+                    <ActivityIndicator size="small" color={colors.text.inverse} />
+                  ) : (
+                    <Icon name="refresh" size={18} color={colors.text.inverse} />
+                  )}
+                </TouchableOpacity>
+                {loading && (
+                  <TouchableOpacity
+                    style={[styles.sendButton, styles.stopButton]}
+                    onPress={handleStop}
+                  >
+                    <Icon name="close" size={18} color={colors.text.inverse} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </KeyboardAvoidingView>
+          </>
+        )}
+      </View>
     </View>
   );
 }
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(10, 14, 23, 0.16)',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10, 14, 23, 0.12)',
+  },
+  container: {
+    height: SCREEN_HEIGHT * 0.5,
+    maxHeight: SCREEN_HEIGHT * 0.6,
     backgroundColor: colors.background.secondary,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
+  dragHandle: {
+    alignSelf: 'center',
+    width: 52,
+    height: 5,
+    borderRadius: 999,
+    marginTop: spacing[3],
+    backgroundColor: colors.border.light,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: spacing[4],
-    paddingTop: spacing[8],
+    paddingTop: spacing[3],
     backgroundColor: colors.background.primary,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
-  backButton: {
-    padding: spacing[1],
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
   },
   headerTitle: {
     flexDirection: 'row',
@@ -609,6 +767,93 @@ const styles = StyleSheet.create({
   },
   clearButton: {
     padding: spacing[1],
+  },
+  closeButton: {
+    padding: spacing[1],
+  },
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[3],
+    paddingHorizontal: spacing[6],
+  },
+  lockedState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing[6],
+    paddingBottom: spacing[6],
+  },
+  lockedIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary[50],
+    marginBottom: spacing[3],
+  },
+  lockedTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  lockedText: {
+    marginTop: spacing[2],
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.text.secondary,
+    textAlign: 'center',
+  },
+  lockedMeta: {
+    marginTop: spacing[3],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.background.primary,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  lockedMetaText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  lockedActions: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: spacing[3],
+    marginTop: spacing[4],
+  },
+  primaryAction: {
+    flex: 1,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary[600],
+  },
+  primaryActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.inverse,
+  },
+  secondaryAction: {
+    flex: 1,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background.primary,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  secondaryActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.primary,
   },
   messagesList: {
     padding: spacing[4],

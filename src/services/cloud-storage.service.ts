@@ -43,6 +43,19 @@ export interface CloudStorageStats {
 
 export type CloudProvider = 'google_drive' | 'onedrive';
 
+const normalizeCloudStorageError = (error: any, fallback: string): string => {
+  const payload = error?.response?.data || {};
+  const reason = String(payload?.reason || '').trim();
+  const detail = String(payload?.detail || '').trim();
+  const message = String(payload?.message || '').trim();
+  const rawError =
+    typeof payload?.error === 'string'
+      ? String(payload.error).trim()
+      : String(error?.message || '').trim();
+
+  return reason || detail || message || rawError || fallback;
+};
+
 const getQueryValue = (value: string | string[] | undefined): string => {
   if (typeof value === 'string') {
     return value;
@@ -106,7 +119,7 @@ export const googleDriveService = {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to connect to Google Drive');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to connect to Google Drive'));
     }
   },
 
@@ -115,7 +128,7 @@ export const googleDriveService = {
     try {
       await api.post('/cloud-storage/google/disconnect/');
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to disconnect Google Drive');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to disconnect Google Drive'));
     }
   },
 
@@ -127,7 +140,7 @@ export const googleDriveService = {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to list files');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to list files'));
     }
   },
 
@@ -139,7 +152,7 @@ export const googleDriveService = {
       });
       return response.data.folders || [];
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to list folders');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to list folders'));
     }
   },
 
@@ -149,7 +162,7 @@ export const googleDriveService = {
       const response = await api.get(`/cloud-storage/google/download/${fileId}/`);
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to download file');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to download file'));
     }
   },
 
@@ -167,7 +180,7 @@ export const googleDriveService = {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to upload file');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to upload file'));
     }
   },
 
@@ -212,7 +225,7 @@ export const onedriveService = {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to connect to OneDrive');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to connect to OneDrive'));
     }
   },
 
@@ -221,7 +234,7 @@ export const onedriveService = {
     try {
       await api.post('/cloud-storage/onedrive/disconnect/');
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to disconnect OneDrive');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to disconnect OneDrive'));
     }
   },
 
@@ -233,7 +246,7 @@ export const onedriveService = {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to list files');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to list files'));
     }
   },
 
@@ -245,7 +258,7 @@ export const onedriveService = {
       });
       return response.data.folders || [];
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to list folders');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to list folders'));
     }
   },
 
@@ -255,7 +268,7 @@ export const onedriveService = {
       const response = await api.get(`/cloud-storage/onedrive/download/${fileId}/`);
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to download file');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to download file'));
     }
   },
 
@@ -273,7 +286,7 @@ export const onedriveService = {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to upload file');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to upload file'));
     }
   },
 
@@ -316,11 +329,7 @@ export const cloudStorageService = {
       });
       return response.data?.account;
     } catch (error: any) {
-      throw new Error(
-        error.response?.data?.error ||
-          error.response?.data?.message ||
-          `Failed to finish linking ${getCloudProviderLabel(provider)}`
-      );
+      throw new Error(normalizeCloudStorageError(error, `Failed to finish linking ${getCloudProviderLabel(provider)}`));
     }
   },
 
@@ -333,7 +342,7 @@ export const cloudStorageService = {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to import file');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to import file'));
     }
   },
 
@@ -346,7 +355,7 @@ export const cloudStorageService = {
       });
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to export file');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to export file'));
     }
   },
 
@@ -356,7 +365,7 @@ export const cloudStorageService = {
       const response = await api.post(`/cloud-storage/${provider}/sync/`);
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to sync files');
+      throw new Error(normalizeCloudStorageError(error, 'Failed to sync files'));
     }
   },
 };

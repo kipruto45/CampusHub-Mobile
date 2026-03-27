@@ -18,6 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../../components/ui/Icon';
 import { ADMIN_HOME_ROUTE,isAdminRole } from '../../lib/auth-routing';
+import { paymentsAPI } from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
 import { colors,lightColors } from '../../theme/colors';
 
@@ -263,6 +264,7 @@ export default function StudentLayout() {
   const themeColors = lightColors;
   const [initialized, setInitialized] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
+  const [canUseAiChat, setCanUseAiChat] = useState(false);
 
   const initAuth = useCallback(() => {
     initializeAuth();
@@ -283,6 +285,34 @@ export default function StudentLayout() {
       }
     }
   }, [initialized, isLoading, isAuthenticated, accessToken, user, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadEntitlements = async () => {
+      try {
+        const response = await paymentsAPI.getFeatureAccessSummary();
+        const payload = response?.data?.data ?? response?.data ?? {};
+        if (!cancelled) {
+          setCanUseAiChat(Boolean(payload?.feature_flags?.ai_chat));
+        }
+      } catch {
+        if (!cancelled) {
+          setCanUseAiChat(false);
+        }
+      }
+    };
+
+    if (isAuthenticated && accessToken) {
+      void loadEntitlements();
+    } else {
+      setCanUseAiChat(false);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, isAuthenticated]);
 
   // Show loading while initializing
   if (!initialized || isLoading) {
@@ -326,7 +356,7 @@ export default function StudentLayout() {
           }}
         />
       </View>
-      <DraggableAIButton />
+      {canUseAiChat ? <DraggableAIButton /> : null}
       <CustomBottomBar activeTab={activeTab} onTabPress={handleTabPress} />
     </View>
   );
