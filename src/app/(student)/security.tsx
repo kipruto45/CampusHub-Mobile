@@ -515,7 +515,7 @@ const SecurityScreen: React.FC = () => {
             </Text>
             <View style={styles.secretBox}>
               <Text style={styles.secretLabel}>Secret</Text>
-              <Text style={styles.secretValue}>{twoFactorSecret || 'Unavailable'}</Text>
+              <Text style={styles.secretValue}>{twoFactorSecret || 'Not ready'}</Text>
               <TouchableOpacity
                 style={styles.copyButton}
                 onPress={() => copyToClipboard(twoFactorSecret || '')}

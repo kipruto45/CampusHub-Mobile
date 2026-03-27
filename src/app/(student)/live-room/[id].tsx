@@ -31,6 +31,7 @@ import {
 import { colors } from '../../../theme/colors';
 import { shadows } from '../../../theme/shadows';
 import { borderRadius,spacing } from '../../../theme/spacing';
+import { copyToClipboard,openNativeShareSheet } from '../../../utils/share';
 
 const formatTime = (value?: string | null) => {
   const cleaned = String(value || '').trim();
@@ -70,6 +71,7 @@ export default function LiveRoomDetailScreen() {
   const [sending, setSending] = useState(false);
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!roomId) {
@@ -150,6 +152,40 @@ export default function LiveRoomDetailScreen() {
     }
   }, [messageText, roomId]);
 
+  const roomShareLink = useMemo(() => {
+    const url = String(room?.share_url || '').trim();
+    if (url) {
+      return url;
+    }
+    return roomId ? `campushub://live-room/${roomId}` : '';
+  }, [room?.share_url, roomId]);
+
+  const handleCopyLink = useCallback(async () => {
+    if (!roomShareLink) return;
+    try {
+      await copyToClipboard(roomShareLink);
+      Alert.alert('Link copied', 'Share the room link with other students so they can join quickly.');
+    } catch (_err) {
+      Alert.alert('Copy failed', 'Unable to copy the room link right now.');
+    }
+  }, [roomShareLink]);
+
+  const handleShareLink = useCallback(async () => {
+    if (!roomShareLink || !room) return;
+    try {
+      setSharing(true);
+      await openNativeShareSheet({
+        title: room.name,
+        message: `Join my CampusHub live study room: ${room.name}\n${roomShareLink}`,
+        url: roomShareLink,
+      });
+    } catch (_err) {
+      Alert.alert('Share failed', 'Unable to open the share sheet right now.');
+    } finally {
+      setSharing(false);
+    }
+  }, [room, roomShareLink]);
+
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
@@ -177,18 +213,33 @@ export default function LiveRoomDetailScreen() {
             {room?.name || 'Live room'}
           </Text>
           <Text style={styles.headerSubtitle} numberOfLines={1}>
-            {room?.subject ? room.subject : 'Study session'}
+            {room?.description ? room.description : 'Study session'}
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.headerBtn}
-          onPress={() => {
-            setRefreshing(true);
-            load();
-          }}
-        >
-          <Icon name="refresh" size={20} color={colors.text.secondary} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.headerBtn} onPress={() => void handleCopyLink()}>
+            <Icon name="copy" size={18} color={colors.text.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerBtn}
+            onPress={() => void handleShareLink()}
+          >
+            {sharing ? (
+              <ActivityIndicator size="small" color={colors.primary[500]} />
+            ) : (
+              <Icon name="share-social" size={18} color={colors.primary[500]} />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerBtn}
+            onPress={() => {
+              setRefreshing(true);
+              load();
+            }}
+          >
+            <Icon name="refresh" size={20} color={colors.text.secondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -209,7 +260,7 @@ export default function LiveRoomDetailScreen() {
           <View style={styles.errorCard}>
             <View style={styles.errorHeader}>
               <Icon name="alert-circle" size={18} color={colors.error} />
-              <Text style={styles.errorTitle}>Unavailable</Text>
+              <Text style={styles.errorTitle}>Room details unavailable</Text>
             </View>
             <Text style={styles.errorText}>{error}</Text>
             <Button title="Try Again" onPress={() => load()} variant="outline" />
@@ -251,23 +302,42 @@ export default function LiveRoomDetailScreen() {
 
           <View style={styles.heroActions}>
             {joined ? (
-              <Button
-                title="Leave room"
-                onPress={handleLeave}
-                loading={leaving}
-                variant="danger"
-                icon={<Icon name="log-out" size={18} color={colors.text.inverse} />}
-                fullWidth
-              />
+              <View style={styles.heroActionStack}>
+                <Button
+                  title="Share link"
+                  onPress={handleShareLink}
+                  loading={sharing}
+                  variant="secondary"
+                  icon={<Icon name="share-social" size={18} color={colors.primary[600]} />}
+                  fullWidth
+                />
+                <Button
+                  title="Leave room"
+                  onPress={handleLeave}
+                  loading={leaving}
+                  variant="danger"
+                  icon={<Icon name="log-out" size={18} color={colors.text.inverse} />}
+                  fullWidth
+                />
+              </View>
             ) : (
-              <Button
-                title="Join room"
-                onPress={handleJoin}
-                loading={joining}
-                variant="primary"
-                icon={<Icon name="videocam" size={18} color={colors.text.inverse} />}
-                fullWidth
-              />
+              <View style={styles.heroActionStack}>
+                <Button
+                  title="Join room"
+                  onPress={handleJoin}
+                  loading={joining}
+                  variant="primary"
+                  icon={<Icon name="videocam" size={18} color={colors.text.inverse} />}
+                  fullWidth
+                />
+                <Button
+                  title="Copy join link"
+                  onPress={handleCopyLink}
+                  variant="outline"
+                  icon={<Icon name="copy" size={18} color={colors.primary[600]} />}
+                  fullWidth
+                />
+              </View>
             )}
           </View>
         </Card>
@@ -381,6 +451,10 @@ const styles = StyleSheet.create({
   headerTitleWrap: {
     flex: 1,
   },
+  headerActions: {
+    flexDirection: 'row',
+    gap: spacing[2],
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: '800',
@@ -478,6 +552,9 @@ const styles = StyleSheet.create({
   },
   heroActions: {
     marginTop: spacing[4],
+  },
+  heroActionStack: {
+    gap: spacing[3],
   },
   pill: {
     paddingHorizontal: 10,
@@ -583,4 +660,3 @@ const styles = StyleSheet.create({
     opacity: 0.55,
   },
 });
-

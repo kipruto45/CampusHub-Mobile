@@ -30,10 +30,23 @@ type TierInfo = {
   tier: string;
   name: string;
   description: string;
+  plan_type?: string;
+  ideal_for?: string;
+  highlights?: string[];
   price_monthly: number;
   price_yearly: number;
   storage_limit_gb: number;
   download_limit_monthly: number;
+  upload_limit_monthly: number;
+  message_limit_daily: number;
+  group_limit: number;
+  bookmark_limit: number;
+  event_limit_monthly: number;
+  points_limit_monthly: number;
+  badge_limit: number;
+  search_results_limit: number;
+  notification_delay_hours: number;
+  support_response_hours: number;
   is_popular?: boolean;
   feature_details?: TierFeature[];
 };
@@ -50,6 +63,13 @@ const formatDownloadLimit = (value: any) => {
   if (parsed < 0) return 'Unlimited';
   if (!parsed) return '0/mo';
   return `${parsed}/mo`;
+};
+
+const formatCap = (value: any, suffix: string, zeroLabel = `0${suffix}`) => {
+  const parsed = Number(value ?? 0);
+  if (parsed < 0) return 'Unlimited';
+  if (!parsed) return zeroLabel;
+  return `${parsed}${suffix}`;
 };
 
 const TierScreen: React.FC = () => {
@@ -93,6 +113,17 @@ const TierScreen: React.FC = () => {
   const currentTierKey = useMemo(() => String(userTier?.tier || '').toLowerCase(), [userTier?.tier]);
   const storageLimit = Number(userTier?.limits?.storage_limit_gb ?? 1);
   const downloadLimit = userTier?.limits?.download_limit_monthly ?? 50;
+  const uploadLimit = userTier?.limits?.upload_limit_monthly ?? 0;
+  const messageLimit = userTier?.limits?.message_limit_daily ?? 0;
+  const groupLimit = userTier?.limits?.group_limit ?? 0;
+  const searchLimit = userTier?.limits?.search_results_limit ?? 0;
+  const supportLimit = userTier?.limits?.support_response_hours ?? 72;
+  const currentPlanType = String(userTier?.plan_type || '').trim();
+  const currentHighlights = Array.isArray(userTier?.highlights) ? userTier.highlights : [];
+  const currentBanner = userTier?.features?.trial_banner || userTier?.features?.upgrade_prompt || null;
+  const currentTrialLockedCount = Array.isArray(userTier?.features?.trial_locked_features)
+    ? userTier.features.trial_locked_features.length
+    : 0;
 
   const handleStartTrial = useCallback(() => {
     Alert.alert('Start free trial', 'Start the trial available for this account?', [
@@ -171,7 +202,7 @@ const TierScreen: React.FC = () => {
           <View style={styles.errorCard}>
             <View style={styles.errorTop}>
               <Icon name="alert-circle" size={18} color={colors.error} />
-              <Text style={styles.errorTitle}>Unavailable</Text>
+              <Text style={styles.errorTitle}>Tier details unavailable</Text>
             </View>
             <Text style={styles.errorText}>{error}</Text>
             <Button title="Try Again" onPress={() => load()} variant="outline" />
@@ -187,6 +218,11 @@ const TierScreen: React.FC = () => {
               <View>
                 <Text style={styles.kicker}>Your tier</Text>
                 <Text style={styles.title}>{currentTierName}</Text>
+                {currentPlanType ? (
+                  <View style={styles.currentTypePill}>
+                    <Text style={styles.currentTypePillText}>{currentPlanType}</Text>
+                  </View>
+                ) : null}
               </View>
             </View>
             <View style={[styles.pill, { backgroundColor: colors.gray[100] }]}>
@@ -205,7 +241,46 @@ const TierScreen: React.FC = () => {
               <Text style={styles.metaLabel}>Downloads</Text>
               <Text style={styles.metaValue}>{formatDownloadLimit(downloadLimit)}</Text>
             </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Uploads</Text>
+              <Text style={styles.metaValue}>{formatCap(uploadLimit, '/mo')}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Messages</Text>
+              <Text style={styles.metaValue}>{formatCap(messageLimit, '/day')}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Groups</Text>
+              <Text style={styles.metaValue}>{formatCap(groupLimit, '')}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Search</Text>
+              <Text style={styles.metaValue}>{formatCap(searchLimit, '/query')}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Support</Text>
+              <Text style={styles.metaValue}>{supportLimit}h</Text>
+            </View>
           </View>
+
+          {currentHighlights.length ? (
+            <View style={styles.currentHighlights}>
+              {currentHighlights.map((item: string) => (
+                <View key={item} style={styles.currentHighlightChip}>
+                  <Text style={styles.currentHighlightChipText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {currentTrialLockedCount > 0 ? (
+            <View style={styles.trialNotice}>
+              <Icon name="information-circle" size={16} color={colors.warning} />
+              <Text style={styles.trialNoticeText}>
+                Your current free trial has reduced caps and {currentTrialLockedCount} premium perks still locked until you upgrade.
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.actionsRow}>
             <Button
@@ -232,11 +307,19 @@ const TierScreen: React.FC = () => {
               <View style={{ flex: 1 }}>
                 <Text style={styles.sectionTitle}>Free trial</Text>
                 <Text style={styles.trialText}>
-                  Try Premium for a limited time. If you already used a trial, the backend will tell you why.
+                  Try a paid tier for a limited time. Trial access uses lower caps, and some premium perks stay locked until you upgrade.
                 </Text>
               </View>
             </View>
           </View>
+          {currentBanner ? (
+            <View style={styles.trialBanner}>
+              <Text style={styles.trialBannerTitle}>{currentBanner.title || 'Trial update'}</Text>
+              <Text style={styles.trialBannerText}>
+                {currentBanner.message || 'Your trial and upgrade information will appear here.'}
+              </Text>
+            </View>
+          ) : null}
           <Button
             title={startingTrial ? 'Starting...' : 'Start Trial'}
             onPress={handleStartTrial}
@@ -281,12 +364,29 @@ const TierScreen: React.FC = () => {
             const features = Array.isArray(t?.feature_details) ? t.feature_details : [];
             const top = features.slice(0, 4);
             const remaining = Math.max(0, features.length - top.length);
+            const limitChips = [
+              { key: 'storage', icon: 'server', value: `${Number(t.storage_limit_gb || 0)} GB` },
+              { key: 'downloads', icon: 'download', value: formatDownloadLimit(t.download_limit_monthly) },
+              { key: 'uploads', icon: 'cloud-upload', value: formatCap(t.upload_limit_monthly, '/mo') },
+              { key: 'messages', icon: 'chatbubbles', value: formatCap(t.message_limit_daily, '/day') },
+              { key: 'groups', icon: 'people', value: formatCap(t.group_limit, '') },
+              { key: 'search', icon: 'search', value: formatCap(t.search_results_limit, '/query') },
+              { key: 'support', icon: 'headset', value: `${Number(t.support_response_hours || 0)}h response` },
+            ];
             return (
               <View key={String(t.tier || t.name)} style={styles.tierCard}>
                 <View style={styles.tierTop}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.tierName}>{t.name}</Text>
+                    {t.plan_type ? (
+                      <View style={styles.tierTypePill}>
+                        <Text style={styles.tierTypePillText}>{t.plan_type}</Text>
+                      </View>
+                    ) : null}
                     <Text style={styles.tierDesc}>{t.description}</Text>
+                    {t.ideal_for ? (
+                      <Text style={styles.tierAudience}>Best for: {t.ideal_for}</Text>
+                    ) : null}
                   </View>
                   {t.is_popular ? (
                     <View style={styles.popularPill}>
@@ -301,15 +401,23 @@ const TierScreen: React.FC = () => {
                 </View>
 
                 <View style={styles.tierMetaRow}>
-                  <View style={styles.metaChip}>
-                    <Icon name="server" size={14} color={colors.primary[600]} />
-                    <Text style={styles.metaChipText}>{Number(t.storage_limit_gb || 0)} GB</Text>
-                  </View>
-                  <View style={styles.metaChip}>
-                    <Icon name="download" size={14} color={colors.primary[600]} />
-                    <Text style={styles.metaChipText}>{formatDownloadLimit(t.download_limit_monthly)}</Text>
-                  </View>
+                  {limitChips.map((chip) => (
+                    <View key={chip.key} style={styles.metaChip}>
+                      <Icon name={chip.icon as any} size={14} color={colors.primary[600]} />
+                      <Text style={styles.metaChipText}>{chip.value}</Text>
+                    </View>
+                  ))}
                 </View>
+
+                {Array.isArray(t.highlights) && t.highlights.length ? (
+                  <View style={styles.highlightWrap}>
+                    {t.highlights.map((item) => (
+                      <View key={item} style={styles.highlightChip}>
+                        <Text style={styles.highlightChipText}>{item}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
 
                 {top.length ? (
                   <View style={styles.featureList}>
@@ -392,6 +500,15 @@ const styles = StyleSheet.create({
   },
   kicker: { fontSize: 12, fontWeight: '700', color: colors.text.tertiary },
   title: { marginTop: 1, fontSize: 16, fontWeight: '900', color: colors.text.primary },
+  currentTypePill: {
+    alignSelf: 'flex-start',
+    marginTop: spacing[2],
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.primary[50],
+  },
+  currentTypePillText: { fontSize: 11, fontWeight: '800', color: colors.primary[700] },
   pill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   pillText: { fontSize: 12, fontWeight: '800' },
 
@@ -399,6 +516,19 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   metaLabel: { fontSize: 13, color: colors.text.secondary },
   metaValue: { fontSize: 13, fontWeight: '800', color: colors.text.primary },
+  currentHighlights: { marginTop: spacing[4], flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] },
+  currentHighlightChip: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.primary[50] },
+  currentHighlightChipText: { fontSize: 11, fontWeight: '800', color: colors.primary[700] },
+  trialNotice: {
+    marginTop: spacing[4],
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[2],
+    padding: spacing[3],
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.warning + '12',
+  },
+  trialNoticeText: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.text.secondary },
 
   actionsRow: { flexDirection: 'row', marginTop: spacing[4] },
 
@@ -413,6 +543,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 14, fontWeight: '900', color: colors.text.primary },
   trialText: { marginTop: 6, fontSize: 13, color: colors.text.secondary, lineHeight: 18 },
+  trialBanner: {
+    marginTop: spacing[4],
+    padding: spacing[3],
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.accent[50],
+  },
+  trialBannerTitle: { fontSize: 13, fontWeight: '800', color: colors.text.primary },
+  trialBannerText: { marginTop: 6, fontSize: 12, lineHeight: 18, color: colors.text.secondary },
 
   listTitle: { marginTop: spacing[1], marginBottom: spacing[3], fontSize: 14, fontWeight: '900', color: colors.text.primary },
 
@@ -438,7 +576,17 @@ const styles = StyleSheet.create({
   },
   tierTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   tierName: { fontSize: 15, fontWeight: '900', color: colors.text.primary },
+  tierTypePill: {
+    alignSelf: 'flex-start',
+    marginTop: spacing[2],
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.gray[100],
+  },
+  tierTypePillText: { fontSize: 11, fontWeight: '800', color: colors.text.secondary },
   tierDesc: { marginTop: 4, fontSize: 13, color: colors.text.secondary, lineHeight: 18 },
+  tierAudience: { marginTop: spacing[2], fontSize: 12, lineHeight: 18, color: colors.text.tertiary, fontWeight: '700' },
   popularPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.accent[50] },
   popularPillText: { fontSize: 12, fontWeight: '900', color: colors.accent[500] },
 
@@ -446,7 +594,7 @@ const styles = StyleSheet.create({
   priceText: { fontSize: 15, fontWeight: '900', color: colors.primary[700] },
   priceHint: { fontSize: 12, color: colors.text.tertiary, fontWeight: '800' },
 
-  tierMetaRow: { marginTop: spacing[3], flexDirection: 'row', gap: spacing[2] },
+  tierMetaRow: { marginTop: spacing[3], flexDirection: 'row', gap: spacing[2], flexWrap: 'wrap' },
   metaChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -457,6 +605,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[50],
   },
   metaChipText: { fontSize: 12, color: colors.primary[700], fontWeight: '900' },
+  highlightWrap: { marginTop: spacing[3], flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] },
+  highlightChip: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.gray[100] },
+  highlightChipText: { fontSize: 11, fontWeight: '700', color: colors.text.secondary },
 
   featureList: { marginTop: spacing[3], gap: spacing[2] },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },

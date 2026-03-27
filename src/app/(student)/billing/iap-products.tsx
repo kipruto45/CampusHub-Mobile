@@ -6,6 +6,7 @@ import React,{ useCallback,useEffect,useMemo,useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform as RNPlatform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -17,6 +18,7 @@ import Button from '../../../components/ui/Button';
 import Icon from '../../../components/ui/Icon';
 import Input from '../../../components/ui/Input';
 import { iapAPI } from '../../../services/api';
+import { initNativeIap,isNativeIapAvailable,purchaseWithNativeIap } from '../../../services/iap.service';
 import { colors } from '../../../theme/colors';
 import { shadows } from '../../../theme/shadows';
 import { borderRadius,spacing } from '../../../theme/spacing';
@@ -47,10 +49,17 @@ const ProductsScreen: React.FC = () => {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [platform, setPlatform] = useState<Platform>('web');
+  const [platform, setPlatform] = useState<Platform>(() => {
+    if (RNPlatform.OS === 'ios') return 'apple';
+    if (RNPlatform.OS === 'android') return 'google';
+    return 'web';
+  });
   const [type, setType] = useState<ProductType>('subscription');
   const [products, setProducts] = useState<Product[]>([]);
   const [startingId, setStartingId] = useState<string | null>(null);
+  const [nativeAvailable, setNativeAvailable] = useState(false);
+  const [nativeChecking, setNativeChecking] = useState(true);
+  const [nativeError, setNativeError] = useState<string | null>(null);
 
   // Manual token fields (Apple/Google) for environments without native IAP SDK wiring.
   const [transactionId, setTransactionId] = useState('');
@@ -81,6 +90,35 @@ const ProductsScreen: React.FC = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    let active = true;
+    const checkNative = async () => {
+      try {
+        const available = await isNativeIapAvailable();
+        if (!active) return;
+        if (available) {
+          await initNativeIap();
+          if (!active) return;
+          setNativeAvailable(true);
+        } else {
+          setNativeAvailable(false);
+        }
+      } catch (err: any) {
+        if (!active) return;
+        setNativeAvailable(false);
+        setNativeError(
+          err?.message || 'Native in-app purchases are not available in this build.'
+        );
+      } finally {
+        if (active) setNativeChecking(false);
+      }
+    };
+    checkNative();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const platformOptions = useMemo(
     () => [
@@ -113,18 +151,33 @@ const ProductsScreen: React.FC = () => {
         return;
       }
 
-      if (platform === 'apple' && !String(transactionId || '').trim()) {
-        Alert.alert('Transaction ID required', 'Enter an Apple transaction id to continue.');
-        return;
-      }
-
-      if (platform === 'google' && !String(purchaseToken || '').trim()) {
-        Alert.alert('Purchase token required', 'Enter a Google purchase token to continue.');
-        return;
-      }
-
       try {
         setStartingId(product.id);
+        if (platform !== 'web' && nativeAvailable) {
+          const nativePurchase = await purchaseWithNativeIap(platformProductId, product.product_type);
+          const response = await iapAPI.subscribe({
+            platform: nativePurchase.platform,
+            product_id: platformProductId,
+            transaction_id: nativePurchase.transactionId,
+            receipt_data: nativePurchase.receiptData,
+            purchase_token: nativePurchase.purchaseToken,
+            order_id: nativePurchase.orderId,
+          });
+          const payload = response?.data?.data ?? response?.data ?? {};
+          Alert.alert('Purchase processed', payload?.already_processed ? 'Already processed.' : 'Purchase recorded.');
+          return;
+        }
+
+        if (platform === 'apple' && !String(transactionId || '').trim()) {
+          Alert.alert('Transaction ID required', 'Enter an Apple transaction id to continue.');
+          return;
+        }
+
+        if (platform === 'google' && !String(purchaseToken || '').trim()) {
+          Alert.alert('Purchase token required', 'Enter a Google purchase token to continue.');
+          return;
+        }
+
         const response = await iapAPI.subscribe({
           platform,
           product_id: platformProductId,
@@ -167,7 +220,7 @@ const ProductsScreen: React.FC = () => {
         setStartingId(null);
       }
     },
-    [platform, orderId, purchaseToken, receiptData, transactionId]
+    [nativeAvailable, orderId, platform, purchaseToken, receiptData, transactionId]
   );
 
   if (loading) {
@@ -248,14 +301,23 @@ const ProductsScreen: React.FC = () => {
 
           {platform !== 'web' ? (
             <View style={styles.notice}>
-              <Icon name="information-circle" size={16} color={colors.warning} />
+              <Icon
+                name={nativeAvailable ? 'checkmark-circle' : 'information-circle'}
+                size={16}
+                color={nativeAvailable ? colors.success : colors.warning}
+              />
               <Text style={styles.noticeText}>
-                Native in-app purchase SDK is not wired in this build. You can still submit tokens manually for testing.
+                {nativeAvailable
+                  ? 'Native in-app purchase SDK is ready. Start a purchase to use Apple/Google checkout.'
+                  : nativeError ||
+                    (nativeChecking
+                      ? 'Checking native in-app purchase support...'
+                      : 'Native in-app purchase SDK is not wired in this build. You can still submit tokens manually for testing.')}
               </Text>
             </View>
           ) : null}
 
-          {platform === 'apple' ? (
+          {platform === 'apple' && !nativeAvailable ? (
             <View style={{ marginTop: spacing[4] }}>
               <Input
                 label="Transaction ID"
@@ -274,7 +336,7 @@ const ProductsScreen: React.FC = () => {
             </View>
           ) : null}
 
-          {platform === 'google' ? (
+          {platform === 'google' && !nativeAvailable ? (
             <View style={{ marginTop: spacing[4] }}>
               <Input
                 label="Purchase token"
@@ -325,7 +387,7 @@ const ProductsScreen: React.FC = () => {
                 {p.description ? <Text style={styles.productDesc}>{p.description}</Text> : null}
 
                 <Button
-                  title={supported ? (starting ? 'Starting...' : 'Buy') : 'Unavailable'}
+                  title={supported ? (starting ? 'Starting...' : 'Buy') : 'Not supported'}
                   onPress={() => startPurchase(p)}
                   loading={starting}
                   disabled={!supported || starting}

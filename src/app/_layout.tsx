@@ -26,9 +26,25 @@ const getQueryParam = (
   return '';
 };
 
+const getParsedLinkPath = (url: string): string => {
+  const parsed = Linking.parse(url);
+  const scheme = String((parsed as any)?.scheme || '').toLowerCase();
+  const host = String((parsed as any)?.hostname || '').replace(/^\/+/, '');
+  const rawPath = String(parsed.path || '').replace(/^\/+/, '');
+
+  if (scheme && scheme !== 'http' && scheme !== 'https') {
+    if (host && rawPath) {
+      return `${host}/${rawPath}`.replace(/^\/+/, '');
+    }
+    return host || rawPath;
+  }
+
+  return rawPath;
+};
+
 const extractMagicLinkToken = (url: string): string => {
   const parsed = Linking.parse(url);
-  const path = (parsed.path || '').replace(/^\/+/, '');
+  const path = getParsedLinkPath(url);
   const segments = path.split('/').filter(Boolean);
   const qp = parsed.queryParams || {};
   const tokenFromQuery =
@@ -130,7 +146,7 @@ function RootLayoutInner() {
     const handleDeepLink = (url?: string | null) => {
       if (!url) return;
       const parsed = Linking.parse(url);
-      const path = (parsed.path || '').replace(/^\/+/, '');
+      const path = getParsedLinkPath(url);
       const segments = path.split('/').filter(Boolean);
       const qp = parsed.queryParams || {};
 
@@ -172,6 +188,17 @@ function RootLayoutInner() {
       if (resourceId) {
         router.push(`/(student)/resource/${resourceId}`);
         return;
+      }
+
+      const liveRoomId =
+        (segments[0] === 'live-room' && segments[1]) ||
+        (segments[0] === 'live-rooms' && segments[1]) ||
+        (segments[0] === 'room' && segments[1]) ||
+        (typeof qp.room === 'string' && qp.room) ||
+        (typeof qp.room_id === 'string' && qp.room_id) ||
+        (typeof qp.live_room === 'string' && qp.live_room);
+      if (liveRoomId) {
+        router.push(`/(student)/live-room/${liveRoomId}`);
       }
     };
 

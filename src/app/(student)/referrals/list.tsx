@@ -177,7 +177,7 @@ const ReferralsList: React.FC = () => {
           <View style={styles.errorCard}>
             <View style={styles.errorHeader}>
               <Icon name="alert-circle" size={18} color={colors.error} />
-              <Text style={styles.errorTitle}>Unavailable</Text>
+              <Text style={styles.errorTitle}>Referral list unavailable</Text>
             </View>
             <Text style={styles.errorText}>{error}</Text>
             <Button title="Try Again" onPress={() => load()} variant="outline" />
@@ -403,4 +403,3 @@ const styles = StyleSheet.create({
 });
 
 export default ReferralsList;
-

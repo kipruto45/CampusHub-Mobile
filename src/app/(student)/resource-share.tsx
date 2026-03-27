@@ -187,7 +187,7 @@ export default function ResourceShareScreen() {
           <View style={styles.errorIcon}>
             <Icon name="alert-circle" size={64} color={colors.error} />
           </View>
-          <Text style={styles.errorTitle}>Resource Unavailable</Text>
+          <Text style={styles.errorTitle}>Resource not accessible</Text>
           <Text style={styles.errorMessage}>
             {error || 'This shared resource is no longer available'}
           </Text>

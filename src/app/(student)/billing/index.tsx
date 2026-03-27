@@ -313,7 +313,7 @@ const BillingHome: React.FC = () => {
           <View style={styles.errorCard}>
             <View style={styles.errorHeader}>
               <Icon name="alert-circle" size={18} color={colors.error} />
-              <Text style={styles.errorTitle}>Billing Unavailable</Text>
+              <Text style={styles.errorTitle}>Billing temporarily offline</Text>
             </View>
             <Text style={styles.errorText}>{error}</Text>
             <Button title="Try Again" onPress={() => loadBilling()} variant="outline" />

@@ -107,7 +107,7 @@ const PaymentHistoryScreen: React.FC = () => {
       if (!cleaned) {
         const currentStatus = String(payment.status || '').toLowerCase();
         Alert.alert(
-          'Receipt Unavailable',
+          'Receipt not ready',
           currentStatus === 'pending'
             ? 'This payment is still pending. Check the status again after the payment settles.'
             : 'A receipt has not been generated yet. Refresh the payment status and try again shortly.'

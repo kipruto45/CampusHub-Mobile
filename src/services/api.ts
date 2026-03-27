@@ -200,6 +200,18 @@ let apiBaseUrl = DEFAULT_API_BASE_URL;
 
 export const getApiBaseUrl = (): string => apiBaseUrl;
 
+export const getApiRootUrl = (): string =>
+  trimTrailingSlash(getApiBaseUrl().replace(/\/api$/i, ''));
+
+export const getWebSocketBaseUrl = (): string => {
+  const explicit = String(process.env.EXPO_PUBLIC_WS_URL || '').trim();
+  const candidate = explicit || getApiRootUrl();
+
+  return trimTrailingSlash(normalizeLoopbackApiUrlForMobile(candidate))
+    .replace(/^http:\/\//i, 'ws://')
+    .replace(/^https:\/\//i, 'wss://');
+};
+
 const getDevFallbackApiBaseUrl = (): string | null => {
   const expoHost = getExpoHost();
   if (!expoHost) return null;
@@ -1230,7 +1242,7 @@ const getResourceShareBaseUrl = (): string => {
     return trimTrailingSlash(explicit);
   }
 
-  return trimTrailingSlash(getApiBaseUrl().replace(/\/api$/i, ''));
+  return getApiRootUrl();
 };
 
 const normalizeResourceSharePayload = (rawPayload: any) => {
@@ -2861,12 +2873,47 @@ export const paymentsAPI = {
         name: String(plan?.name || ''),
         tier: String(plan?.tier || ''),
         description: String(plan?.description || ''),
+        plan_type: String(plan?.plan_type || ''),
+        ideal_for: String(plan?.ideal_for || ''),
+        highlights: asArray(plan?.highlights || []).map((item) => String(item || '')),
         price_monthly: String(plan?.price_monthly ?? ''),
         price_yearly: String(plan?.price_yearly ?? ''),
         billing_period: String(plan?.billing_period || ''),
         storage_limit_gb: Number(plan?.storage_limit_gb ?? 0),
         max_upload_size_mb: Number(plan?.max_upload_size_mb ?? 0),
         download_limit_monthly: Number(plan?.download_limit_monthly ?? 0),
+        upload_limit_monthly: Number(plan?.upload_limit_monthly ?? 0),
+        message_limit_daily: Number(plan?.message_limit_daily ?? 0),
+        group_limit: Number(plan?.group_limit ?? 0),
+        bookmark_limit: Number(plan?.bookmark_limit ?? 0),
+        event_limit_monthly: Number(plan?.event_limit_monthly ?? 0),
+        points_limit_monthly: Number(plan?.points_limit_monthly ?? 0),
+        badge_limit: Number(plan?.badge_limit ?? 0),
+        search_results_limit: Number(plan?.search_results_limit ?? 0),
+        notification_delay_hours: Number(plan?.notification_delay_hours ?? 0),
+        support_response_hours: Number(plan?.support_response_hours ?? 0),
+        limits: {
+          storage_gb: Number(plan?.limits?.storage_gb ?? plan?.storage_limit_gb ?? 0),
+          max_upload_mb: Number(plan?.limits?.max_upload_mb ?? plan?.max_upload_size_mb ?? 0),
+          downloads_monthly: Number(plan?.limits?.downloads_monthly ?? plan?.download_limit_monthly ?? 0),
+          upload_limit_monthly: Number(plan?.limits?.upload_limit_monthly ?? plan?.upload_limit_monthly ?? 0),
+          message_limit_daily: Number(plan?.limits?.message_limit_daily ?? plan?.message_limit_daily ?? 0),
+          group_limit: Number(plan?.limits?.group_limit ?? plan?.group_limit ?? 0),
+          bookmark_limit: Number(plan?.limits?.bookmark_limit ?? plan?.bookmark_limit ?? 0),
+          event_limit_monthly: Number(plan?.limits?.event_limit_monthly ?? plan?.event_limit_monthly ?? 0),
+          points_limit_monthly: Number(plan?.limits?.points_limit_monthly ?? plan?.points_limit_monthly ?? 0),
+          badge_limit: Number(plan?.limits?.badge_limit ?? plan?.badge_limit ?? 0),
+          search_results_limit: Number(plan?.limits?.search_results_limit ?? plan?.search_results_limit ?? 0),
+          notification_delay_hours: Number(plan?.limits?.notification_delay_hours ?? plan?.notification_delay_hours ?? 0),
+          support_response_hours: Number(plan?.limits?.support_response_hours ?? plan?.support_response_hours ?? 0),
+        },
+        trial_preview: {
+          available: Boolean(plan?.trial_preview?.available),
+          is_trial_limited: Boolean(plan?.trial_preview?.is_trial_limited),
+          locked_features: asArray(plan?.trial_preview?.locked_features || []).map((item) => String(item || '')),
+          limits: plan?.trial_preview?.limits || {},
+        },
+        feature_count: Number(plan?.feature_count ?? 0),
         can_download_unlimited: Boolean(plan?.can_download_unlimited),
         has_ads: Boolean(plan?.has_ads),
         has_priority_support: Boolean(plan?.has_priority_support),
@@ -2897,6 +2944,7 @@ export const paymentsAPI = {
       return toEnvelopeResponse(response, {
         subscription: payload?.subscription ?? null,
         plan: payload?.plan ?? null,
+        entitlements: payload?.entitlements ?? null,
       });
     }),
 

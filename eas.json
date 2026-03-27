@@ -10,9 +10,9 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://campushub-api.onrender.com/api",
         "EXPO_PUBLIC_API_URL_FALLBACKS": "https://campushub-api.onrender.com/api",
-        "EXPO_PUBLIC_WEB_URL": "https://my-cham-a.app",
-        "EXPO_PUBLIC_RESOURCE_SHARE_URL": "https://my-cham-a.app",
-        "EXPO_PUBLIC_SHARE_BASE_URL": "https://my-cham-a.app"
+        "EXPO_PUBLIC_WEB_URL": "https://campushub-api.onrender.com",
+        "EXPO_PUBLIC_RESOURCE_SHARE_URL": "https://campushub-api.onrender.com",
+        "EXPO_PUBLIC_SHARE_BASE_URL": "https://campushub-api.onrender.com"
       }
     },
     "preview": {
@@ -20,9 +20,9 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://campushub-api.onrender.com/api",
         "EXPO_PUBLIC_API_URL_FALLBACKS": "https://campushub-api.onrender.com/api",
-        "EXPO_PUBLIC_WEB_URL": "https://my-cham-a.app",
-        "EXPO_PUBLIC_RESOURCE_SHARE_URL": "https://my-cham-a.app",
-        "EXPO_PUBLIC_SHARE_BASE_URL": "https://my-cham-a.app"
+        "EXPO_PUBLIC_WEB_URL": "https://campushub-api.onrender.com",
+        "EXPO_PUBLIC_RESOURCE_SHARE_URL": "https://campushub-api.onrender.com",
+        "EXPO_PUBLIC_SHARE_BASE_URL": "https://campushub-api.onrender.com"
       }
     },
     "production": {
@@ -30,9 +30,9 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://campushub-api.onrender.com/api",
         "EXPO_PUBLIC_API_URL_FALLBACKS": "https://campushub-api.onrender.com/api",
-        "EXPO_PUBLIC_WEB_URL": "https://my-cham-a.app",
-        "EXPO_PUBLIC_RESOURCE_SHARE_URL": "https://my-cham-a.app",
-        "EXPO_PUBLIC_SHARE_BASE_URL": "https://my-cham-a.app"
+        "EXPO_PUBLIC_WEB_URL": "https://campushub-api.onrender.com",
+        "EXPO_PUBLIC_RESOURCE_SHARE_URL": "https://campushub-api.onrender.com",
+        "EXPO_PUBLIC_SHARE_BASE_URL": "https://campushub-api.onrender.com"
       }
     }
   },

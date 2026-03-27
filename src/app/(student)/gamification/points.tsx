@@ -131,7 +131,7 @@ const PointsScreen: React.FC = () => {
           <View style={styles.errorCard}>
             <View style={styles.errorTop}>
               <Icon name="alert-circle" size={18} color={colors.error} />
-              <Text style={styles.errorTitle}>Unavailable</Text>
+              <Text style={styles.errorTitle}>Points unavailable</Text>
             </View>
             <Text style={styles.errorText}>{error}</Text>
             <Button title="Try Again" onPress={() => load()} variant="outline" />

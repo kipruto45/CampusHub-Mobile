@@ -3,28 +3,33 @@
  * Handles WebSocket connections for real-time video study sessions
  */
 
-import api from './api';
+import api,{ getAuthToken,getWebSocketBaseUrl } from './api';
 
 // Types
 export interface StudyRoom {
   id: string;
   name: string;
   description?: string;
-  subject?: string;
-  room_type: 'study' | 'tutoring' | 'group_project' | 'exam_prep';
-  privacy: 'public' | 'private' | 'invite_only';
+  room_type: 'public' | 'private' | 'study_group';
+  privacy?: 'public' | 'private' | 'invite_only';
+  status?: 'waiting' | 'active' | 'ended';
   host: string;
   host_name: string;
   host_avatar?: string;
+  share_url?: string;
   max_participants?: number;
-  current_participants: number;
+  current_participants?: number;
   is_active: boolean;
-  is_recording: boolean;
+  is_recording?: boolean;
+  is_recording_enabled?: boolean;
+  is_screen_share_enabled?: boolean;
   started_at: string;
+  ended_at?: string;
   end_time?: string;
   created_at: string;
   participant_count: number;
   is_joined: boolean;
+  study_group?: string | null;
 }
 
 export interface RoomParticipant {
@@ -53,10 +58,10 @@ export interface RoomMessage {
 export interface CreateRoomData {
   name: string;
   description?: string;
-  subject?: string;
-  room_type: 'study' | 'tutoring' | 'group_project' | 'exam_prep';
-  privacy: 'public' | 'private' | 'invite_only';
+  room_type: 'public' | 'private' | 'study_group';
   max_participants?: number;
+  is_recording_enabled?: boolean;
+  is_screen_share_enabled?: boolean;
 }
 
 class LiveRoomsService {
@@ -191,8 +196,14 @@ class LiveRoomsService {
     }
 
     this.roomId = roomId;
-    const token = api.defaults.headers.common['Authorization'] as string;
-    const wsUrl = `${process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8000'}/ws/rooms/${roomId}/?token=${token}`;
+    const token = String(getAuthToken() || '').trim();
+    if (!token) {
+      console.warn('Cannot connect to live room without an access token');
+      this.connectionHandlers.forEach((handler) => handler(false));
+      return;
+    }
+
+    const wsUrl = `${getWebSocketBaseUrl()}/ws/rooms/${roomId}/?token=${encodeURIComponent(token)}`;
 
     try {
       this.websocket = new WebSocket(wsUrl);

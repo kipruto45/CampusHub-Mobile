@@ -1,9 +1,20 @@
 // Student Layout for CampusHub
 // Custom modern bottom navigation bar with 5 icons
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack,useRouter } from 'expo-router';
-import React,{ useCallback,useEffect,useState } from 'react';
-import { ActivityIndicator,Platform,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
+import React,{ useCallback,useEffect,useMemo,useRef,useState } from 'react';
+import {
+  ActivityIndicator,
+  Animated,
+  PanResponder,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../../components/ui/Icon';
 import { ADMIN_HOME_ROUTE,isAdminRole } from '../../lib/auth-routing';
@@ -23,32 +34,34 @@ const TABS = [
   { name: 'more', label: 'More', icon: 'apps', route: '/(student)/tabs/more' },
 ];
 
+const FLOATING_AI_BUTTON_SIZE = 64;
+const FLOATING_AI_STORAGE_KEY = 'campushub.student.floating_ai_position';
+
+const clampFloatingAiPosition = (
+  position: { x: number; y: number },
+  width: number,
+  height: number,
+  insetsTop: number,
+  insetsBottom: number
+) => {
+  const minX = 12;
+  const maxX = Math.max(minX, width - FLOATING_AI_BUTTON_SIZE - 12);
+  const minY = Math.max(16, insetsTop + 12);
+  const bottomClearance = Math.max(insetsBottom, 10) + 92;
+  const maxY = Math.max(minY, height - FLOATING_AI_BUTTON_SIZE - bottomClearance);
+
+  return {
+    x: Math.min(Math.max(position.x, minX), maxX),
+    y: Math.min(Math.max(position.y, minY), maxY),
+  };
+};
+
 // Custom Bottom Tab Bar Component
 function CustomBottomBar({ activeTab, onTabPress }: { activeTab: string; onTabPress: (route: string) => void }) {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const aiBottomOffset = Math.max(insets.bottom, 10) + 34;
   
   return (
     <View style={styles.wrapper}>
-      {/* Floating AI Button */}
-      <TouchableOpacity
-        style={[styles.floatingAIButton, { bottom: aiBottomOffset }]}
-        onPress={() => router.push('/(student)/ai-chat')}
-        activeOpacity={0.8}
-        accessibilityRole="button"
-        accessibilityLabel="Open AI assistant"
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-      >
-        <View style={styles.floatingAIHalo}>
-          <View style={styles.floatingAIInner}>
-            <View style={styles.floatingAIAccent} />
-            <Icon name="chatbubble-ellipses" size={24} color="#FFFFFF" />
-            <Text style={styles.floatingAILabel}>AI</Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-      
       <View style={[
         styles.bottomBar, 
         { paddingBottom: Math.max(insets.bottom, 10) }
@@ -78,6 +91,167 @@ function CustomBottomBar({ activeTab, onTabPress }: { activeTab: string; onTabPr
         })}
       </View>
     </View>
+  );
+}
+
+function DraggableAIButton() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { width,height } = useWindowDimensions();
+  const translate = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const [ready, setReady] = useState(false);
+
+  const defaultPosition = useMemo(
+    () =>
+      clampFloatingAiPosition(
+        {
+          x: width - FLOATING_AI_BUTTON_SIZE - 18,
+          y: height - FLOATING_AI_BUTTON_SIZE - (Math.max(insets.bottom, 10) + 126),
+        },
+        width,
+        height,
+        insets.top,
+        insets.bottom
+      ),
+    [height, insets.bottom, insets.top, width]
+  );
+
+  const clampPosition = useCallback(
+    (value: { x: number; y: number }) =>
+      clampFloatingAiPosition(value, width, height, insets.top, insets.bottom),
+    [height, insets.bottom, insets.top, width]
+  );
+
+  const persistPosition = useCallback(async (value: { x: number; y: number }) => {
+    try {
+      await AsyncStorage.setItem(FLOATING_AI_STORAGE_KEY, JSON.stringify(value));
+    } catch {
+      // Ignore storage failures and keep the session position in memory.
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPosition = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(FLOATING_AI_STORAGE_KEY);
+        if (!raw) {
+          if (!cancelled) {
+            translate.setValue(defaultPosition);
+            setReady(true);
+          }
+          return;
+        }
+
+        const parsed = JSON.parse(raw);
+        const next = clampPosition({
+          x: Number(parsed?.x ?? defaultPosition.x),
+          y: Number(parsed?.y ?? defaultPosition.y),
+        });
+
+        if (!cancelled) {
+          translate.setValue(next);
+          setReady(true);
+        }
+      } catch {
+        if (!cancelled) {
+          translate.setValue(defaultPosition);
+          setReady(true);
+        }
+      }
+    };
+
+    void loadPosition();
+    return () => {
+      cancelled = true;
+    };
+  }, [clampPosition, defaultPosition, translate]);
+
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    translate.stopAnimation((current: any) => {
+      translate.setValue(
+        clampPosition({
+          x: Number(current?.x ?? defaultPosition.x),
+          y: Number(current?.y ?? defaultPosition.y),
+        })
+      );
+    });
+  }, [clampPosition, defaultPosition, ready, translate]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_event, gestureState) =>
+          Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5,
+        onPanResponderGrant: () => {
+          translate.stopAnimation((current: any) => {
+            translate.setOffset({
+              x: Number(current?.x ?? defaultPosition.x),
+              y: Number(current?.y ?? defaultPosition.y),
+            });
+            translate.setValue({ x: 0, y: 0 });
+          });
+        },
+        onPanResponderMove: Animated.event(
+          [null, { dx: translate.x, dy: translate.y }],
+          { useNativeDriver: false }
+        ),
+        onPanResponderRelease: () => {
+          translate.flattenOffset();
+          translate.stopAnimation((current: any) => {
+            const next = clampPosition({
+              x: Number(current?.x ?? defaultPosition.x),
+              y: Number(current?.y ?? defaultPosition.y),
+            });
+            translate.setValue(next);
+            void persistPosition(next);
+          });
+        },
+        onPanResponderTerminate: () => {
+          translate.flattenOffset();
+          translate.stopAnimation((current: any) => {
+            const next = clampPosition({
+              x: Number(current?.x ?? defaultPosition.x),
+              y: Number(current?.y ?? defaultPosition.y),
+            });
+            translate.setValue(next);
+            void persistPosition(next);
+          });
+        },
+      }),
+    [clampPosition, defaultPosition, persistPosition, translate]
+  );
+
+  if (!ready) {
+    return null;
+  }
+
+  return (
+    <Animated.View
+      style={[styles.floatingAIButton, { transform: translate.getTranslateTransform() }]}
+      {...panResponder.panHandlers}
+    >
+      <TouchableOpacity
+        onPress={() => router.push('/(student)/ai-chat')}
+        activeOpacity={0.86}
+        accessibilityRole="button"
+        accessibilityLabel="Open AI assistant"
+        accessibilityHint="Drag to move this button around the screen."
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      >
+        <View style={styles.floatingAIHalo}>
+          <View style={styles.floatingAIInner}>
+            <View style={styles.floatingAIAccent} />
+            <Icon name="chatbubble-ellipses" size={24} color="#FFFFFF" />
+            <Text style={styles.floatingAILabel}>AI</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
@@ -152,6 +326,7 @@ export default function StudentLayout() {
           }}
         />
       </View>
+      <DraggableAIButton />
       <CustomBottomBar activeTab={activeTab} onTabPress={handleTabPress} />
     </View>
   );
@@ -177,7 +352,8 @@ const styles = StyleSheet.create({
   },
   floatingAIButton: {
     position: 'absolute',
-    right: 18,
+    top: 0,
+    left: 0,
     zIndex: 120,
   },
   floatingAIHalo: {

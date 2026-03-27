@@ -559,7 +559,7 @@ const SettingsScreen: React.FC = () => {
         </View>
 
         {/* Version */}
-        <Text style={styles.version}>CampusHub v1.0.0</Text>
+        <Text style={styles.version}>CampusHub v1.0.2</Text>
         
         <View style={styles.bottomSpacing} />
       </ScrollView>

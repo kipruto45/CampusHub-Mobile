@@ -32,6 +32,16 @@ type AccessSummary = {
   tier_name?: string;
   storage_limit_gb?: number;
   download_limit_monthly?: number;
+  upload_limit_monthly?: number;
+  message_limit_daily?: number;
+  group_limit?: number;
+  bookmark_limit?: number;
+  event_limit_monthly?: number;
+  points_limit_monthly?: number;
+  badge_limit?: number;
+  search_results_limit?: number;
+  notification_delay_hours?: number;
+  support_response_hours?: number;
   categories?: Record<string, FeatureRow[]>;
 };
 
@@ -211,7 +221,7 @@ const FeatureAccessScreen: React.FC = () => {
           <View style={styles.errorCard}>
             <View style={styles.errorTop}>
               <Icon name="alert-circle" size={18} color={colors.error} />
-              <Text style={styles.errorTitle}>Unavailable</Text>
+              <Text style={styles.errorTitle}>Feature access unavailable</Text>
             </View>
             <Text style={styles.errorText}>{error}</Text>
             <Button title="Try Again" onPress={() => load()} variant="outline" />
@@ -243,7 +253,47 @@ const FeatureAccessScreen: React.FC = () => {
             </View>
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>Downloads</Text>
-              <Text style={styles.metaValue}>{formatDownloadLimit(downloadLimit)}</Text>
+              <Text style={styles.metaValue}>{formatDownloadLimit(downloadLimit)}/mo</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Uploads</Text>
+              <Text style={styles.metaValue}>{formatDownloadLimit(summary?.upload_limit_monthly)}/mo</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Messages</Text>
+              <Text style={styles.metaValue}>{formatDownloadLimit(summary?.message_limit_daily)}/day</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Groups</Text>
+              <Text style={styles.metaValue}>{formatDownloadLimit(summary?.group_limit)}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Bookmarks</Text>
+              <Text style={styles.metaValue}>{formatDownloadLimit(summary?.bookmark_limit)}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Events</Text>
+              <Text style={styles.metaValue}>{formatDownloadLimit(summary?.event_limit_monthly)}/mo</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Points</Text>
+              <Text style={styles.metaValue}>{formatDownloadLimit(summary?.points_limit_monthly)}/mo</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Badges</Text>
+              <Text style={styles.metaValue}>{formatDownloadLimit(summary?.badge_limit)}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Search Results</Text>
+              <Text style={styles.metaValue}>{formatDownloadLimit(summary?.search_results_limit)}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Notifications</Text>
+              <Text style={styles.metaValue}>{summary?.notification_delay_hours || 0}h delay</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Support</Text>
+              <Text style={styles.metaValue}>{summary?.support_response_hours || 48}h response</Text>
             </View>
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>Features</Text>

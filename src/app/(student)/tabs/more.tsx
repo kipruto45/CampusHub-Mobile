@@ -36,14 +36,6 @@ interface MenuSection {
 
 const QUICK_ACTIONS: MenuItem[] = [
   {
-    id: 'upload',
-    title: 'Upload Resource',
-    subtitle: 'Share notes and course material',
-    icon: 'cloud-upload',
-    iconColor: colors.success,
-    route: '/(student)/upload-resource',
-  },
-  {
     id: 'progress',
     title: 'My Progress',
     subtitle: 'Track courses, streaks, and goals',
@@ -53,37 +45,12 @@ const QUICK_ACTIONS: MenuItem[] = [
     featureKey: 'advanced_analytics',
   },
   {
-    id: 'search',
-    title: 'Search',
-    subtitle: 'Find resources fast',
-    icon: 'search',
-    iconColor: colors.info,
-    route: '/(student)/search',
-  },
-  {
-    id: 'notifications',
-    title: 'Notifications',
-    subtitle: 'Catch up on updates',
-    icon: 'notifications',
-    iconColor: colors.warning,
-    route: '/(student)/notifications',
-  },
-  {
     id: 'billing',
     title: 'Billing',
     subtitle: 'Plans, history, and perks',
     icon: 'card',
     iconColor: colors.accent[500],
     route: '/(student)/billing',
-  },
-  {
-    id: 'ai-chat',
-    title: 'AI Chat',
-    subtitle: 'Ask questions and study smarter',
-    icon: 'sparkles',
-    iconColor: colors.primary[500],
-    route: '/(student)/ai-chat',
-    featureKey: 'ai_chat',
   },
 ];
 
@@ -358,6 +325,21 @@ const MENU_SECTIONS: MenuSection[] = [
     ],
   },
   {
+    id: 'integrations',
+    title: 'Integrations',
+    description: 'Connect external accounts to keep CampusHub in sync.',
+    items: [
+      {
+        id: 'calendar-sync',
+        title: 'Calendar Sync',
+        subtitle: 'Link Google or Outlook calendars',
+        icon: 'calendar',
+        iconColor: colors.success,
+        route: '/(student)/calendar-sync',
+      },
+    ],
+  },
+  {
     id: 'account',
     title: 'Account, Billing & Help',
     description: 'Manage your profile, security, account settings, and support channels.',
@@ -536,6 +518,7 @@ const MoreScreen: React.FC = () => {
             name={displayName}
             sizePx={56}
             cacheKey={`student-more-${user?.id || 'guest'}`}
+            forceInitials
           />
           <View style={styles.profileCopy}>
             <Text style={styles.profileName}>{displayName}</Text>

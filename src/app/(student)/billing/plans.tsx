@@ -29,12 +29,33 @@ type Plan = {
   name: string;
   tier: string;
   description: string;
+  plan_type?: string;
+  ideal_for?: string;
+  highlights?: string[];
   price_monthly: string;
   price_yearly: string;
   billing_period: string;
   storage_limit_gb: number;
   max_upload_size_mb: number;
   download_limit_monthly: number;
+  upload_limit_monthly: number;
+  message_limit_daily: number;
+  group_limit: number;
+  bookmark_limit: number;
+  event_limit_monthly: number;
+  points_limit_monthly: number;
+  badge_limit: number;
+  search_results_limit: number;
+  notification_delay_hours: number;
+  support_response_hours: number;
+  limits?: Record<string, any>;
+  trial_preview?: {
+    available?: boolean;
+    is_trial_limited?: boolean;
+    locked_features?: string[];
+    limits?: Record<string, any>;
+  };
+  feature_count?: number;
   can_download_unlimited: boolean;
   has_ads: boolean;
   has_priority_support: boolean;
@@ -66,6 +87,13 @@ const formatMoney = (value: any, currency = 'USD') => {
   return `${currency} ${parsed.toFixed(parsed % 1 === 0 ? 0 : 2)}`;
 };
 
+const formatCap = (value: any, suffix: string, zeroLabel = `0${suffix}`) => {
+  const parsed = Number(value ?? 0);
+  if (parsed < 0) return 'Unlimited';
+  if (!parsed) return zeroLabel;
+  return `${parsed}${suffix}`;
+};
+
 const normalizePaymentError = (error: any): string => {
   const message = String(
     error?.response?.data?.error ||
@@ -93,6 +121,7 @@ const PlansScreen: React.FC = () => {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [subscription, setSubscription] = useState<any | null>(null);
   const [currentPlan, setCurrentPlan] = useState<any | null>(null);
+  const [entitlements, setEntitlements] = useState<any | null>(null);
   const [providers, setProviders] = useState<ProviderStatusMap>({});
   const [provider, setProvider] = useState<Provider>('stripe');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -127,6 +156,7 @@ const PlansScreen: React.FC = () => {
       const subPayload = subRes?.data?.data ?? subRes?.data ?? {};
       setSubscription(subPayload?.subscription ?? null);
       setCurrentPlan(subPayload?.plan ?? null);
+      setEntitlements(subPayload?.entitlements ?? null);
     } catch (err: any) {
       Alert.alert(
         'Plans',
@@ -151,6 +181,15 @@ const PlansScreen: React.FC = () => {
     () => String(currentPlan?.name || currentPlan?.tier || '').trim(),
     [currentPlan]
   );
+  const currentPlanTier = useMemo(
+    () => String(currentPlan?.tier || entitlements?.plan_tier || '').trim().toLowerCase(),
+    [currentPlan?.tier, entitlements?.plan_tier]
+  );
+  const currentPlanType = useMemo(
+    () => String(entitlements?.plan_type || '').trim(),
+    [entitlements?.plan_type]
+  );
+  const summaryBanner = entitlements?.trial_banner || entitlements?.upgrade_prompt || null;
 
   const isProviderConfigured = useCallback(
     (providerId: Provider) => {
@@ -209,7 +248,7 @@ const PlansScreen: React.FC = () => {
       }
 
       Alert.alert(
-        'Payment Method Unavailable',
+        'Payment method not available',
         selectedProviderError ||
           `${plan.name} is not available with the selected payment method right now. Switch payment method or contact support for help.`,
         [
@@ -351,6 +390,11 @@ const PlansScreen: React.FC = () => {
               <Text style={styles.summaryTitle}>
                 {currentPlanLabel || (subscription ? 'Subscription' : 'Free')}
               </Text>
+              {currentPlanType ? (
+                <View style={styles.summaryTypePill}>
+                  <Text style={styles.summaryTypePillText}>{currentPlanType}</Text>
+                </View>
+              ) : null}
               <Text style={styles.summaryText}>
                 {subscription?.status
                   ? `Status: ${String(subscription.status).replace(/_/g, ' ')}.`
@@ -358,6 +402,17 @@ const PlansScreen: React.FC = () => {
               </Text>
             </View>
           </View>
+
+          {summaryBanner ? (
+            <View style={styles.summaryBanner}>
+              <Text style={styles.summaryBannerTitle}>
+                {summaryBanner.title || 'Plan update'}
+              </Text>
+              <Text style={styles.summaryBannerText}>
+                {summaryBanner.message || 'Your account has updated billing access information.'}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.summaryActions}>
             <Button
@@ -518,6 +573,70 @@ const PlansScreen: React.FC = () => {
             const label = getPriceLabel(plan);
             const purchasable = canPurchase(plan);
             const starting = startingPlanId === plan.id;
+            const isCurrentTrial =
+              isCurrent && String(subscription?.status || '').toLowerCase() === 'trialing';
+            const isCurrentTierTrial =
+              Boolean(entitlements?.is_trial) &&
+              currentPlanTier === String(plan.tier || '').trim().toLowerCase();
+            const limitStats = [
+              {
+                key: 'storage',
+                icon: 'server',
+                label: 'Storage',
+                value: `${plan.storage_limit_gb} GB`,
+              },
+              {
+                key: 'max-upload',
+                icon: 'cloud-upload',
+                label: 'Max file',
+                value: `${plan.max_upload_size_mb} MB`,
+              },
+              {
+                key: 'uploads',
+                icon: 'albums',
+                label: 'Uploads',
+                value: formatCap(plan.upload_limit_monthly, '/mo'),
+              },
+              {
+                key: 'downloads',
+                icon: 'download',
+                label: 'Downloads',
+                value: plan.can_download_unlimited
+                  ? 'Unlimited'
+                  : formatCap(plan.download_limit_monthly, '/mo'),
+              },
+              {
+                key: 'messages',
+                icon: 'chatbubbles',
+                label: 'Messages',
+                value: formatCap(plan.message_limit_daily, '/day'),
+              },
+              {
+                key: 'groups',
+                icon: 'people',
+                label: 'Groups',
+                value: formatCap(plan.group_limit, ''),
+              },
+              {
+                key: 'search',
+                icon: 'search',
+                label: 'Search',
+                value: formatCap(plan.search_results_limit, '/query'),
+              },
+              {
+                key: 'support',
+                icon: 'time',
+                label: 'Support',
+                value: `${Number(plan.support_response_hours || 0)}h`,
+              },
+            ];
+            const highlightTags = Array.isArray(plan.highlights) ? plan.highlights : [];
+            const perkTags = [
+              !plan.has_ads ? 'No ads' : null,
+              plan.has_analytics ? 'Analytics' : null,
+              plan.has_priority_support ? 'Priority support' : null,
+              plan.has_early_access ? 'Early access' : null,
+            ].filter(Boolean) as string[];
 
             return (
               <View
@@ -532,44 +651,82 @@ const PlansScreen: React.FC = () => {
                     <Text style={styles.planName}>{plan.name}</Text>
                     <Text style={styles.planTier}>{String(plan.tier || '').toUpperCase()}</Text>
                   </View>
-                  {plan.is_featured ? (
-                    <View style={styles.featuredPill}>
-                      <Text style={styles.featuredPillText}>Featured</Text>
-                    </View>
-                  ) : null}
+                  <View style={styles.planTopBadges}>
+                    {plan.plan_type ? (
+                      <View style={styles.planTypePill}>
+                        <Text style={styles.planTypePillText}>{plan.plan_type}</Text>
+                      </View>
+                    ) : null}
+                    {plan.is_featured ? (
+                      <View style={styles.featuredPill}>
+                        <Text style={styles.featuredPillText}>Featured</Text>
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
 
                 {plan.description ? (
                   <Text style={styles.planDescription}>{plan.description}</Text>
+                ) : null}
+                {plan.ideal_for ? (
+                  <Text style={styles.planAudience}>Best for: {plan.ideal_for}</Text>
                 ) : null}
 
                 <View style={styles.planPriceRow}>
                   <Text style={styles.planPrice}>{label || 'Included'}</Text>
                   {isCurrent && isActive ? (
                     <View style={styles.currentPill}>
-                      <Text style={styles.currentPillText}>Current</Text>
+                      <Text style={styles.currentPillText}>
+                        {isCurrentTrial ? 'Current Trial' : 'Current'}
+                      </Text>
                     </View>
                   ) : null}
                 </View>
 
-                <View style={styles.featuresList}>
-                  <View style={styles.featureRow}>
-                    <Icon name="server" size={16} color={colors.primary[500]} />
-                    <Text style={styles.featureText}>{plan.storage_limit_gb} GB storage</Text>
+                <View style={styles.limitGrid}>
+                  {limitStats.map((item) => (
+                    <View key={item.key} style={styles.limitStat}>
+                      <View style={styles.limitStatTop}>
+                        <Icon name={item.icon as any} size={14} color={colors.primary[600]} />
+                        <Text style={styles.limitLabel}>{item.label}</Text>
+                      </View>
+                      <Text style={styles.limitValue}>{item.value}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <Text style={styles.planSecondaryMeta}>
+                  Bookmarks: {formatCap(plan.bookmark_limit, '')} • Events: {formatCap(plan.event_limit_monthly, '/mo')} • Badges: {formatCap(plan.badge_limit, '')}
+                </Text>
+
+                {perkTags.length ? (
+                  <View style={styles.perkWrap}>
+                    {perkTags.map((tag) => (
+                      <View key={tag} style={styles.perkChip}>
+                        <Text style={styles.perkChipText}>{tag}</Text>
+                      </View>
+                    ))}
                   </View>
-                  <View style={styles.featureRow}>
-                    <Icon name="cloud-upload" size={16} color={colors.primary[500]} />
-                    <Text style={styles.featureText}>{plan.max_upload_size_mb} MB upload max</Text>
+                ) : null}
+
+                {highlightTags.length ? (
+                  <View style={styles.highlightWrap}>
+                    {highlightTags.map((tag) => (
+                      <View key={tag} style={styles.highlightChip}>
+                        <Text style={styles.highlightChipText}>{tag}</Text>
+                      </View>
+                    ))}
                   </View>
-                  <View style={styles.featureRow}>
-                    <Icon name="download" size={16} color={colors.primary[500]} />
-                    <Text style={styles.featureText}>
-                      {plan.can_download_unlimited
-                        ? 'Unlimited downloads'
-                        : `${plan.download_limit_monthly}/mo downloads`}
+                ) : null}
+
+                {isCurrentTierTrial && plan.trial_preview?.is_trial_limited ? (
+                  <View style={styles.trialNotice}>
+                    <Icon name="information-circle" size={16} color={colors.warning} />
+                    <Text style={styles.trialNoticeText}>
+                      Your current trial uses lower caps than the full {plan.name} plan until you upgrade.
                     </Text>
                   </View>
-                </View>
+                ) : null}
 
                 {!hasAnyConfiguredProvider ? (
                   <Text style={styles.planHelperText}>
@@ -671,6 +828,25 @@ const styles = StyleSheet.create({
   summaryKicker: { fontSize: 12, fontWeight: '700', color: colors.text.secondary },
   summaryTitle: { marginTop: 2, fontSize: 18, fontWeight: '900', color: colors.text.primary },
   summaryText: { marginTop: spacing[2], fontSize: 13, lineHeight: 18, color: colors.text.secondary },
+  summaryTypePill: {
+    alignSelf: 'flex-start',
+    marginTop: spacing[2],
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.primary[50],
+  },
+  summaryTypePillText: { fontSize: 12, fontWeight: '800', color: colors.primary[700] },
+  summaryBanner: {
+    marginTop: spacing[4],
+    padding: spacing[3],
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.warning + '12',
+    borderWidth: 1,
+    borderColor: colors.warning + '22',
+  },
+  summaryBannerTitle: { fontSize: 13, fontWeight: '800', color: colors.text.primary },
+  summaryBannerText: { marginTop: 6, fontSize: 12, lineHeight: 18, color: colors.text.secondary },
   summaryActions: { flexDirection: 'row', marginTop: spacing[4] },
 
   periodCard: {
@@ -725,20 +901,55 @@ const styles = StyleSheet.create({
   },
   planTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   planHeading: { flex: 1 },
+  planTopBadges: { alignItems: 'flex-end', gap: spacing[2] },
   planName: { fontSize: 16, fontWeight: '900', color: colors.text.primary },
   planTier: { marginTop: 2, fontSize: 12, fontWeight: '800', color: colors.text.tertiary },
+  planTypePill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.gray[100] },
+  planTypePillText: { fontSize: 11, fontWeight: '800', color: colors.text.secondary },
   featuredPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.accent[50] },
   featuredPillText: { fontSize: 12, fontWeight: '800', color: colors.accent[500] },
   planDescription: { marginTop: spacing[3], fontSize: 13, color: colors.text.secondary, lineHeight: 18 },
+  planAudience: { marginTop: spacing[2], fontSize: 12, lineHeight: 18, color: colors.text.tertiary, fontWeight: '700' },
   planPriceRow: { marginTop: spacing[3], flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   planPrice: { fontSize: 16, fontWeight: '900', color: colors.primary[600] },
   currentPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.success + '1A' },
   currentPillText: { fontSize: 12, fontWeight: '800', color: colors.success },
 
-  featuresList: { marginTop: spacing[3], gap: spacing[2], marginBottom: spacing[4] },
-  featureRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
-  featureText: { fontSize: 13, color: colors.text.secondary, fontWeight: '600' },
+  limitGrid: {
+    marginTop: spacing[4],
+    marginBottom: spacing[3],
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[2],
+  },
+  limitStat: {
+    width: '48%',
+    padding: spacing[3],
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.background.secondary,
+  },
+  limitStatTop: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
+  limitLabel: { fontSize: 11, fontWeight: '700', color: colors.text.tertiary },
+  limitValue: { marginTop: 6, fontSize: 13, fontWeight: '900', color: colors.text.primary },
+  planSecondaryMeta: { fontSize: 12, lineHeight: 18, color: colors.text.secondary, fontWeight: '700' },
+  perkWrap: { marginTop: spacing[3], flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] },
+  perkChip: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.primary[50] },
+  perkChipText: { fontSize: 11, fontWeight: '800', color: colors.primary[700] },
+  highlightWrap: { marginTop: spacing[3], flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] },
+  highlightChip: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.gray[100] },
+  highlightChipText: { fontSize: 11, fontWeight: '700', color: colors.text.secondary },
+  trialNotice: {
+    marginTop: spacing[3],
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[2],
+    padding: spacing[3],
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.warning + '12',
+  },
+  trialNoticeText: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.text.secondary },
   planHelperText: {
+    marginTop: spacing[3],
     fontSize: 12,
     color: colors.warning,
     marginBottom: spacing[3],

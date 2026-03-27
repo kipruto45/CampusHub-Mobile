@@ -5,6 +5,7 @@ import React,{ useCallback,useEffect,useMemo,useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform as RNPlatform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,7 @@ import {
 import Button from '../../../components/ui/Button';
 import Icon from '../../../components/ui/Icon';
 import { iapAPI } from '../../../services/api';
+import { initNativeIap,isNativeIapAvailable,restoreNativePurchases } from '../../../services/iap.service';
 import { colors } from '../../../theme/colors';
 import { shadows } from '../../../theme/shadows';
 import { borderRadius,spacing } from '../../../theme/spacing';
@@ -83,10 +85,36 @@ const InAppPurchasesScreen: React.FC = () => {
   const handleRestore = useCallback(async () => {
     try {
       setRestoring(true);
-      const response = await iapAPI.restore();
+      let restoredCount = 0;
+      let platform: 'apple' | 'google' | undefined;
+      if (RNPlatform.OS === 'ios') platform = 'apple';
+      if (RNPlatform.OS === 'android') platform = 'google';
+
+      if (platform && (await isNativeIapAvailable())) {
+        await initNativeIap();
+        const purchases = await restoreNativePurchases();
+        for (const purchase of purchases) {
+          if (!purchase?.productId) continue;
+          await iapAPI.subscribe({
+            platform: purchase.platform,
+            product_id: purchase.productId,
+            transaction_id: purchase.transactionId,
+            receipt_data: purchase.receiptData,
+            purchase_token: purchase.purchaseToken,
+            order_id: purchase.orderId,
+          });
+        }
+        restoredCount = purchases.length;
+      }
+
+      const response = await iapAPI.restore({ ...(platform ? { platform } : {}) });
       const payload = response?.data?.data ?? response?.data ?? {};
       const count = Array.isArray(payload?.purchases) ? payload.purchases.length : 0;
-      Alert.alert('Restore complete', count ? `Restored ${count} purchase(s).` : 'No active purchases to restore.');
+      const totalRestored = Math.max(restoredCount, count);
+      Alert.alert(
+        'Restore complete',
+        totalRestored ? `Restored ${totalRestored} purchase(s).` : 'No active purchases to restore.'
+      );
       await load();
     } catch (err: any) {
       Alert.alert(
@@ -177,7 +205,7 @@ const InAppPurchasesScreen: React.FC = () => {
           <View style={styles.errorCard}>
             <View style={styles.errorTop}>
               <Icon name="alert-circle" size={18} color={colors.error} />
-              <Text style={styles.errorTitle}>Unavailable</Text>
+              <Text style={styles.errorTitle}>In-app purchases unavailable</Text>
             </View>
             <Text style={styles.errorText}>{error}</Text>
             <Button title="Try Again" onPress={() => load()} variant="outline" />
@@ -386,4 +414,3 @@ const styles = StyleSheet.create({
 });
 
 export default InAppPurchasesScreen;
-

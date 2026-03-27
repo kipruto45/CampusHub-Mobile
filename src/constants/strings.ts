@@ -3,7 +3,7 @@ export const strings = {
   downloads: {
     openErrorWeb: 'Unable to open in this browser. Try again or use a device app.',
     openErrorDevice: 'No app could open this file. Install a compatible app and try again.',
-    previewUnavailable: 'Preview unavailable. Try again later.',
+    previewUnavailable: 'Preview not ready yet. Try again later.',
   },
   file: {
     favoriteFailed: 'Unable to update favorite right now.',

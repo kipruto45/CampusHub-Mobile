@@ -903,6 +903,7 @@ const HomeScreen: React.FC = () => {
               name={[user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || 'Student'}
               sizePx={44}
               cacheKey={`student-home-${user?.id || 'guest'}`}
+              forceInitials
             />
           </TouchableOpacity>
         </View>
