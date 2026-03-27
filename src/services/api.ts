@@ -94,6 +94,15 @@ const withMemoryGetCache = (
 
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
 
+const getCurrentWebOrigin = (): string => {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') {
+    return '';
+  }
+
+  const origin = String(window.location?.origin || '').trim();
+  return origin ? trimTrailingSlash(origin) : '';
+};
+
 const ensureApiSuffix = (value: string): string => {
   const normalized = trimTrailingSlash(value);
   return /\/api$/i.test(normalized) ? normalized : `${normalized}/api`;
@@ -1231,6 +1240,11 @@ const normalizeResourceListPayload = (rawPayload: any) => {
 };
 
 const getResourceShareBaseUrl = (): string => {
+  const currentWebOrigin = getCurrentWebOrigin();
+  if (currentWebOrigin) {
+    return currentWebOrigin;
+  }
+
   const explicit = String(
     process.env.EXPO_PUBLIC_RESOURCE_SHARE_URL ||
       process.env.EXPO_PUBLIC_WEB_URL ||
